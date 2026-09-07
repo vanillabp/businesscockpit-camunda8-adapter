@@ -1,13 +1,11 @@
 name: Publish to GitHub Packages
-# A push to a branch publishes the snapshot. Renovate and work-in-progress branches are
-# left out: they would overwrite the shared snapshot coordinates in the registry, so
-# whoever pushed last would decide what the other repositories compile against.
+# Only a push to main publishes the snapshot. Other repositories compile against the
+# shared snapshot coordinates, so what gets published has to be what main holds, not
+# whatever branch was pushed last.
 "on":
   push:
-    branches-ignore:
-      - "renovate/**"
-      - "release/**"
-      - "feature/wip-**"
+    branches:
+      - "main"
 concurrency:
   # shared with the pull-request build: one build of this repository at a time, queued
   # and never cancelled, because snapshot artifacts share their coordinates and parallel
