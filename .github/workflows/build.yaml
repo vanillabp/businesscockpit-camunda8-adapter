@@ -1,0 +1,52 @@
+name: Build
+# A pull request builds and tests. Publishing is the job of
+# deploy-to-github-packages.yaml, which shares the concurrency group below so a build
+# and a publish of this repository never run at the same time.
+"on":
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  # one build of this repository at a time, queued and never cancelled: the snapshot
+  # artifacts share their coordinates across branches, so two runs publishing at once
+  # overwrite each other
+  group: businesscockpit-camunda8-adapter-build
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+      # 'install' and not 'install verify': install already runs every phase verify has,
+      # so naming both makes Maven walk two lifecycles per module. The tests skip their
+      # second run, the compiler does not, and every javac warning is reported twice. It
+      # stays 'install' because the Quarkus tests load modules from the local repository.
+      - name: Build and test
+        run: mvn -s $GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml
+          --batch-mode --no-transfer-progress --update-snapshots install
+        env:
+          USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
+          USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      # what a failing test printed is in these reports, and for a test booting its
+      # application in a forked JVM it is ONLY in that application's own log file
+      - name: Upload the test reports of a failed build
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: |
+            **/target/surefire-reports/**
+            **/target/failsafe-reports/**
+            **/target/*application*.log
+          retention-days: 7
+          if-no-files-found: ignore

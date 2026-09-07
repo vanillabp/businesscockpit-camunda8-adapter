@@ -1,0 +1,99 @@
+name: Release
+# Publishes to Maven Central through the release parent's 'release' and 'central-portal'
+# profiles, once per live release line and all from the SAME commit, so a fix exists on
+# every line the moment it is committed. The version is not written into the POM: it is
+# '${revision}', supplied per line as '<version>-<line>'. See README.md, section
+# "Release lines".
+"on":
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Version to release, without the line suffix (e.g. 0.9.0)"
+        required: true
+concurrency:
+  group: businesscockpit-camunda8-adapter-release
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  # The live lines are not maintained here: they are the line-* profiles of the POM, which
+  # also carry the pins. So the release cannot fall behind the build.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      lines: "${{ steps.list.outputs.lines }}"
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        name: Collect the release lines
+        run: |
+          list=$(sed -n 's|.*<id>line-\([0-9][^<]*\)</id>.*|\1|p' pom.xml \
+            | jq -R -s -c 'split("\n")[:-1]')
+          echo "lines=${list}" >> "$GITHUB_OUTPUT"
+          echo "Releasing lines: ${list}"
+
+  line:
+    needs: discover
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # one line at a time: they publish under one release parent and a half-published
+      # matrix is harder to read than a stopped one
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        line: "${{ fromJSON(needs.discover.outputs.lines) }}"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+          server-id: vanillabp-central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: "${{ secrets.MAVEN_GPG_PRIVATE_KEY }}"
+          gpg-passphrase: GPG_PASSPHRASE
+      # 'clean', because classes compiled against one Camunda client are binary compatible
+      # with no other one, so a stale target/ from the previous line fails at runtime
+      # rather than at compile time
+      - name: "Release line ${{ matrix.line }}"
+        run: mvn -s $GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml
+          --batch-mode --no-transfer-progress -Dgpg.passphrase=$GPG_PASSPHRASE
+          -Pline-${{ matrix.line }},release,central-portal
+          -Drevision=${{ github.event.inputs.release_version }}-${{ matrix.line }}
+          clean deploy
+        env:
+          GPG_PASSPHRASE: "${{ secrets.MAVEN_GPG_PASSPHRASE }}"
+          MAVEN_USERNAME: "${{ secrets.MAVEN_CENTRAL_PORTAL_TOKEN_USER }}"
+          MAVEN_PASSWORD: "${{ secrets.MAVEN_CENTRAL_PORTAL_TOKEN_PW }}"
+          USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
+          USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+  tag:
+    needs: line
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Tag the commit every line was built from
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag -a "${{ github.event.inputs.release_version }}" \
+            -m "Release ${{ github.event.inputs.release_version }}, all lines"
+          git push origin "${{ github.event.inputs.release_version }}"
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "${{ github.event.inputs.release_version }}"
+          name: "v${{ github.event.inputs.release_version }}"
+          generate_release_notes: true
+          draft: true

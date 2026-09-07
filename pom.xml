@@ -1,0 +1,421 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- the same release parent the Business Cockpit itself uses, because these artifacts are
+       released to Maven Central under the cockpit's groupId and have to be signed and
+       accompanied by sources and javadoc the way the rest of the cockpit is -->
+  <parent>
+    <groupId>io.vanillabp</groupId>
+    <artifactId>release-parent</artifactId>
+    <version>1.1.1</version>
+  </parent>
+
+  <groupId>io.vanillabp.businesscockpit</groupId>
+  <artifactId>businesscockpit-camunda8-adapter-parent</artifactId>
+  <version>${revision}</version>
+  <packaging>pom</packaging>
+  <name>VanillaBP Business Cockpit adapter for Camunda 8</name>
+  <description>Business Cockpit integration for Camunda 8, built as a VanillaBP 2 extension and released once per Camunda 8 minor.</description>
+  <url>https://github.com/vanillabp/businesscockpit-camunda8-adapter</url>
+
+  <!-- No modules yet. The extension itself is written by story 36 and needs the cockpit's
+       extensions-commons artifact, which does not exist. What lands here then is the layout
+       every VanillaBP adapter repository has: core, spring-boot, quarkus/runtime,
+       quarkus/deployment and test-coverage-report. See README.md, section "What is here today". -->
+  <modules/>
+
+  <scm>
+    <connection>scm:git:https://github.com/vanillabp/businesscockpit-camunda8-adapter.git</connection>
+    <developerConnection>scm:git:https://github.com/vanillabp/businesscockpit-camunda8-adapter.git</developerConnection>
+    <url>https://github.com/vanillabp/businesscockpit-camunda8-adapter/tree/main</url>
+  </scm>
+
+  <distributionManagement>
+    <snapshotRepository>
+      <id>github</id>
+      <name>Github Packages</name>
+      <url>https://maven.pkg.github.com/vanillabp/businesscockpit-camunda8-adapter</url>
+    </snapshotRepository>
+  </distributionManagement>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <version.java>21</version.java>
+    <maven.compiler.release>21</maven.compiler.release>
+    <jacoco.version>0.8.15</jacoco.version>
+    <lombok.version>1.18.46</lombok.version>
+    <spi-for-java.version>1.2.0-SNAPSHOT</spi-for-java.version>
+    <adapter-platform.version>2.0.0-SNAPSHOT</adapter-platform.version>
+    <!-- The version of every artifact, resolved into the published POMs by the flatten
+         plugin. A plain 'mvn install' builds 0.9.0-SNAPSHOT of the current GA line, which is
+         what a developer of this repository wants and needs to remember no property for. A
+         release of a line adds the line to it, e.g. '-Pline-8.8 -Drevision=0.9.0-8.8'. See
+         README.md, section "Release lines". -->
+    <revision>0.9.0-SNAPSHOT</revision>
+    <!-- The release line this build produces. It is the same line scheme the VanillaBP
+         Camunda 8 adapter uses, and it has to be, because this extension compiles against
+         that adapter's core and against the Camunda client that adapter pins: the client a
+         build was compiled against IS the lowest cluster version the build accepts. The
+         properties below are what the line-* profiles select and what Renovate maintains,
+         one per line. Their values follow the pins of vanillabp/camunda8-adapter; a line
+         here is only as good as the adapter line it was built against. -->
+    <camunda8.line>8.9</camunda8.line>
+    <camunda8.version>${camunda8.version.line-8.9}</camunda8.version>
+    <camunda8.version.line-8.8>8.8.36</camunda8.version.line-8.8>
+    <camunda8.version.line-8.9>8.9.17</camunda8.version.line-8.9>
+    <camunda8.version.line-8.10>8.10.0-alpha4</camunda8.version.line-8.10>
+    <!-- The VanillaBP Camunda 8 adapter this extension plugs into: it names the processing
+         context the extension is wired with, and it brings the Camunda client. It is one
+         version per line as soon as that adapter is released; until then every line reads the
+         same snapshot. -->
+    <camunda8-adapter.version>2.0.0-SNAPSHOT</camunda8-adapter.version>
+    <camunda8-adapter.version.line-8.8>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.8>
+    <camunda8-adapter.version.line-8.9>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.9>
+    <camunda8-adapter.version.line-8.10>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.10>
+    <!-- the cluster the integration tests run against follows the pinned client: the client a
+         build was compiled against IS the minimum cluster version of that build, so testing
+         anything newer would prove nothing about it -->
+    <camunda8.cluster.image>camunda/camunda:${camunda8.version}</camunda8.cluster.image>
+    <protobuf.version>4.35.1</protobuf.version>
+    <spring-boot.version>4.1.1</spring-boot.version>
+    <quarkus.version>3.39.1</quarkus.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Protobuf refuses a runtime older than the generated code linked against it, and the
+           Camunda client brings generated code, while the Spring Boot BOM manages an older one
+           and would win, because an imported BOM beats a transitive version. This entry stands
+           BEFORE that import so every line gets it. It carries the gencode version of the
+           pinned clients of vanillabp/camunda8-adapter and moves when one of those pins moves.
+           A mismatch is an ExceptionInInitializerError on the first command using the
+           protocol. -->
+      <dependency>
+        <groupId>com.google.protobuf</groupId>
+        <artifactId>protobuf-java</artifactId>
+        <version>${protobuf.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.quarkus</groupId>
+        <artifactId>quarkus-bom</artifactId>
+        <version>${quarkus.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.vanillabp</groupId>
+        <artifactId>spi-for-java</artifactId>
+        <version>${spi-for-java.version}</version>
+      </dependency>
+      <!-- what an extension implements: ExtensionWiringService. The adapter SPI is for BPMS
+           adapters and has no business in this repository. -->
+      <dependency>
+        <groupId>io.vanillabp</groupId>
+        <artifactId>vanillabp-extension-spi</artifactId>
+        <version>${adapter-platform.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.vanillabp</groupId>
+        <artifactId>vanillabp-spring-boot-integration</artifactId>
+        <version>${adapter-platform.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.vanillabp</groupId>
+        <artifactId>vanillabp-quarkus-integration</artifactId>
+        <version>${adapter-platform.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.vanillabp</groupId>
+        <artifactId>vanillabp-quarkus-integration-deployment</artifactId>
+        <version>${adapter-platform.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.vanillabp</groupId>
+        <artifactId>test-utils</artifactId>
+        <version>${adapter-platform.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.camunda.community.vanillabp</groupId>
+        <artifactId>camunda8-adapter</artifactId>
+        <version>${camunda8-adapter.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <version>${lombok.version}</version>
+        <optional>true</optional>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.5.6</version>
+          <configuration>
+            <!-- '@{jacoco.agent}' is resolved lazily per module (late property binding),
+                 forwarding coverage also into forked JVMs -->
+            <argLine>@{jacoco.agent}</argLine>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>3.5.6</version>
+          <configuration>
+            <argLine>@{jacoco.agent}</argLine>
+          </configuration>
+          <executions>
+            <execution>
+              <goals>
+                <goal>integration-test</goal>
+                <goal>verify</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.15.0</version>
+          <configuration>
+            <release>${version.java}</release>
+            <compilerArgs>
+              <!-- a javadoc which names a method is checked like any other claim: a link
+                   the compiler cannot resolve is an error, a parameter documented twice a
+                   warning. Only the reference group is on, so wording and missing comments
+                   stay a matter of review. -->
+              <arg>-Xdoclint:reference</arg>
+            </compilerArgs>
+            <annotationProcessorPaths>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+              </path>
+            </annotationProcessorPaths>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <!-- resolves '${revision}' in the POMs that get installed and deployed; without it a
+           consumer would read a version they cannot resolve -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>flatten-maven-plugin</artifactId>
+        <version>1.8.0</version>
+        <configuration>
+          <updatePomFile>true</updatePomFile>
+          <flattenMode>resolveCiFriendliesOnly</flattenMode>
+        </configuration>
+        <executions>
+          <execution>
+            <id>flatten</id>
+            <goals>
+              <goal>flatten</goal>
+            </goals>
+            <phase>process-resources</phase>
+          </execution>
+          <execution>
+            <id>flatten-clean</id>
+            <goals>
+              <goal>clean</goal>
+            </goals>
+            <phase>clean</phase>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- The per-line delta: code which cannot compile against every supported client, or
+           which uses something only a newer cluster has. Everything else stays shared, which
+           is the whole point of building the lines from one source tree. The directories are
+           usually absent, and that is the intended state. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.1</version>
+        <executions>
+          <execution>
+            <id>per-line-sources</id>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <phase>generate-sources</phase>
+            <configuration>
+              <sources>
+                <source>src/main/java-line-${camunda8.line}</source>
+              </sources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>per-line-test-sources</id>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <phase>generate-test-sources</phase>
+            <configuration>
+              <sources>
+                <source>src/test/java-line-${camunda8.line}</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <configuration>
+          <propertyName>jacoco.agent</propertyName>
+          <excludes>
+            <exclude>**/it/**</exclude>
+            <exclude>**/test/**</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>report</id>
+            <goals>
+              <goal>report</goal>
+            </goals>
+            <phase>verify</phase>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>3.10.1</version>
+        <configuration>
+          <pom>
+            <includes>
+              <include>**/pom.xml</include>
+            </includes>
+            <excludes>
+              <exclude>**/target/**/</exclude>
+              <exclude>**/node_modules/**/</exclude>
+              <!-- the workflows carry comments, and the YAML formatter round-trips
+                   through Jackson, which drops them -->
+              <exclude>**/.github/**/</exclude>
+            </excludes>
+            <sortPom>
+              <quiet>true</quiet>
+            </sortPom>
+          </pom>
+          <markdown>
+            <includes>
+              <include>**/*.md</include>
+            </includes>
+            <excludes>
+              <exclude>**/target/**/</exclude>
+              <exclude>**/node_modules/**/</exclude>
+              <exclude>**/.github/**/</exclude>
+            </excludes>
+            <flexmark/>
+          </markdown>
+          <yaml>
+            <includes>
+              <include>**/*.yaml</include>
+            </includes>
+            <excludes>
+              <exclude>**/target/**/</exclude>
+              <exclude>**/node_modules/**/</exclude>
+              <!-- Workflow files are excluded on purpose, the same way the other adapter
+                   repositories do it: the formatter drops comments, and it unquotes version
+                   numbers. -->
+              <exclude>**/.github/**/</exclude>
+              <exclude>.github/workflows/**</exclude>
+            </excludes>
+            <jackson>
+              <yamlFeatures>
+                <MINIMIZE_QUOTES>true</MINIMIZE_QUOTES>
+                <WRITE_DOC_START_MARKER>false</WRITE_DOC_START_MARKER>
+                <INDENT_ARRAYS_WITH_INDICATOR>true</INDENT_ARRAYS_WITH_INDICATOR>
+              </yamlFeatures>
+            </jackson>
+          </yaml>
+          <java>
+            <includes>
+              <include>src/main/java/**/*.java</include>
+              <include>src/test/java/**/*.java</include>
+              <!-- the per-line delta is code like any other, so the formatter sees it too -->
+              <include>src/main/java-line-*/**/*.java</include>
+              <include>src/test/java-line-*/**/*.java</include>
+            </includes>
+            <eclipse>
+              <file>${maven.multiModuleProjectDirectory}/formatting_conventions.xml</file>
+              <version>4.35</version>
+            </eclipse>
+            <removeUnusedImports/>
+            <importOrder>
+              <order>java,javax,org,com,at.phactum</order>
+            </importOrder>
+          </java>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>process-sources</phase>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- One profile per release line. It selects the Camunda 8 adapter and the client pin, and
+         with it the cluster the integration tests run against, and it names the line for the
+         delta source directory. The properties above are the current GA line, so a build
+         without any profile is that line: nothing to remember, and no 'activeByDefault' which
+         any other profile on the command line would switch off. Rotating the lines means
+         editing these profiles, the pin properties and the line table of the README, and it
+         follows whatever vanillabp/camunda8-adapter does. -->
+    <profile>
+      <!-- previous GA: bugfixes only, ends when the next minor goes GA -->
+      <id>line-8.8</id>
+      <properties>
+        <camunda8.line>8.8</camunda8.line>
+        <camunda8.version>${camunda8.version.line-8.8}</camunda8.version>
+        <camunda8-adapter.version>${camunda8-adapter.version.line-8.8}</camunda8-adapter.version>
+      </properties>
+    </profile>
+    <profile>
+      <!-- current GA: everything lands here, and it is what a plain build produces -->
+      <id>line-8.9</id>
+      <properties>
+        <camunda8.line>8.9</camunda8.line>
+        <camunda8.version>${camunda8.version.line-8.9}</camunda8.version>
+        <camunda8-adapter.version>${camunda8-adapter.version.line-8.9}</camunda8-adapter.version>
+      </properties>
+    </profile>
+    <profile>
+      <!-- preview: built against the alpha of the next minor and published as a pre-release,
+           so a feature only the new cluster can do is deliverable before that cluster is GA -->
+      <id>line-8.10</id>
+      <properties>
+        <camunda8.line>8.10</camunda8.line>
+        <camunda8.version>${camunda8.version.line-8.10}</camunda8.version>
+        <camunda8-adapter.version>${camunda8-adapter.version.line-8.10}</camunda8-adapter.version>
+      </properties>
+    </profile>
+  </profiles>
+</project>
