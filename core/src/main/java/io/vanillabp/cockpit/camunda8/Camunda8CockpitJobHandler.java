@@ -182,8 +182,11 @@ public class Camunda8CockpitJobHandler implements JobHandler {
     if (!written) {
       logger
           .debug(
-              "Camunda8[{}]: the {} of user task '{}' (workflow aggregate '{}' of BPMN process '{}') collapsed into the report waiting to be dispatched",
-              scope.adapterId(), kind, userTaskKey, workflowAggregateId, listener.bpmnProcessId());
+              "Camunda8[{}]: the {} of user task '{}' (workflow aggregate '{}' of BPMN process '{}') {}",
+              scope.adapterId(), kind, userTaskKey, workflowAggregateId, listener.bpmnProcessId(),
+              publisher.get().reportsUserTasks()
+                  ? "collapsed into the report waiting to be dispatched"
+                  : "was not reported: this application reports no user tasks");
     }
 
   }
@@ -215,8 +218,11 @@ public class Camunda8CockpitJobHandler implements JobHandler {
     if (!written) {
       logger
           .debug(
-              "Camunda8[{}]: the {} of workflow '{}' (workflow aggregate '{}' of BPMN process '{}') collapsed into the report waiting to be dispatched",
-              scope.adapterId(), kind, workflowIdOf(job), workflowAggregateId, listener.bpmnProcessId());
+              "Camunda8[{}]: the {} of workflow '{}' (workflow aggregate '{}' of BPMN process '{}') {}",
+              scope.adapterId(), kind, workflowIdOf(job), workflowAggregateId,
+              listener.bpmnProcessId(), publisher.get().reportsWorkflows()
+                  ? "collapsed into the report waiting to be dispatched"
+                  : "was not reported: this application reports no workflows");
     }
 
   }
