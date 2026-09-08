@@ -19,10 +19,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * cockpit is told - and everything the application's own methods are matched by - is spelled
  * the way the application wrote it.
  * <p>
- * Nothing here is per adapter id. A workflow module deployed to two Camunda 8 clusters is
- * wired twice, and where those two use different name-clash avoidance the two spellings simply
- * both end up in this register; a job carries the spelling of the cluster it came from, so it
- * finds its own.
+ * Everything here is per adapter id and workflow module. A module deployed to two Camunda 8
+ * clusters is wired twice, once per adapter, and the two runs put different identifiers into
+ * their models wherever the two avoid name clashes differently - so the workers of one cluster
+ * subscribe to what THAT cluster's models carry and to nothing else.
  */
 public class Camunda8CockpitDeployments {
 
@@ -45,20 +45,34 @@ public class Camunda8CockpitDeployments {
                               String aggregateIdName) {
   }
 
-  private final Map<String, List<WiredListener>> listenersByWorkflowModule = new ConcurrentHashMap<>();
+  /**
+   * One deployment of one workflow module: its models were prepared for exactly one configured
+   * adapter, and what was wired into them belongs to that adapter's cluster.
+   *
+   * @param adapterId The configured adapter id the models were wired for
+   * @param workflowModuleId The workflow module
+   */
+  private record Deployment(
+                            String adapterId,
+                            String workflowModuleId) {
+  }
+
+  private final Map<Deployment, List<WiredListener>> listenersByDeployment = new ConcurrentHashMap<>();
 
   /**
    * Notes one listener this extension added.
    *
+   * @param adapterId The configured adapter id whose models were being wired
    * @param workflowModuleId The workflow module the process belongs to
    * @param listener Where the listener sits and what it reports about
    */
   public void register(
+      final String adapterId,
       final String workflowModuleId,
       final WiredListener listener) {
 
-    final var listeners = listenersByWorkflowModule
-        .computeIfAbsent(workflowModuleId, id -> new LinkedList<>());
+    final var listeners = listenersByDeployment
+        .computeIfAbsent(new Deployment(adapterId, workflowModuleId), id -> new LinkedList<>());
     synchronized (listeners) {
       final var alreadyKnown = listeners
           .stream()
@@ -73,14 +87,16 @@ public class Camunda8CockpitDeployments {
   }
 
   /**
+   * @param adapterId The configured adapter id whose cluster the workers are opened on
    * @param workflowModuleId The workflow module
    * @return Its listeners by job type, in the order they were wired - which is one worker each
    */
   public Map<String, List<WiredListener>> listenersByTypeOf(
+      final String adapterId,
       final String workflowModuleId) {
 
     final var byType = new LinkedHashMap<String, List<WiredListener>>();
-    of(workflowModuleId)
+    of(adapterId, workflowModuleId)
         .forEach(
             listener -> byType
                 .computeIfAbsent(listener.listenerType(), type -> new LinkedList<>())
@@ -108,6 +124,7 @@ public class Camunda8CockpitDeployments {
   /**
    * What a job of this extension belongs to.
    *
+   * @param adapterId The configured adapter id whose cluster delivered the job
    * @param workflowModuleId The workflow module the worker was opened for
    * @param scopedBpmnProcessId The BPMN process id the job carries
    * @param listenerType The job's type
@@ -115,11 +132,12 @@ public class Camunda8CockpitDeployments {
    *         job of a model somebody else deployed under the same job type
    */
   public Optional<WiredListener> listenerOf(
+      final String adapterId,
       final String workflowModuleId,
       final String scopedBpmnProcessId,
       final String listenerType) {
 
-    return of(workflowModuleId)
+    return of(adapterId, workflowModuleId)
         .stream()
         .filter(listener -> listener.listenerType().equals(listenerType))
         .filter(listener -> listener.scopedBpmnProcessId().equals(scopedBpmnProcessId))
@@ -128,9 +146,10 @@ public class Camunda8CockpitDeployments {
   }
 
   private List<WiredListener> of(
+      final String adapterId,
       final String workflowModuleId) {
 
-    final var listeners = listenersByWorkflowModule.get(workflowModuleId);
+    final var listeners = listenersByDeployment.get(new Deployment(adapterId, workflowModuleId));
     if (listeners == null) {
       return List.of();
     }

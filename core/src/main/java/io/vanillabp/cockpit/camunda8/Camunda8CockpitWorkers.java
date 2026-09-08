@@ -24,9 +24,10 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * aggregate's id is carried in. Everything else a report needs is read while the outbox entry
  * is dispatched, so a listener job which travels less is a user task which appears sooner.
  * <p>
- * They are opened once per workflow module rather than once per cluster the pipeline calls this
- * extension for, because the pipeline says which module is starting but not which cluster - see
- * decision 2 in the repository's DECISIONS.md.
+ * The pipeline starts this extension once per configured Camunda 8 adapter a module was
+ * deployed to, and its processing context says which adapter that is - so a start opens the
+ * workers of exactly that cluster, subscribing to the job types that cluster's own models carry.
+ * See decision 2 in the repository's DECISIONS.md.
  */
 public class Camunda8CockpitWorkers {
 
@@ -40,7 +41,18 @@ public class Camunda8CockpitWorkers {
 
   private final Supplier<BusinessCockpitEventPublisher> publisher;
 
-  private final Map<String, List<JobWorker>> workersByWorkflowModule = new ConcurrentHashMap<>();
+  /**
+   * The workers of one workflow module on one cluster.
+   *
+   * @param adapterId The configured adapter id whose cluster they run against
+   * @param workflowModuleId The workflow module they serve
+   */
+  private record Subscription(
+                              String adapterId,
+                              String workflowModuleId) {
+  }
+
+  private final Map<Subscription, List<JobWorker>> workersBySubscription = new ConcurrentHashMap<>();
 
   /**
    * @param clients The clusters of the configured Camunda 8 adapters
@@ -62,30 +74,30 @@ public class Camunda8CockpitWorkers {
   }
 
   /**
-   * Opens the workers of one workflow module, once. The deployment pipeline calls this
-   * extension once per Camunda 8 adapter the module was deployed to, and every one of those
-   * calls means the same set of workers.
+   * Opens the workers of one workflow module on one cluster.
    *
+   * @param adapterId The configured adapter id the module started for
    * @param workflowModuleId The workflow module which started
    */
   public synchronized void open(
+      final String adapterId,
       final String workflowModuleId) {
 
-    if (workersByWorkflowModule.containsKey(workflowModuleId)) {
+    final var subscription = new Subscription(adapterId, workflowModuleId);
+    if (workersBySubscription.containsKey(subscription)) {
       return;
     }
-    final var listenersByType = deployments.listenersByTypeOf(workflowModuleId);
+    final var listenersByType = deployments.listenersByTypeOf(adapterId, workflowModuleId);
     if (listenersByType.isEmpty()) {
       return;
     }
+    final var cluster = clients.of(adapterId);
     final var opened = new LinkedList<JobWorker>();
     try {
-      clients
-          .clustersHolding(workflowModuleId)
-          .forEach(cluster -> listenersByType.forEach((
+      listenersByType
+          .forEach((
               listenerType,
-              listeners) -> opened
-                  .add(open(cluster, workflowModuleId, listenerType, listeners))));
+              listeners) -> opened.add(open(cluster, workflowModuleId, listenerType, listeners)));
     } catch (final RuntimeException e) {
       // a module which is half subscribed is worse than one which is not subscribed at all:
       // it reports some of what happens and lets the rest of its listener jobs run into an
@@ -95,7 +107,7 @@ public class Camunda8CockpitWorkers {
     }
     // noted only once every worker of the module stands, so that a failed start leaves
     // nothing behind which a later stop would try to close a second time
-    workersByWorkflowModule.put(workflowModuleId, opened);
+    workersBySubscription.put(subscription, opened);
 
   }
 
@@ -166,22 +178,25 @@ public class Camunda8CockpitWorkers {
   }
 
   /**
-   * Closes the workers of one workflow module, in the reverse order they were opened in.
+   * Closes the workers of one workflow module on one cluster, in the reverse order they were
+   * opened in.
    *
+   * @param adapterId The configured adapter id the module is going down for
    * @param workflowModuleId The workflow module which is going down
    */
   public synchronized void close(
+      final String adapterId,
       final String workflowModuleId) {
 
-    final var workers = workersByWorkflowModule.remove(workflowModuleId);
+    final var workers = workersBySubscription.remove(new Subscription(adapterId, workflowModuleId));
     if (workers == null) {
       return;
     }
     close(workers);
     logger
         .info(
-            "The Business Cockpit closed its {} Camunda 8 worker(s) of workflow module '{}'",
-            workers.size(), workflowModuleId);
+            "Camunda8[{}]: the Business Cockpit closed its {} worker(s) of workflow module '{}'",
+            adapterId, workers.size(), workflowModuleId);
 
   }
 

@@ -43,16 +43,14 @@ public class Camunda8CockpitAutoConfiguration {
    * @param clientFactories The clients the Camunda 8 adapter built, one per configured adapter
    *          id
    * @param scoping VanillaBP's name-clash avoidance
-   * @param properties VanillaBP's resolved configuration, which names the configured adapters
    * @return The clusters this extension watches
    */
   @Bean
   public Camunda8Clients businessCockpitCamunda8Clients(
       final Camunda8ClientFactoryRegistry clientFactories,
-      final NameClashAvoidanceSupport scoping,
-      final MigrationAdapterProperties properties) {
+      final NameClashAvoidanceSupport scoping) {
 
-    return new Camunda8Clients(clientFactories, scoping, properties.adapterTypes());
+    return new Camunda8Clients(clientFactories, scoping);
 
   }
 

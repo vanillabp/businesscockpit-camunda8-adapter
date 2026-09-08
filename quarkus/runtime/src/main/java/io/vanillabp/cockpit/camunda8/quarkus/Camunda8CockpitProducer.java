@@ -6,6 +6,7 @@ import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
 import io.quarkus.arc.Unremovable;
 import io.vanillabp.camunda8.Camunda8ProcessingContext;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
+import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
 import io.vanillabp.camunda8.quarkus.runtime.VanillaBpCamunda8Properties;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
@@ -39,7 +40,6 @@ public class Camunda8CockpitProducer {
    * @param clientFactories The clients the Camunda 8 adapter built, one per configured adapter
    *          id
    * @param scoping VanillaBP's name-clash avoidance
-   * @param properties VanillaBP's resolved configuration, which names the configured adapters
    * @return The clusters this extension watches
    */
   @Produces
@@ -47,10 +47,9 @@ public class Camunda8CockpitProducer {
   @Unremovable
   public Camunda8Clients businessCockpitCamunda8Clients(
       final Camunda8ClientFactoryRegistry clientFactories,
-      final NameClashAvoidanceSupport scoping,
-      final MigrationAdapterProperties properties) {
+      final NameClashAvoidanceSupport scoping) {
 
-    return new Camunda8Clients(clientFactories, scoping, properties.adapterTypes());
+    return new Camunda8Clients(clientFactories, scoping);
 
   }
 
@@ -131,8 +130,17 @@ public class Camunda8CockpitProducer {
    * They are produced as one list rather than as one bean each: how many there are is decided
    * by the configuration, which a producer method cannot express. The cockpit's neutral half
    * collects both shapes.
+   * <p>
+   * WHICH adapter ids those are is {@code MigrationAdapterProperties#adapterIdsOfType}, the same
+   * answer the Spring Boot half reads through the platform's registrar support. Filtering the
+   * configured types is not that answer: an id named in <code>prioritized-adapters</code> needs
+   * no section of its own, and an application which configured nothing at all has the id the
+   * classpath derives - so a migration setup and a single-dependency application are exactly the
+   * two cases where an extension answering it itself registers no bridge while the adapter
+   * registers fine.
    *
    * @param clients The clusters
+   * @param properties VanillaBP's resolved configuration, which names the configured adapters
    * @param workflowTaskWiring VanillaBP's registry
    * @return One bridge per configured Camunda 8 adapter id
    */
@@ -141,10 +149,11 @@ public class Camunda8CockpitProducer {
   @Unremovable
   public List<BusinessCockpitBpmsBridge> businessCockpitCamunda8Bridges(
       final Camunda8Clients clients,
+      final MigrationAdapterProperties properties,
       final WorkflowTaskWiring workflowTaskWiring) {
 
-    return clients
-        .adapterIds()
+    return properties
+        .adapterIdsOfType(Camunda8DeploymentService.ADAPTER_TYPE)
         .stream()
         .<BusinessCockpitBpmsBridge>map(
             adapterId -> new Camunda8CockpitBridge(clients.of(adapterId), workflowTaskWiring))

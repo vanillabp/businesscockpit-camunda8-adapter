@@ -75,6 +75,11 @@ with, brings the Camunda client, and hands out the client of each configured ada
 integration is a dependency of it, deliberately: a module which compiled against one would stop
 proving that it needs neither.
 
+Which cluster a pipeline call belongs to is the adapter's word: `Camunda8ProcessingContext` names the
+adapter id and the workflow module of the run, so the workers of a module are opened per cluster and the
+identifiers in a model are read as that cluster's. Nothing here works either out by trying what every
+configured adapter would call a process.
+
 What the extension writes into a model, what its workers do with the jobs that produces and what it
 reads back is documented for users in the
 [wiki](https://github.com/vanillabp/businesscockpit-camunda8-adapter/wiki).

@@ -6,9 +6,6 @@ import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import java.util.List;
-import java.util.Map;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,8 +37,7 @@ public class Camunda8CockpitBridgeTest {
 
   private Camunda8CockpitBridge bridge() {
 
-    final var clients = new Camunda8Clients(
-        clientFactories, null, Map.of("c8", "camunda8", "c7", "camunda7"));
+    final var clients = new Camunda8Clients(clientFactories, null);
     return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring);
 
   }
@@ -66,17 +62,6 @@ public class Camunda8CockpitBridgeTest {
 
     assertTrue(found.isEmpty());
     verifyNoInteractions(workflowTaskWiring);
-
-  }
-
-  @Test
-  @DisplayName("Only the adapters of this BPMS get a bridge")
-  public void onlyCamunda8AdapterIdsAreServed() {
-
-    assertEquals(
-        List.of("c8"),
-        new Camunda8Clients(clientFactories, null, Map.of("c8", "camunda8", "c7", "camunda7"))
-            .adapterIds());
 
   }
 

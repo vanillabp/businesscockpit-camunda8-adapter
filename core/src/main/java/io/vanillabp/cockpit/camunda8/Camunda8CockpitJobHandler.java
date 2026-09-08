@@ -101,7 +101,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       final ActivatedJob job) {
 
     final var wired = deployments
-        .listenerOf(workflowModuleId, job.getBpmnProcessId(), job.getType());
+        .listenerOf(scope.adapterId(), workflowModuleId, job.getBpmnProcessId(), job.getType());
     if (wired.isEmpty()) {
       // a job type of this extension which this workflow module did not wire. Another
       // application deployed a model of its own under the same identifiers, and its workflows

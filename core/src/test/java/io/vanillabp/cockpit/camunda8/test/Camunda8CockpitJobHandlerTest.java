@@ -55,6 +55,8 @@ public class Camunda8CockpitJobHandlerTest {
 
   private static final String FORM_REFERENCE = "approve";
 
+  private static final String ADAPTER_ID = "c8";
+
   private final Camunda8CockpitDeployments deployments = new Camunda8CockpitDeployments();
 
   private final RecordingPublisher publisher = new RecordingPublisher();
@@ -68,24 +70,27 @@ public class Camunda8CockpitJobHandlerTest {
 
     deployments
         .register(
+            ADAPTER_ID,
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
                     .listenerTypeOf(PROCESS_ID), PROCESS_ID, PROCESS_ID, "Started", AGGREGATE_ID_NAME));
     deployments
         .register(
+            ADAPTER_ID,
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
                     .listenerTypeOf(PROCESS_ID), PROCESS_ID, PROCESS_ID, PROCESS_ID, AGGREGATE_ID_NAME));
     deployments
         .register(
+            ADAPTER_ID,
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
                     .listenerTypeOf(FORM_REFERENCE), PROCESS_ID, PROCESS_ID, "Approve", AGGREGATE_ID_NAME));
     handler = new Camunda8CockpitJobHandler(
-        new Camunda8Scope("c8", null, null), MODULE_ID, deployments, () -> publisher);
+        new Camunda8Scope(ADAPTER_ID, null, null), MODULE_ID, deployments, () -> publisher);
 
   }
 

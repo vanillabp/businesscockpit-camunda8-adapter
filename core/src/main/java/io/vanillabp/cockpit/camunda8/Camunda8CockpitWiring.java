@@ -1,6 +1,5 @@
 package io.vanillabp.cockpit.camunda8;
 
-import java.util.LinkedHashSet;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -89,6 +88,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final BpmnModelInstance model,
       final Camunda8ProcessingContext context) {
 
+    final var adapterId = context.getAdapterId();
     final var aggregateIdName = aggregateIdNameOf(workflowModuleId, bpmnProcessId);
     if (aggregateIdName == null) {
       // A listener carries no retries, so an unserved job stops the workflow where it sits.
@@ -102,17 +102,17 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       return;
     }
 
-    final var process = processInModel(model, workflowModuleId, bpmnProcessId);
+    final var process = processInModel(model, adapterId, workflowModuleId, bpmnProcessId);
     if (process.isEmpty()) {
       logger
           .debug(
-              "Camunda8: the Business Cockpit found no BPMN process '{}' in file '{}' of workflow module '{}' under any of the identifiers this application's adapters deploy it as",
-              bpmnProcessId, filename, workflowModuleId);
+              "Camunda8[{}]: the Business Cockpit found no BPMN process '{}' in file '{}' of workflow module '{}' under the identifier this adapter deploys it as",
+              adapterId, bpmnProcessId, filename, workflowModuleId);
       return;
     }
-    reportTheWorkflow(workflowModuleId, bpmnProcessId, process.get(), aggregateIdName);
+    reportTheWorkflow(adapterId, workflowModuleId, bpmnProcessId, process.get(), aggregateIdName);
     reportTheUserTasks(
-        workflowModuleId, filename, bpmnProcessId, model, process.get().getId(), aggregateIdName);
+        adapterId, workflowModuleId, filename, bpmnProcessId, model, process.get().getId(), aggregateIdName);
 
   }
 
@@ -120,12 +120,14 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * Adds what makes the cluster say that a workflow of this process began and that it ended: an
    * <code>end</code> listener on every start event, and one at the process itself.
    *
+   * @param adapterId The configured adapter id whose models are being wired
    * @param workflowModuleId The workflow module
    * @param bpmnProcessId The BPMN process id as the application wrote it
    * @param process The BPMN process element, carrying the id the cluster will know
    * @param aggregateIdName The variable the workflow aggregate's id is carried in
    */
   private void reportTheWorkflow(
+      final String adapterId,
       final String workflowModuleId,
       final String bpmnProcessId,
       final Process process,
@@ -140,6 +142,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
           Camunda8CockpitListeners.addStartEventListener(startEvent, listenerType);
           deployments
               .register(
+                  adapterId,
                   workflowModuleId,
                   new WiredListener(
                       listenerType, scopedBpmnProcessId, bpmnProcessId, startEvent.getId(), aggregateIdName));
@@ -148,6 +151,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
     Camunda8CockpitListeners.addProcessListener(process, listenerType);
     deployments
         .register(
+            adapterId,
             workflowModuleId,
             new WiredListener(
                 listenerType, scopedBpmnProcessId, bpmnProcessId, scopedBpmnProcessId, aggregateIdName));
@@ -171,6 +175,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * listeners are already in the model, which is what that method checks before it inserts
    * anything. A user task it would refuse has already ended the deployment by then.
    *
+   * @param adapterId The configured adapter id whose models are being wired
    * @param workflowModuleId The workflow module
    * @param filename The file being wired, for the message a refused user task produces
    * @param bpmnProcessId The BPMN process id as the application wrote it
@@ -179,6 +184,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * @param aggregateIdName The variable the workflow aggregate's id is carried in
    */
   private void reportTheUserTasks(
+      final String adapterId,
       final String workflowModuleId,
       final String filename,
       final String bpmnProcessId,
@@ -196,6 +202,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
           }
           deployments
               .register(
+                  adapterId,
                   workflowModuleId,
                   new WiredListener(
                       listenerType, scopedBpmnProcessId, bpmnProcessId, userTask.activityId(), aggregateIdName));
@@ -208,7 +215,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final String workflowModuleId,
       final Camunda8ProcessingContext bpmsProcessingContext) {
 
-    workers.open(workflowModuleId);
+    workers.open(bpmsProcessingContext.getAdapterId(), workflowModuleId);
 
   }
 
@@ -217,7 +224,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final String workflowModuleId,
       final Camunda8ProcessingContext bpmsProcessingContext) {
 
-    workers.close(workflowModuleId);
+    workers.close(bpmsProcessingContext.getAdapterId(), workflowModuleId);
 
   }
 
@@ -225,32 +232,22 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * The BPMN process this call is about, as it stands in the model.
    * <p>
    * The pipeline hands over the process id the application wrote, while the model already
-   * carries the identifiers the cluster will know - name-clash avoidance rewrote them before
-   * any wiring ran. Which of the two spellings this model uses depends on the adapter it was
-   * prepared for, and the pipeline does not say which adapter that is, so the question is put
-   * the other way round: every configured Camunda 8 adapter is asked what it would call this
-   * process, and the model answers which of those it holds.
+   * carries the identifier the cluster will know - name-clash avoidance rewrote it before any
+   * wiring ran. Which of the two spellings this model uses is decided by the adapter it was
+   * prepared for, and the processing context says which adapter that is, so the id is asked of
+   * that one adapter's scope. Trying every configured adapter's spelling instead stops
+   * answering the moment two of them avoid name clashes differently.
    */
   private Optional<Process> processInModel(
       final BpmnModelInstance model,
+      final String adapterId,
       final String workflowModuleId,
       final String bpmnProcessId) {
 
-    final var candidates = new LinkedHashSet<String>();
-    clients
-        .adapterIds()
-        .forEach(
-            adapterId -> candidates
-                .add(clients.of(adapterId).scope().scopedProcessIdOf(workflowModuleId, bpmnProcessId)));
-    // an application without any configured Camunda 8 adapter never gets here, but a model
-    // whose ids were not rewritten still carries the plain one
-    candidates.add(bpmnProcessId);
-    return candidates
-        .stream()
-        .map(candidate -> Camunda8CockpitListeners.processOf(model, candidate))
-        .filter(Optional::isPresent)
-        .map(Optional::get)
-        .findFirst();
+    return Camunda8CockpitListeners
+        .processOf(
+            model,
+            clients.of(adapterId).scope().scopedProcessIdOf(workflowModuleId, bpmnProcessId));
 
   }
 

@@ -1,9 +1,7 @@
 package io.vanillabp.cockpit.camunda8;
 
-import java.net.HttpURLConnection;
 import java.time.Duration;
 
-import io.camunda.client.api.command.ProblemException;
 import io.vanillabp.integration.spi.PhaseTwoRetryLater;
 
 /**
@@ -22,6 +20,11 @@ import io.vanillabp.integration.spi.PhaseTwoRetryLater;
  * </ul>
  * Anything else the cluster answers travels on unchanged. An outage must not look like an empty
  * result, or a cockpit would quietly stop showing what is there.
+ * <p>
+ * WHICH answer means "I do not hold that" is the adapter's to say
+ * ({@code Camunda8Errors#notFound}): the REST gateway says it with HTTP <code>404</code> and the
+ * gRPC gateway with the status <code>NOT_FOUND</code>, and reading only one of the two turns the
+ * other transport's answer into a hard failure.
  */
 public final class Camunda8CockpitReads {
 
@@ -38,26 +41,6 @@ public final class Camunda8CockpitReads {
   public static final Duration WHILE_THE_EXPORTER_CATCHES_UP = Duration.ofSeconds(2);
 
   private Camunda8CockpitReads() {
-  }
-
-  /**
-   * @param failure What a request to the cluster ended with
-   * @return Whether the cluster answered that it has no such record
-   */
-  public static boolean nothingFound(
-      final Throwable failure) {
-
-    var current = failure;
-    while (current != null) {
-      if ((current instanceof ProblemException problem) && (problem.code() == HttpURLConnection.HTTP_NOT_FOUND)) {
-        return true;
-      }
-      current = current.getCause() == current
-          ? null
-          : current.getCause();
-    }
-    return false;
-
   }
 
   /**

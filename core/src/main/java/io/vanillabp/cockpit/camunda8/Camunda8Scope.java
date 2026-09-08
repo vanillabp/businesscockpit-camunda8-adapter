@@ -70,9 +70,8 @@ public class Camunda8Scope {
       final String workflowModuleId,
       final String bpmnProcessId) {
 
-    return scoping == null
-        ? bpmnProcessId
-        : scoping.scopedProcessId(workflowModuleId, bpmnProcessId, adapterId);
+    return NameClashAvoidanceSupport
+        .scopedProcessId(scoping, workflowModuleId, bpmnProcessId, adapterId);
 
   }
 
@@ -88,9 +87,8 @@ public class Camunda8Scope {
       final String bpmnProcessId,
       final String taskDefinition) {
 
-    return scoping == null
-        ? taskDefinition
-        : scoping.plainTaskDefinition(workflowModuleId, bpmnProcessId, taskDefinition, adapterId);
+    return NameClashAvoidanceSupport
+        .plainTaskDefinition(scoping, workflowModuleId, bpmnProcessId, taskDefinition, adapterId);
 
   }
 

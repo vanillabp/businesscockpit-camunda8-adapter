@@ -22,24 +22,16 @@ listener of a start event still gates the transition, and by then the variables 
 The `end` listener at the process stays where Version 1 had it. What this costs an upgrading
 application is decision 4.
 
-## 2. Which cluster a workflow module runs on is asked of the adapter
+## 2. Which cluster a call is about is said by the processing context - the detour of the first version superseded by decision 6
 
 VanillaBP's deployment pipeline tells an extension that a workflow module is being wired and later
-that it is starting, but not which of the configured adapters it is doing that for: the callbacks
-carry the workflow module and the processing context, and `Camunda8ProcessingContext` names no
-adapter id either. The extension needs one to open a worker, because a worker belongs to a cluster.
+that it is starting, and `Camunda8ProcessingContext` names the adapter id and the workflow module
+of that run. A worker belongs to a cluster, and this is what says which.
 
-So the question is turned around. The adapters themselves know which workflow modules they opened,
-and every one of them registers that with its client while it starts - which the pipeline does for
-every adapter of a module before it starts any extension of it. The extension asks the clients
-rather than the callback, opens its workers once per workflow module, and covers every cluster the
-module actually reached.
-
-The same turn answers the other identifier question. A model reaching this extension already
-carries the identifiers its cluster will know, while the callback hands over the plain BPMN
-process id, and which of the two spellings a model uses depends on the adapter it was prepared
-for. Instead of guessing, every configured Camunda 8 adapter is asked what it would call the
-process and the model answers which of those it holds.
+The first version of this half had no such answer to read. It asked the adapters which workflow
+modules they had opened and opened its workers per module across all of them, and it worked out
+which spelling of a BPMN process a model carried by trying what every configured adapter would
+call it. Decision 6 says what that cost and what replaced it.
 
 ## 3. A called process is a step, not a case
 
@@ -79,3 +71,21 @@ once.
 The same rule decides where listeners are NOT added: a BPMN process no workflow aggregate of the
 application claims gets none, because the jobs of such listeners would be handed to nobody and
 would stop that workflow where it sits.
+
+## 6. The adapter says whose call this is, so nothing is guessed from a model
+
+Two of the facts this half needs are the adapter's to state: which configured adapter a pipeline
+call belongs to, and which workflow module its run is for. `Camunda8ProcessingContext` carries both
+now, and every step reads them from there.
+
+What that ends is a guess with no upper bound on how wrong it could be. The identifiers in a model
+are the ones the cluster it was prepared for will know, so this half used to build a candidate list
+of what every configured Camunda 8 adapter would call the process and take the first spelling the
+model held. Two adapter ids avoiding name clashes differently make that list ambiguous, and the
+plain id stood in it as a fallback, so a model of one cluster could be recognised as another's.
+Now one adapter's scope is asked, the one whose run this is.
+
+The workers follow. They used to be opened once per workflow module, across every cluster the
+adapters said held it, subscribing each cluster to the job types of all of them. They are opened
+per adapter id and workflow module instead, and what was wired is remembered under the same pair,
+so a worker subscribes to exactly what its own cluster's models carry.

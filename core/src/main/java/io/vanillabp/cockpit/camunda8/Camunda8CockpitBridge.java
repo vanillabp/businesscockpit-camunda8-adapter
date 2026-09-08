@@ -11,7 +11,9 @@ import org.slf4j.LoggerFactory;
 import io.camunda.client.api.search.enums.UserTaskState;
 import io.camunda.client.api.search.response.ProcessInstance;
 import io.camunda.client.api.search.response.UserTask;
+import io.vanillabp.camunda8.client.Camunda8Errors;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
+import io.vanillabp.camunda8.processservice.Camunda8VariableFilters;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskDetailsPrefill;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
@@ -78,7 +80,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
           .send()
           .join();
     } catch (final RuntimeException e) {
-      if (Camunda8CockpitReads.nothingFound(e)) {
+      if (Camunda8Errors.notFound(e)) {
         // A report is dispatched moments after the cluster handed out the listener job it
         // came from, so a user task the searchable storage has no record of is one it has
         // not written yet rather than one which is gone. Dropping it here would lose a task
@@ -119,7 +121,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
           .send()
           .join();
     } catch (final RuntimeException e) {
-      if (Camunda8CockpitReads.nothingFound(e)) {
+      if (Camunda8Errors.notFound(e)) {
         throw Camunda8CockpitReads
             .notExportedYet("the workflow '%s'".formatted(workflow.workflowId()), adapterId());
       }
@@ -234,7 +236,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
                   Map
                       .of(
                           aggregateIdNameOf(workflowModuleId, bpmnProcessId),
-                          aggregateIdSearchValue(workflowAggregateId)));
+                          Camunda8VariableFilters.aggregateIdSearchValue(workflowAggregateId)));
           if (tenantId != null) {
             filter.tenantId(tenantId);
           }
@@ -279,7 +281,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
                   Map
                       .of(
                           aggregateIdNameOf(workflowModuleId, bpmnProcessId),
-                          aggregateIdSearchValue(workflowAggregateId)));
+                          Camunda8VariableFilters.aggregateIdSearchValue(workflowAggregateId)));
           if (userTaskKey != null) {
             filter.userTaskKey(userTaskKey);
           }
@@ -323,26 +325,6 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
     return workflowId.equals(userTask.workflowId())
         ? null
         : workflowId;
-
-  }
-
-  /**
-   * The value a variable filter has to carry to match a workflow aggregate's id.
-   * <p>
-   * A Camunda 8 cluster stores every process variable as JSON and its search API compares
-   * against that JSON verbatim, so a variable holding the characters <code>4711</code> is
-   * matched by <code>"4711"</code> with the quotes and never by a bare <code>4711</code>.
-   * VanillaBP writes the aggregate's id as a string whatever type the id attribute has, so the
-   * quoting is unconditional. Getting it wrong is invisible: the search answers nothing, which
-   * reads exactly like a workflow nobody started.
-   */
-  private static String aggregateIdSearchValue(
-      final String workflowAggregateId) {
-
-    return "\"%s\"".formatted(
-        workflowAggregateId
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\""));
 
   }
 
