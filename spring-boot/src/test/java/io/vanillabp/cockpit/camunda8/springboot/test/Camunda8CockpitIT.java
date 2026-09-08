@@ -378,8 +378,9 @@ public class Camunda8CockpitIT {
               .startWorkflowByMessage(fresh, TestWorkflowService.START_MESSAGE);
         });
 
-    // the start of such a workflow is reported by the very listener the none start event
-    // carries, and it knows the case because the aggregate id travelled with the message
+    // the start of such a workflow is reported by the listener the MESSAGE start event
+    // carries - every start event of a process gets one - and it knows the case because the
+    // aggregate id travelled with the message
     final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Klara\"");
     assertTrue(
         workflow.body().contains("\"aggregateId\":\"%s\"".formatted(aggregate.getId())),

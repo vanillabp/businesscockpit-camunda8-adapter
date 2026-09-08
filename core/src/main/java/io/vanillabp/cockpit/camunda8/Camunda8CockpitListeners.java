@@ -33,7 +33,7 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
  * Version 1 application whose model is deployed again by Version 2 must produce the same bytes,
  * or the cluster stores a new process version and every running workflow keeps the old one - see
  * decision 4 in the repository's DECISIONS.md. The execution listeners are NOT the Version 1
- * ones - see decision 1 there.
+ * ones - see decision 1 in the repository's DECISIONS.md.
  * <p>
  * Every method here is idempotent: the deployment pipeline hands the same model instance to
  * every executable process of a file, and re-wiring an element which already carries this

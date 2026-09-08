@@ -7,6 +7,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -60,6 +61,16 @@ public final class CockpitServer {
 
   /** How long a test waits for something to arrive. */
   private static final long WAIT_MILLIS = 240000;
+
+  /**
+   * Two outbox cycles of the tests, whose {@code vanillabp.outbox.poll-interval} is half a
+   * second. A report already written is dispatched within one of them, so a silence of two
+   * is what makes "this was not reported" mean something.
+   */
+  private static final Duration QUIET_WINDOW = Duration.ofMillis(1000);
+
+  /** How long {@link #awaitQuiet(Duration)} keeps hoping for that silence. */
+  private static final Duration WAITING_AT_MOST = Duration.ofSeconds(30);
 
   private static final List<Request> RECEIVED = Collections.synchronizedList(new LinkedList<>());
 
@@ -288,21 +299,44 @@ public final class CockpitServer {
   }
 
   /**
-   * Waits until nothing arrived for a moment, so that a test asserting that something is NOT
-   * reported does not pass by being quick.
+   * Waits until nothing arrived for {@link #QUIET_WINDOW}, so that a test asserting that
+   * something is NOT reported does not pass by being quick.
+   * <p>
+   * A report which is on its way spends at least one outbox cycle waiting to be dispatched,
+   * so a shorter silence proves nothing: it is the silence between two polls of an outbox
+   * which is about to send. The window therefore spans two cycles.
    */
   public static void awaitQuiet() {
 
-    final var deadline = System.currentTimeMillis() + 5000;
-    var lastCount = -1;
+    awaitQuiet(QUIET_WINDOW);
+
+  }
+
+  /**
+   * @param quietFor How long nothing may arrive before the server counts as quiet
+   * @see #awaitQuiet()
+   */
+  public static void awaitQuiet(
+      final Duration quietFor) {
+
+    final var deadline = System.currentTimeMillis() + WAITING_AT_MOST.toMillis();
+    var lastCount = received().size();
+    var quietSince = System.currentTimeMillis();
     while (System.currentTimeMillis() < deadline) {
+      sleep();
       final var count = received().size();
-      if (count == lastCount) {
+      if (count != lastCount) {
+        lastCount = count;
+        quietSince = System.currentTimeMillis();
+        continue;
+      }
+      if ((System.currentTimeMillis() - quietSince) >= quietFor.toMillis()) {
         return;
       }
-      lastCount = count;
-      sleep();
     }
+    throw new AssertionError(
+        "Requests kept arriving for %s, so nothing here proves that a report stayed away. Received: %s"
+            .formatted(WAITING_AT_MOST, received().stream().map(Request::path).toList()));
 
   }
 

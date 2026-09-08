@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import io.camunda.client.api.worker.JobWorker;
 import io.camunda.client.api.worker.JobWorkerBuilderStep1.JobWorkerBuilderStep3;
+import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 
 /**
@@ -116,7 +117,7 @@ public class Camunda8CockpitWorkers {
         .timeout(settings.listenerJobTimeout(workflowModuleId, cluster.scope().adapterId()))
         .name("vanillabp-businesscockpit-%s-%s".formatted(cluster.scope().adapterId(), listenerType))
         .fetchVariables(variables);
-    builder = asTheAdapterWouldOpenIt(builder, cluster);
+    builder = withTheAdaptersStreamTimeout(builder, cluster.configuration());
     final var tenantId = cluster.scope().tenantIdOf(workflowModuleId);
     if (tenantId != null) {
       // with 'by-adapter': jobs of a tenant are only delivered to workers subscribing for
@@ -132,41 +133,35 @@ public class Camunda8CockpitWorkers {
   }
 
   /**
-   * How a worker of this extension polls, streams and waits: the way the adapter's own workers
-   * do it, because they talk to the same cluster and an operator who tuned one meant both.
+   * The one worker setting this extension has to repeat, because the client does not carry it.
    * <p>
-   * The poll interval, the request timeout and whether jobs are streamed reach a worker through
-   * the client as well - the adapter sets them while it builds it - and are set here again so
-   * that this worker carries the adapter's value whatever a client default becomes. The stream
-   * timeout has no client-wide equivalent and is the one which would otherwise be missing.
+   * A worker of this extension polls, streams and waits the way the adapter's own workers do,
+   * and almost all of that arrives on its own: whether jobs are streamed, how often a worker
+   * polls and how long a request may take are set on the CLIENT while the adapter builds it,
+   * and every worker of that client inherits them. Setting them here as well would take that
+   * inheritance away, and with it the environment variables which may overrule the configured
+   * values on the client - the escape hatch the adapter reports at startup.
    * <p>
-   * The adapter's own metrics are NOT among them: the method which attaches them is
+   * The stream timeout has no such client-wide setting, so a worker which does not name it
+   * streams for as long as the client's default says instead of for as long as the adapter was
+   * configured for.
+   * <p>
+   * The adapter's own metrics are missing altogether: the method which attaches them is
    * package-private in the adapter, so the workers of this extension are counted by the cluster
    * and not by the adapter's counters.
    *
    * @param builder The worker being built
-   * @param cluster The cluster it subscribes to
+   * @param configuration What the adapter of this cluster was configured with
    * @return The same builder
    */
-  private static JobWorkerBuilderStep3 asTheAdapterWouldOpenIt(
+  static JobWorkerBuilderStep3 withTheAdaptersStreamTimeout(
       final JobWorkerBuilderStep3 builder,
-      final Camunda8Clients.Cluster cluster) {
+      final Camunda8AdapterConfiguration configuration) {
 
-    final var configuration = cluster.configuration();
-    var withOptions = builder;
-    if (configuration.getStreamEnabled() != null) {
-      withOptions = withOptions.streamEnabled(configuration.getStreamEnabled());
-    }
-    if (configuration.getStreamTimeout() != null) {
-      withOptions = withOptions.streamTimeout(configuration.getStreamTimeout());
-    }
-    if (configuration.getPollInterval() != null) {
-      withOptions = withOptions.pollInterval(configuration.getPollInterval());
-    }
-    if (configuration.getRequestTimeout() != null) {
-      withOptions = withOptions.requestTimeout(configuration.getRequestTimeout());
-    }
-    return withOptions;
+    final var streamTimeout = configuration.getStreamTimeout();
+    return streamTimeout == null
+        ? builder
+        : builder.streamTimeout(streamTimeout);
 
   }
 

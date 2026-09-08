@@ -50,6 +50,12 @@ public final class ClusterUnderTest {
 
   private static final Duration STARTUP_TIMEOUT = Duration.ofMinutes(3);
 
+  /** How long a written tenant may take to become readable. */
+  private static final Duration TENANT_READABLE_WITHIN = Duration.ofSeconds(60);
+
+  /** One client for the handful of calls setting a cluster up, rather than one per call. */
+  private static final HttpClient CLIENT = HttpClient.newHttpClient();
+
   private ClusterUnderTest() {
     // static helper
   }
@@ -175,6 +181,11 @@ public final class ClusterUnderTest {
    * Both steps are needed: a tenant nobody belongs to accepts no command of that user, and
    * a deployment into a tenant which does not exist is refused by the adapter before it is
    * refused by the cluster.
+   * <p>
+   * A tenant is written as a command and becomes readable once the exporter caught up, so
+   * both steps are followed by a read of the tenant until it answers. Without that wait the
+   * booting application can look the tenant up before the cluster can find it, and the
+   * adapter then ends the boot naming a tenant which does in fact exist.
    *
    * @param restAddress The cluster's REST address
    * @param tenantId The tenant, which is the workflow module id unless the adapter names
@@ -193,31 +204,73 @@ public final class ClusterUnderTest {
                 HttpRequest.BodyPublishers
                     .ofString(
                         "{\"tenantId\":\"%s\",\"name\":\"%s\"}".formatted(tenantId, tenantId))));
+    awaitTenant(restAddress, tenantId);
     send(
         HttpRequest
             .newBuilder(URI.create("%s/v2/tenants/%s/users/%s".formatted(restAddress, tenantId, USERNAME)))
             .PUT(HttpRequest.BodyPublishers.noBody()));
+    awaitTenant(restAddress, tenantId);
+
+  }
+
+  /**
+   * Reads the tenant until the cluster answers with it.
+   *
+   * @param restAddress The cluster's REST address
+   * @param tenantId The tenant which was just written
+   */
+  private static void awaitTenant(
+      final String restAddress,
+      final String tenantId) {
+
+    final var deadline = System.currentTimeMillis() + TENANT_READABLE_WITHIN.toMillis();
+    var lastAnswer = "nothing yet";
+    while (System.currentTimeMillis() < deadline) {
+      final var response = call(
+          HttpRequest
+              .newBuilder(URI.create("%s/v2/tenants/%s".formatted(restAddress, tenantId)))
+              .GET());
+      if (response.statusCode() == 200) {
+        return;
+      }
+      lastAnswer = "%d: %s".formatted(response.statusCode(), response.body());
+      try {
+        Thread.sleep(250);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("Interrupted while waiting for the tenant to be readable", e);
+      }
+    }
+    throw new IllegalStateException(
+        "The tenant '%s' was not readable within %s, the cluster kept answering %s"
+            .formatted(tenantId, TENANT_READABLE_WITHIN, lastAnswer));
 
   }
 
   private static void send(
       final HttpRequest.Builder request) {
 
+    final var response = call(request);
+    if (response.statusCode() >= 300) {
+      throw new IllegalStateException(
+          "The cluster answered %d to '%s': %s"
+              .formatted(response.statusCode(), request.build().uri(), response.body()));
+    }
+
+  }
+
+  private static HttpResponse<String> call(
+      final HttpRequest.Builder request) {
+
     final var credentials = Base64
         .getEncoder()
         .encodeToString("%s:%s".formatted(USERNAME, PASSWORD).getBytes(StandardCharsets.UTF_8));
     try {
-      final var response = HttpClient
-          .newHttpClient()
+      return CLIENT
           .send(
               request.header("Authorization", "Basic "
                   + credentials).build(),
               HttpResponse.BodyHandlers.ofString());
-      if (response.statusCode() >= 300) {
-        throw new IllegalStateException(
-            "The cluster answered %d to '%s': %s"
-                .formatted(response.statusCode(), request.build().uri(), response.body()));
-      }
     } catch (final IOException e) {
       throw new UncheckedIOException("Cannot reach the cluster under test", e);
     } catch (final InterruptedException e) {

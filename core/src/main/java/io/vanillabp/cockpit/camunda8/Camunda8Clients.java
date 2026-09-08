@@ -60,8 +60,8 @@ public class Camunda8Clients {
 
     /**
      * @return What this adapter was configured with, as the adapter resolved it - which is
-     *         where the settings a worker of this extension shares with the adapter's own
-     *         workers come from
+     *         where the stream timeout of a worker of this extension comes from, the one
+     *         worker setting the adapter's client does not already carry
      */
     public Camunda8AdapterConfiguration configuration() {
 

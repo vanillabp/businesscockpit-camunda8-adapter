@@ -174,7 +174,10 @@ public class Camunda8CockpitJobHandler implements JobHandler {
             new UserTaskReference(
                 scope.adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(
                     job), userTaskKey, taskDefinition, job.getElementId()),
-            kind, String.valueOf(job.getKey()), now(),
+            // the worker's clock, because a listener job carries no time of its own: it is
+            // handed out while the transition it gates waits, and what the cluster records
+            // about that transition is written by the exporter afterwards
+            kind, String.valueOf(job.getKey()), OffsetDateTime.now(),
             EventTransaction.NEW);
     if (!written) {
       logger
@@ -207,31 +210,14 @@ public class Camunda8CockpitJobHandler implements JobHandler {
         .publishWorkflowEvent(
             new WorkflowReference(
                 scope.adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(job)),
-            kind, String.valueOf(job.getKey()), now(), EventTransaction.NEW);
+            // the worker's clock, for the reason given where a user task is reported
+            kind, String.valueOf(job.getKey()), OffsetDateTime.now(), EventTransaction.NEW);
     if (!written) {
       logger
           .debug(
               "Camunda8[{}]: the {} of workflow '{}' (workflow aggregate '{}' of BPMN process '{}') collapsed into the report waiting to be dispatched",
               scope.adapterId(), kind, workflowIdOf(job), workflowAggregateId, listener.bpmnProcessId());
     }
-
-  }
-
-  /**
-   * When the cockpit is told this happened.
-   * <p>
-   * It is the worker's clock rather than the cluster's, because a listener job carries no time
-   * of its own: it is handed out while the transition it gates waits, and what the cluster
-   * records about that transition is written by the exporter afterwards - so there is nothing
-   * to read here which would be closer to the event than the moment the job arrived. The
-   * difference is the time the job spent travelling, and the cockpit shows an event which just
-   * happened either way.
-   *
-   * @return Now, as this worker's machine counts it
-   */
-  private static OffsetDateTime now() {
-
-    return OffsetDateTime.now();
 
   }
 
