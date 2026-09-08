@@ -146,7 +146,7 @@ public class Camunda8CockpitTest {
               .addClass(TestWorkflowService.class)
               .addAsResource("camunda8-cluster.properties"))
       .overrideRuntimeConfigKey(
-          "vanillabp.extensions.business-cockpit.rest.base-url", CockpitServer.baseUrl())
+          "vanillabp.cockpit.rest.base-url", CockpitServer.baseUrl())
       // the fallbacks are what a machine without Docker gets, and nothing ever connects to
       // them: this field is built while the class is loaded, and the class is skipped
       .overrideRuntimeConfigKey(

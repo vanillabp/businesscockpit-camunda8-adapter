@@ -19,10 +19,9 @@ vanillabp:
       adapters:
         c8:
           resources-location: classpath:c8-cockpit/processes
-      extensions:
-        business-cockpit:
-          workflow-module-uri: http://localhost:8081/c8-cockpit
-          ui-uri-type: WEBPACK_MF_REACT
-          ui-uri-path: /remoteEntry.js
-          i18n-languages: en
-          bpmn-description-language: en
+      cockpit:
+        workflow-module-uri: http://localhost:8081/c8-cockpit
+        ui-uri-type: WEBPACK_MF_REACT
+        ui-uri-path: /remoteEntry.js
+        i18n-languages: en
+        bpmn-description-language: en

@@ -88,7 +88,7 @@ public class Camunda8CockpitByAdapterIT {
                 + CAMUNDA.getHost()
                 + ":"
                 + CAMUNDA.getMappedPort(26500));
-    registry.add("vanillabp.extensions.business-cockpit.rest.base-url", CockpitServer::baseUrl);
+    registry.add("vanillabp.cockpit.rest.base-url", CockpitServer::baseUrl);
 
   }
 
