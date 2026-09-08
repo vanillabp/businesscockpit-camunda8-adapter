@@ -1,0 +1,383 @@
+package io.vanillabp.cockpit.camunda8.quarkus.it;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.testcontainers.containers.Network;
+
+import io.camunda.client.CamundaClient;
+import io.camunda.client.api.search.enums.UserTaskState;
+import io.camunda.zeebe.model.bpmn.Bpmn;
+import io.camunda.zeebe.model.bpmn.instance.BaseElement;
+import io.camunda.zeebe.model.bpmn.instance.UserTask;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
+import io.quarkus.test.QuarkusExtensionTest;
+import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
+import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
+import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
+import io.vanillabp.integration.test.utils.SuppressOutputExtension;
+import jakarta.inject.Inject;
+import jakarta.transaction.UserTransaction;
+
+/**
+ * The Camunda 8 half of the Business Cockpit inside a booted Quarkus application: the extension
+ * is enabled, its listeners sit in the deployed model, its workers serve the jobs those
+ * listeners produce, and what the workflow does reaches the cockpit server.
+ * <p>
+ * It runs the same way through as the Spring Boot test of this repository, and it exists
+ * because a platform-neutral half being right says nothing about a platform's glue ever calling
+ * it.
+ * <p>
+ * The cluster is started in a static initializer rather than by the Testcontainers extension:
+ * the application's configuration needs the mapped ports, and the extension below reads its
+ * runtime properties while its field is initialized, which happens before any extension
+ * callback runs.
+ */
+@ExtendWith(SuppressOutputExtension.class)
+@SuppressOutputExtension.SuppressBackgroundOutput
+public class Camunda8CockpitTest {
+
+  private static final String ADAPTER_ID = "c8";
+
+  private static final String MODULE_ID = "c8-cockpit";
+
+  /** The BPMN process of the file which no workflow aggregate of this application claims. */
+  private static final String UNCLAIMED_PROCESS_ID = "RetriedDetailsProcess";
+
+  /**
+   * Where the addresses of the cluster are published.
+   * <p>
+   * This class is initialized twice - once while the application is built and again inside the
+   * class loader of the running application - so a cluster started unconditionally would be two
+   * clusters, and the copy running the tests would look at the empty one. The first copy starts
+   * it and writes its addresses down; the second finds them and touches Testcontainers not at
+   * all.
+   */
+  private static final String REST_ADDRESS_PROPERTY = "businesscockpit.test.cluster.rest";
+
+  /**
+   * @see #REST_ADDRESS_PROPERTY
+   */
+  private static final String GRPC_ADDRESS_PROPERTY = "businesscockpit.test.cluster.grpc";
+
+  static {
+    startTheClusterUnlessItRuns();
+  }
+
+  private static void startTheClusterUnlessItRuns() {
+
+    if (System.getProperty(REST_ADDRESS_PROPERTY) != null) {
+      return;
+    }
+    final var network = Network.newNetwork();
+    final var elasticsearch = ClusterUnderTest.elasticsearch(network);
+    final var camunda = ClusterUnderTest.cluster(network, elasticsearch);
+    elasticsearch.start();
+    camunda.start();
+    // stopped by this copy of the class rather than by a test callback: the copy which
+    // starts the cluster is the one built with the application, and no test ever runs in it
+    Runtime
+        .getRuntime()
+        .addShutdownHook(new Thread(() -> {
+          camunda.stop();
+          elasticsearch.stop();
+        }));
+    System
+        .setProperty(
+            REST_ADDRESS_PROPERTY,
+            "http://%s:%d".formatted(camunda.getHost(), camunda.getMappedPort(8080)));
+    System
+        .setProperty(
+            GRPC_ADDRESS_PROPERTY,
+            "http://%s:%d".formatted(camunda.getHost(), camunda.getMappedPort(26500)));
+
+  }
+
+
+  @RegisterExtension
+  static final QuarkusExtensionTest extensionTest = new QuarkusExtensionTest()
+      .withApplicationRoot(
+          jar -> jar
+              .addAsResource("business-cockpit.yaml", "application.yaml")
+              .addAsResource("c8-cockpit/processes/cockpit-process.bpmn")
+              .addAsResource(
+                  "workflow-module-descriptor/workflow-module", "META-INF/workflow-module")
+              .addClass(TestAggregate.class)
+              .addClass(TestAggregatePersistence.class)
+              .addClass(TestWorkflowService.class)
+              // the test class runs in the application's class loader, so everything it
+              // touches has to be reachable from there as well - the server it asks about
+              // what arrived, and the cluster it was started against
+              .addClass(CockpitServer.class)
+              .addClass(ClusterUnderTest.class)
+              .addClass(ClusterLog.class)
+              .addAsResource("camunda8-cluster.properties"))
+      .overrideRuntimeConfigKey(
+          "vanillabp.extensions.business-cockpit.rest.base-url", CockpitServer.baseUrl())
+      .overrideRuntimeConfigKey(
+          "vanillabp.adapters.c8.rest-address", System.getProperty(REST_ADDRESS_PROPERTY))
+      .overrideRuntimeConfigKey(
+          "vanillabp.adapters.c8.grpc-address", System.getProperty(GRPC_ADDRESS_PROPERTY));
+
+  @Inject
+  TestWorkflowService workflowService;
+
+  @Inject
+  TestAggregatePersistence aggregates;
+
+  @Inject
+  Camunda8ClientFactoryRegistry clientFactories;
+
+  @Inject
+  List<BusinessCockpitBpmsBridge> bridges;
+
+  @Inject
+  UserTransaction transaction;
+
+  private CamundaClient client() {
+
+    return clientFactories.getFactory(ADAPTER_ID).getClient();
+
+  }
+
+  private TestAggregate aStartedWorkflow(
+      final String customer) throws Exception {
+
+    transaction.begin();
+    try {
+      final var aggregate = new TestAggregate();
+      aggregate.setCustomer(customer);
+      final var started = workflowService.processes().startWorkflow(aggregate);
+      transaction.commit();
+      return started;
+    } catch (final RuntimeException e) {
+      transaction.rollback();
+      throw e;
+    }
+
+  }
+
+  private static <T> T awaitValue(
+      final Supplier<T> value,
+      final String description) {
+
+    final var deadline = System.currentTimeMillis() + 240_000;
+    while (System.currentTimeMillis() < deadline) {
+      final var found = value.get();
+      if (found != null) {
+        return found;
+      }
+      try {
+        Thread.sleep(250);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("Interrupted while waiting for "
+            + description, e);
+      }
+    }
+    throw new AssertionError("Timed out waiting for "
+        + description);
+
+  }
+
+  private io.camunda.zeebe.model.bpmn.BpmnModelInstance deployedModelOf(
+      final String scopedProcessId) {
+
+    final var definitionKey = awaitValue(
+        () -> client()
+            .newProcessDefinitionSearchRequest()
+            .filter(filter -> filter.processDefinitionId(scopedProcessId))
+            .send()
+            .join()
+            .items()
+            .stream()
+            .findFirst()
+            .map(definition -> definition.getProcessDefinitionKey())
+            .orElse(null),
+        "the deployed process definition '%s'".formatted(scopedProcessId));
+    final var xml = client().newProcessDefinitionGetXmlRequest(definitionKey).send().join();
+    return Bpmn
+        .readModelFromStream(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+
+  }
+
+  private static List<String> executionListenerTypesOf(
+      final io.camunda.zeebe.model.bpmn.BpmnModelInstance model,
+      final String elementId) {
+
+    final var element = (BaseElement) model.getModelElementById(elementId);
+    final var listeners = element.getSingleExtensionElement(ZeebeExecutionListeners.class);
+    return listeners == null
+        ? List.of()
+        : listeners
+            .getExecutionListeners()
+            .stream()
+            .map(io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListener::getType)
+            .toList();
+
+  }
+
+  private String userTaskIdOf(
+      final TestAggregate aggregate) {
+
+    return awaitValue(
+        () -> client()
+            .newUserTaskSearchRequest()
+            .filter(
+                filter -> filter
+                    .state(UserTaskState.CREATED)
+                    .processInstanceVariables(
+                        Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
+            .send()
+            .join()
+            .items()
+            .stream()
+            .findFirst()
+            .map(task -> String.valueOf(task.getUserTaskKey()))
+            .orElse(null),
+        "the user task of aggregate %s".formatted(aggregate.getId()));
+
+  }
+
+  @Test
+  @DisplayName("The deployed model carries the cockpit's listeners")
+  public void theDeployedModelCarriesTheListeners() {
+
+    final var scopedProcessId = "%s__%s".formatted(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID);
+    final var scopedTaskDefinition = "%s__%s__%s"
+        .formatted(
+            MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, TestWorkflowService.TASK_DEFINITION);
+    final var model = deployedModelOf(scopedProcessId);
+
+    final var taskListenerTypes = ((UserTask) model
+        .getModelElementById(TestWorkflowService.BPMN_TASK_ID))
+        .getSingleExtensionElement(ZeebeTaskListeners.class)
+        .getTaskListeners()
+        .stream()
+        .map(ZeebeTaskListener::getType)
+        .toList();
+    assertTrue(
+        taskListenerTypes.contains(Camunda8CockpitListeners.listenerTypeOf(scopedTaskDefinition)),
+        taskListenerTypes.toString());
+    assertTrue(
+        executionListenerTypesOf(model, "Start")
+            .contains(Camunda8CockpitListeners.listenerTypeOf(scopedProcessId)),
+        "the start event carries no listener of the cockpit");
+    assertTrue(
+        executionListenerTypesOf(model, scopedProcessId)
+            .contains(Camunda8CockpitListeners.listenerTypeOf(scopedProcessId)),
+        "the process carries no listener of the cockpit");
+
+  }
+
+  @Test
+  @DisplayName("A BPMN process no workflow aggregate claims gets no listeners")
+  public void anUnclaimedProcessIsLeftAlone() {
+
+    final var scopedProcessId = "%s__%s".formatted(MODULE_ID, UNCLAIMED_PROCESS_ID);
+    final var model = deployedModelOf(scopedProcessId);
+
+    // a listener of this extension carries no retries, so a job nobody serves would stop the
+    // workflow where it sits - and nobody serves a process this application knows no case of
+    assertEquals(List.of(), executionListenerTypesOf(model, scopedProcessId));
+    assertEquals(List.of(), executionListenerTypesOf(model, "RetriedStart"));
+    assertFalse(
+        Bpmn
+            .convertToString(model)
+            .contains(
+                Camunda8CockpitListeners
+                    .listenerTypeOf("%s__%s__retriedApprove".formatted(MODULE_ID, UNCLAIMED_PROCESS_ID))),
+        "the unclaimed process carries a task listener of the cockpit");
+
+  }
+
+  @Test
+  @DisplayName("One bridge per configured Camunda 8 adapter id is a bean")
+  public void oneBridgePerAdapterIdIsABean() {
+
+    assertEquals(
+        List.of(ADAPTER_ID), bridges.stream().map(BusinessCockpitBpmsBridge::adapterId).toList());
+    assertEquals("camunda8", bridges.getFirst().adapterType());
+
+  }
+
+  @Test
+  @DisplayName("A started workflow and its user task reach the cockpit, enriched by the application")
+  public void aStartedWorkflowReachesTheCockpit() throws Exception {
+
+    final var started = aStartedWorkflow("Anna");
+
+    final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Anna\"");
+    assertTrue(
+        workflow.body().contains("\"bpmnProcessId\":\"%s\"".formatted(TestWorkflowService.BPMN_PROCESS_ID)),
+        workflow.body());
+
+    final var userTask = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Anna\"");
+    assertTrue(
+        userTask.body().contains("\"taskDefinition\":\"%s\"".formatted(TestWorkflowService.TASK_DEFINITION)),
+        userTask.body());
+    assertTrue(userTask.body().contains("\"candidateGroups\":[\"approvers\"]"), userTask.body());
+
+    // the details provider ran on the real aggregate and its change was saved
+    assertEquals(TestWorkflowService.APPROVE_NOTE, aggregates.byId(started.getId()).getNote());
+
+  }
+
+  @Test
+  @DisplayName("An application reporting a changed aggregate updates its workflow and its user task")
+  public void aggregateChangedUpdatesWhatTheCockpitShows() throws Exception {
+
+    final var started = aStartedWorkflow("Cleo");
+    final var userTaskId = userTaskIdOf(started);
+
+    transaction.begin();
+    try {
+      final var attached = aggregates.byId(started.getId());
+      attached.setCustomer("Cleo the second");
+      workflowService.businessCockpit().aggregateChanged(attached);
+      workflowService.businessCockpit().aggregateChanged(attached, userTaskId);
+    } finally {
+      transaction.commit();
+    }
+
+    final var workflow = CockpitServer.awaitRequest("/updated", "\"customer\":\"Cleo the second\"");
+    assertTrue(workflow.path().contains("/workflow/"), workflow.path());
+    CockpitServer.awaitRequest("/usertask/%s/updated".formatted(userTaskId), "Cleo the second");
+
+  }
+
+  @Test
+  @DisplayName("An application can read one user task of its own case")
+  public void getUserTaskAnswersForItsOwnAggregate() throws Exception {
+
+    final var started = aStartedWorkflow("Bert");
+    final var userTaskId = userTaskIdOf(started);
+
+    transaction.begin();
+    try {
+      final var userTask = workflowService
+          .businessCockpit()
+          .getUserTask(aggregates.byId(started.getId()), userTaskId);
+      assertTrue(userTask.isPresent(), "the case's own task was not answered");
+      assertEquals(TestWorkflowService.TASK_DEFINITION, userTask.get().getTaskDefinition());
+      assertEquals(TestWorkflowService.BPMN_TASK_ID, userTask.get().getBpmnTaskId());
+    } finally {
+      transaction.commit();
+    }
+
+  }
+
+}

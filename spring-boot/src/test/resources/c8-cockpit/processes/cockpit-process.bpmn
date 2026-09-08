@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="CockpitDefinitions" targetNamespace="http://vanillabp.io/businesscockpit/camunda8">
+  <bpmn:process id="CockpitProcess" isExecutable="true">
+    <bpmn:startEvent id="Start">
+      <bpmn:outgoing>ToApprove</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToApprove" sourceRef="Start" targetRef="Approve" />
+    <bpmn:userTask id="Approve" name="Approve the order">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="approve" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToApprove</bpmn:incoming>
+      <bpmn:outgoing>ToEnd</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="ToEnd" sourceRef="Approve" targetRef="End" />
+    <bpmn:endEvent id="End">
+      <bpmn:incoming>ToEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:process id="RetriedDetailsProcess" isExecutable="true">
+    <bpmn:startEvent id="RetriedStart">
+      <bpmn:outgoing>ToRetriedApprove</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToRetriedApprove" sourceRef="RetriedStart" targetRef="RetriedApprove" />
+    <bpmn:userTask id="RetriedApprove" name="Approve although the details provider stumbles">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="retriedApprove" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToRetriedApprove</bpmn:incoming>
+      <bpmn:outgoing>ToRetriedEnd</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="ToRetriedEnd" sourceRef="RetriedApprove" targetRef="RetriedEnd" />
+    <bpmn:endEvent id="RetriedEnd">
+      <bpmn:incoming>ToRetriedEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

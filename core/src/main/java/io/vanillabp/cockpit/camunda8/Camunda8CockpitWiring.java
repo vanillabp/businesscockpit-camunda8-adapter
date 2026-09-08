@@ -1,0 +1,264 @@
+package io.vanillabp.cockpit.camunda8;
+
+import java.util.LinkedHashSet;
+import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
+import io.camunda.zeebe.model.bpmn.instance.Process;
+import io.camunda.zeebe.model.bpmn.instance.UserTask;
+import io.vanillabp.camunda8.Camunda8ProcessingContext;
+import io.vanillabp.camunda8.wiring.Camunda8TaskWiring;
+import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
+import io.vanillabp.cockpit.extension.wiring.BusinessCockpitWiringService;
+import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
+import io.vanillabp.integration.extension.spi.ExtensionWiringService;
+
+/**
+ * The Camunda 8 half of the Business Cockpit in VanillaBP's deployment pipeline.
+ * <p>
+ * It declares the Camunda 8 adapter's model and processing-context types, so it takes part in
+ * the deployment of a workflow module only where that module runs on Camunda 8. What it does
+ * there is add the listeners which make a cluster say what it is doing, remember where it put
+ * them, and open the workers those listeners hand their jobs to.
+ * <p>
+ * The order is the Business Cockpit's own, the last one, so whatever an adapter or another
+ * extension does to a model has happened by the time this runs - which is also what puts the
+ * cockpit's listeners behind VanillaBP's own on every element they share.
+ */
+public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelInstance, Camunda8ProcessingContext> {
+
+  private static final Logger logger = LoggerFactory.getLogger(Camunda8CockpitWiring.class);
+
+  private final Camunda8Clients clients;
+
+  private final Camunda8CockpitDeployments deployments;
+
+  private final Camunda8CockpitWorkers workers;
+
+  private final WorkflowTaskWiring workflowTaskWiring;
+
+  /**
+   * @param clients The clusters of the configured Camunda 8 adapters
+   * @param deployments Where what was wired is remembered
+   * @param workers The workers serving the listeners
+   * @param workflowTaskWiring VanillaBP's registry of what the application declared, which is
+   *          what names the workflow aggregate's id variable
+   */
+  public Camunda8CockpitWiring(
+      final Camunda8Clients clients,
+      final Camunda8CockpitDeployments deployments,
+      final Camunda8CockpitWorkers workers,
+      final WorkflowTaskWiring workflowTaskWiring) {
+
+    this.clients = clients;
+    this.deployments = deployments;
+    this.workers = workers;
+    this.workflowTaskWiring = workflowTaskWiring;
+
+  }
+
+  @Override
+  public Class<BpmnModelInstance> getModelType() {
+
+    return BpmnModelInstance.class;
+
+  }
+
+  @Override
+  public Class<Camunda8ProcessingContext> getProcessContextType() {
+
+    return Camunda8ProcessingContext.class;
+
+  }
+
+  @Override
+  public int getOrder() {
+
+    return BusinessCockpitWiringService.ORDER;
+
+  }
+
+  @Override
+  public void wireBpmn(
+      final String workflowModuleId,
+      final String filename,
+      final String bpmnProcessId,
+      final BpmnModelInstance model,
+      final Camunda8ProcessingContext context) {
+
+    final var aggregateIdName = aggregateIdNameOf(workflowModuleId, bpmnProcessId);
+    if (aggregateIdName == null) {
+      // A listener carries no retries, so an unserved job stops the workflow where it sits.
+      // A BPMN process no @WorkflowService class claims has no workflow aggregate, therefore
+      // nothing the cockpit could report a case for, and therefore no listener either
+      logger
+          .debug(
+              "Camunda8: the Business Cockpit adds no listeners to BPMN process '{}' of workflow module '{}' (file '{}'): no workflow aggregate of this application claims it",
+              bpmnProcessId, workflowModuleId, filename);
+      return;
+    }
+
+    final var process = processInModel(model, workflowModuleId, bpmnProcessId);
+    if (process.isEmpty()) {
+      logger
+          .debug(
+              "Camunda8: the Business Cockpit found no BPMN process '{}' in file '{}' of workflow module '{}' under any of the identifiers this application's adapters deploy it as",
+              bpmnProcessId, filename, workflowModuleId);
+      return;
+    }
+    reportTheWorkflow(workflowModuleId, bpmnProcessId, process.get(), aggregateIdName);
+    reportTheUserTasks(
+        workflowModuleId, bpmnProcessId, model, process.get().getId(), aggregateIdName);
+
+  }
+
+  /**
+   * Adds what makes the cluster say that a workflow of this process began and that it ended: an
+   * <code>end</code> listener on every start event, and one at the process itself.
+   *
+   * @param workflowModuleId The workflow module
+   * @param bpmnProcessId The BPMN process id as the application wrote it
+   * @param process The BPMN process element, carrying the id the cluster will know
+   * @param aggregateIdName The variable the workflow aggregate's id is carried in
+   */
+  private void reportTheWorkflow(
+      final String workflowModuleId,
+      final String bpmnProcessId,
+      final Process process,
+      final String aggregateIdName) {
+
+    final var scopedBpmnProcessId = process.getId();
+    final var listenerType = Camunda8CockpitListeners.listenerTypeOf(scopedBpmnProcessId);
+
+    Camunda8CockpitListeners
+        .startEventsOf(process)
+        .forEach(startEvent -> {
+          Camunda8CockpitListeners.addStartEventListener(startEvent, listenerType);
+          deployments
+              .register(
+                  workflowModuleId,
+                  new WiredListener(
+                      listenerType, scopedBpmnProcessId, bpmnProcessId, startEvent.getId(), false, aggregateIdName));
+        });
+
+    Camunda8CockpitListeners.addProcessListener(process, listenerType);
+    deployments
+        .register(
+            workflowModuleId,
+            new WiredListener(
+                listenerType, scopedBpmnProcessId, bpmnProcessId, scopedBpmnProcessId, false, aggregateIdName));
+
+  }
+
+  /**
+   * Adds what makes the cluster say what happened to a user task of this process, to every user
+   * task the cluster manages itself. A user task served by a job worker is none of this
+   * extension's business: VanillaBP delivers it like any other task.
+   *
+   * @param workflowModuleId The workflow module
+   * @param bpmnProcessId The BPMN process id as the application wrote it
+   * @param model The model of the file being wired
+   * @param scopedBpmnProcessId The process id the cluster will know
+   * @param aggregateIdName The variable the workflow aggregate's id is carried in
+   */
+  private void reportTheUserTasks(
+      final String workflowModuleId,
+      final String bpmnProcessId,
+      final BpmnModelInstance model,
+      final String scopedBpmnProcessId,
+      final String aggregateIdName) {
+
+    Camunda8TaskWiring
+        .userTasksOfHeldModel(model, scopedBpmnProcessId)
+        .forEach(userTask -> {
+          final var listenerType = Camunda8CockpitListeners
+              .listenerTypeOf(userTask.externalFormReference());
+          if (model.getModelElementById(userTask.activityId()) instanceof UserTask element) {
+            Camunda8CockpitListeners.addUserTaskListeners(element, listenerType);
+          }
+          deployments
+              .register(
+                  workflowModuleId,
+                  new WiredListener(
+                      listenerType, scopedBpmnProcessId, bpmnProcessId, userTask.activityId(), true, aggregateIdName));
+        });
+
+  }
+
+  @Override
+  public void startWorkflowProcessing(
+      final String workflowModuleId,
+      final Camunda8ProcessingContext bpmsProcessingContext) {
+
+    workers.open(workflowModuleId);
+
+  }
+
+  @Override
+  public void stopWorkflowProcessing(
+      final String workflowModuleId,
+      final Camunda8ProcessingContext bpmsProcessingContext) {
+
+    workers.close(workflowModuleId);
+
+  }
+
+  /**
+   * The BPMN process this call is about, as it stands in the model.
+   * <p>
+   * The pipeline hands over the process id the application wrote, while the model already
+   * carries the identifiers the cluster will know - name-clash avoidance rewrote them before
+   * any wiring ran. Which of the two spellings this model uses depends on the adapter it was
+   * prepared for, and the pipeline does not say which adapter that is, so the question is put
+   * the other way round: every configured Camunda 8 adapter is asked what it would call this
+   * process, and the model answers which of those it holds.
+   */
+  private Optional<Process> processInModel(
+      final BpmnModelInstance model,
+      final String workflowModuleId,
+      final String bpmnProcessId) {
+
+    final var candidates = new LinkedHashSet<String>();
+    clients
+        .adapterIds()
+        .forEach(
+            adapterId -> candidates
+                .add(clients.of(adapterId).scope().scopedProcessIdOf(workflowModuleId, bpmnProcessId)));
+    // an application without any configured Camunda 8 adapter never gets here, but a model
+    // whose ids were not rewritten still carries the plain one
+    candidates.add(bpmnProcessId);
+    return candidates
+        .stream()
+        .map(candidate -> Camunda8CockpitListeners.processOf(model, candidate))
+        .filter(Optional::isPresent)
+        .map(Optional::get)
+        .findFirst();
+
+  }
+
+  /**
+   * The variable a BPMN process carries the workflow aggregate's id in.
+   *
+   * @return The name, or <code>null</code> where no workflow aggregate of this application
+   *         claims the process
+   */
+  private String aggregateIdNameOf(
+      final String workflowModuleId,
+      final String bpmnProcessId) {
+
+    try {
+      return workflowTaskWiring.resolveWorkflowAggregateIdName(workflowModuleId, bpmnProcessId);
+    } catch (final RuntimeException e) {
+      logger
+          .debug(
+              "Camunda8: the BPMN process '{}' of workflow module '{}' has no known workflow aggregate",
+              bpmnProcessId, workflowModuleId, e);
+      return null;
+    }
+
+  }
+
+}

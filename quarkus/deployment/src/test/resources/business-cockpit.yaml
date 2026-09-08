@@ -1,0 +1,28 @@
+quarkus:
+  datasource:
+    db-kind: h2
+    jdbc:
+      url: jdbc:h2:mem:c8-cockpit-quarkus;DB_CLOSE_DELAY=-1
+vanillabp:
+  outbox:
+    poll-interval: PT0.5S
+    attempt-frequency: PT0.5S
+  adapters:
+    c8:
+      type: camunda8
+      name-clash-avoidance: use-prefix
+      job-timeout: PT30S
+  prioritized-adapters:
+    - c8
+  workflow-modules:
+    c8-cockpit:
+      adapters:
+        c8:
+          resources-location: classpath:c8-cockpit/processes
+      extensions:
+        business-cockpit:
+          workflow-module-uri: http://localhost:8081/c8-cockpit
+          ui-uri-type: WEBPACK_MF_REACT
+          ui-uri-path: /remoteEntry.js
+          i18n-languages: en
+          bpmn-description-language: en
