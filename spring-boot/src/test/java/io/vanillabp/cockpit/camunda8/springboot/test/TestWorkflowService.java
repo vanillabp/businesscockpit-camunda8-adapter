@@ -36,6 +36,9 @@ public class TestWorkflowService {
   /** The BPMN element id of the user task. */
   public static final String BPMN_TASK_ID = "Approve";
 
+  /** The message the second start event of the process waits for. */
+  public static final String START_MESSAGE = "StartCockpitProcess";
+
   /** What the details provider writes into the aggregate, so that a test can see it ran. */
   public static final String APPROVE_NOTE = "seen by the details provider";
 
@@ -104,7 +107,15 @@ public class TestWorkflowService {
       final TestAggregate aggregate,
       final PrefilledWorkflowDetails prefilled) {
 
-    prefilled.setDetails(Map.of("customer", aggregate.getCustomer()));
+    // the aggregate id is in there so that a test can see WHICH case a report is about: the
+    // cluster tells the extension the aggregate id and the extension loads this very aggregate
+    // by it, so a report carrying it is a report which found its case
+    prefilled
+        .setDetails(
+            Map
+                .of(
+                    "customer", aggregate.getCustomer(), "aggregateId",
+                    String.valueOf(aggregate.getId())));
     return prefilled;
 
   }

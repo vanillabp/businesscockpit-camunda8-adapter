@@ -1,4 +1,4 @@
-package io.vanillabp.cockpit.camunda8.springboot.test;
+package io.vanillabp.cockpit.camunda8.test.support;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 import org.testcontainers.containers.output.OutputFrame;
 
 /**
- * What the Camunda 8 containers of this module printed, written into a file below
+ * What the Camunda 8 containers of a module printed, written into a file below its
  * {@code target}.
  * <p>
  * Every integration test class here brings a cluster of its own, and a red build
@@ -29,14 +29,13 @@ import org.testcontainers.containers.output.OutputFrame;
  * test which was running - the containers are created while their classes are loaded, so
  * there is no test name to ask for at that point.
  * <p>
- * The Quarkus integration tests carry a writer of their own. The two modules share no
- * test classpath and this repository publishes no test jar, so a class used by both would
- * have to be a module of its own for forty lines.
+ * The path is relative, so every module writes its own file: a build starts each module in
+ * its own directory, and the two platforms are two runs.
  */
 public final class ClusterLog {
 
   /**
-   * Where the containers of this module write. Relative to the module, so a run from the
+   * Where the containers of the module being built write. Relative to it, so a run from the
    * IDE and a run from Maven produce the same file.
    */
   public static final Path FILE = Path

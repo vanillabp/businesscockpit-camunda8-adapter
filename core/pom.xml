@@ -52,6 +52,14 @@
       <artifactId>vanillabp-extension-spi</artifactId>
     </dependency>
     <dependency>
+      <!-- arrives transitively as well; declared because this module reads two of its types:
+           the name-clash avoidance a workflow module was deployed under, and the registry
+           which names the variable a BPMN process carries the workflow aggregate's id in.
+           Nothing here implements it - that is a BPMS adapter's business. -->
+      <groupId>io.vanillabp</groupId>
+      <artifactId>vanillabp-adapter-spi</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.camunda</groupId>
       <artifactId>camunda-client-java</artifactId>
     </dependency>

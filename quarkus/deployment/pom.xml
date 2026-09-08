@@ -89,6 +89,14 @@
       <artifactId>test-utils</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- the cluster these tests run against and the cockpit server they report to, shared
+        with the Spring Boot module rather than copied out of it -->
+      <groupId>io.vanillabp.businesscockpit</groupId>
+      <artifactId>businesscockpit-camunda8-adapter-test-support</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

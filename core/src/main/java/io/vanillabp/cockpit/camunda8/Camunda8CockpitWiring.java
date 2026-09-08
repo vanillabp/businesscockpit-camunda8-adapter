@@ -93,7 +93,8 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
     if (aggregateIdName == null) {
       // A listener carries no retries, so an unserved job stops the workflow where it sits.
       // A BPMN process no @WorkflowService class claims has no workflow aggregate, therefore
-      // nothing the cockpit could report a case for, and therefore no listener either
+      // nothing the cockpit could report a case for, and therefore no listener either - see
+      // decision 5 in the repository's DECISIONS.md
       logger
           .debug(
               "Camunda8: the Business Cockpit adds no listeners to BPMN process '{}' of workflow module '{}' (file '{}'): no workflow aggregate of this application claims it",
@@ -111,7 +112,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
     }
     reportTheWorkflow(workflowModuleId, bpmnProcessId, process.get(), aggregateIdName);
     reportTheUserTasks(
-        workflowModuleId, bpmnProcessId, model, process.get().getId(), aggregateIdName);
+        workflowModuleId, filename, bpmnProcessId, model, process.get().getId(), aggregateIdName);
 
   }
 
@@ -141,7 +142,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
               .register(
                   workflowModuleId,
                   new WiredListener(
-                      listenerType, scopedBpmnProcessId, bpmnProcessId, startEvent.getId(), false, aggregateIdName));
+                      listenerType, scopedBpmnProcessId, bpmnProcessId, startEvent.getId(), aggregateIdName));
         });
 
     Camunda8CockpitListeners.addProcessListener(process, listenerType);
@@ -149,7 +150,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
         .register(
             workflowModuleId,
             new WiredListener(
-                listenerType, scopedBpmnProcessId, bpmnProcessId, scopedBpmnProcessId, false, aggregateIdName));
+                listenerType, scopedBpmnProcessId, bpmnProcessId, scopedBpmnProcessId, aggregateIdName));
 
   }
 
@@ -157,8 +158,21 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * Adds what makes the cluster say what happened to a user task of this process, to every user
    * task the cluster manages itself. A user task served by a job worker is none of this
    * extension's business: VanillaBP delivers it like any other task.
+   * <p>
+   * Which user tasks those are, and what each of them is called, is not decided here. The
+   * adapter's own deployment path decides it, and this is that very method: a task the adapter
+   * wired is a task the cockpit reports, under the same task definition - the external form
+   * reference, which is what a <code>&#64;UserTaskDetailsProvider</code> method is matched by
+   * and what Version 1 named its listeners after. Reading the model with the method meant for
+   * models a cluster already holds would take a Version 1 formKey as a task definition and
+   * produce a listener type Version 1 never wrote.
+   * <p>
+   * Calling it a second time adds nothing: the adapter ran before this extension and its
+   * listeners are already in the model, which is what that method checks before it inserts
+   * anything. A user task it would refuse has already ended the deployment by then.
    *
    * @param workflowModuleId The workflow module
+   * @param filename The file being wired, for the message a refused user task produces
    * @param bpmnProcessId The BPMN process id as the application wrote it
    * @param model The model of the file being wired
    * @param scopedBpmnProcessId The process id the cluster will know
@@ -166,13 +180,14 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    */
   private void reportTheUserTasks(
       final String workflowModuleId,
+      final String filename,
       final String bpmnProcessId,
       final BpmnModelInstance model,
       final String scopedBpmnProcessId,
       final String aggregateIdName) {
 
     Camunda8TaskWiring
-        .userTasksOfHeldModel(model, scopedBpmnProcessId)
+        .userTasksOf(model, scopedBpmnProcessId, workflowModuleId, filename)
         .forEach(userTask -> {
           final var listenerType = Camunda8CockpitListeners
               .listenerTypeOf(userTask.externalFormReference());
@@ -183,7 +198,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
               .register(
                   workflowModuleId,
                   new WiredListener(
-                      listenerType, scopedBpmnProcessId, bpmnProcessId, userTask.activityId(), true, aggregateIdName));
+                      listenerType, scopedBpmnProcessId, bpmnProcessId, userTask.activityId(), aggregateIdName));
         });
 
   }

@@ -23,8 +23,8 @@ The Version 1 adapter is still where it always was, as `adapters/camunda8` of th
 until the cockpit switches to VanillaBP 2. Nothing of it was moved here: this repository starts from
 the extension, so its history never carries the Version 1 shape. What it does carry is Version 1's
 task listeners, byte for byte, because an application upgrading has to keep the process version its
-workflows are running on. The start events are the one deliberate difference, and
-[decision 1](./DECISIONS.md) says why.
+workflows are running on ([decision 4](./DECISIONS.md)). The start events are the one deliberate
+difference, and [decision 1](./DECISIONS.md) says why.
 
 ## What is here today
 
@@ -41,6 +41,11 @@ Beside them, `test-coverage-report` measures each platform separately and its `c
 the build below 85 %, the three GitHub Actions workflows, the release-line machinery both of the
 sections below describe, the formatting rules every VanillaBP repository shares, and the license and
 notice files.
+
+One more module is in the tree and in no release: `test-support` holds the cluster the integration
+tests of both platforms run against, the file its output is written to and the cockpit server they
+report to. A test classpath cannot read another module's test classes, so the alternative was a second
+copy of all three.
 
 Deliberately absent, and not as an empty placeholder:
 

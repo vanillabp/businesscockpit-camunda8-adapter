@@ -15,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
+import io.camunda.zeebe.model.bpmn.instance.BaseElement;
 import io.camunda.zeebe.model.bpmn.instance.StartEvent;
 import io.camunda.zeebe.model.bpmn.instance.UserTask;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListener;
@@ -91,8 +92,7 @@ public class Camunda8CockpitListenersTest {
       final BpmnModelInstance model,
       final String elementId) {
 
-    final var element = (io.camunda.zeebe.model.bpmn.instance.BaseElement) model
-        .getModelElementById(elementId);
+    final var element = (BaseElement) model.getModelElementById(elementId);
     final var listeners = element.getSingleExtensionElement(ZeebeExecutionListeners.class);
     return listeners == null
         ? List.of()
@@ -110,6 +110,18 @@ public class Camunda8CockpitListenersTest {
 
   }
 
+  /**
+   * Both models are wired by VanillaBP's Camunda 8 adapter first, which is not a convenience of
+   * the test but the situation being measured. That adapter puts a <code>creating</code> and a
+   * <code>canceling</code> listener on every user task it claims, and with them the
+   * <code>zeebe:taskListeners</code> container - so by the time either the Version 1 code or
+   * this extension runs, the container is always there. Version 1 had a second branch for a
+   * task which carried none, and it wrote a different order (<code>creating</code>,
+   * <code>completing</code>, <code>canceling</code>); that branch was unreachable behind the
+   * adapter then and is unreachable now, which is why the byte-identity is measured on the
+   * branch which did run. What this extension produces for a task without a container is
+   * pinned separately by {@link #aTaskWithoutAContainerGetsTheOrderThisExtensionDocuments()}.
+   */
   @Test
   @DisplayName("The task listeners are byte-identical to the ones Version 1 wrote")
   public void taskListenersAreByteIdenticalToVersion1() {
@@ -153,6 +165,64 @@ public class Camunda8CockpitListenersTest {
     assertEquals(
         Bpmn.convertToString(wiredByVersion1),
         Bpmn.convertToString(wiredByTheExtension));
+
+  }
+
+  @Test
+  @DisplayName("A user task the adapter claimed always carries the listener container before this extension runs")
+  public void theAdapterLeavesTheListenerContainerBehind() {
+
+    final var withoutAnyListener = aModelVanillaBpWired("""
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="%s" />""".formatted(FORM_REFERENCE));
+    final var withTheModellersOwn = aModelVanillaBpWired("""
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="%s" />
+        <zeebe:taskListeners>
+          <zeebe:taskListener eventType="creating" type="custom-creating" />
+        </zeebe:taskListeners>""".formatted(FORM_REFERENCE));
+
+    // this is what makes the byte-identity test measure the whole promise: Version 1's other
+    // branch, the one for a task carrying no listeners at all, cannot be reached behind the
+    // adapter, because the adapter wired its own two listeners before the cockpit sees the model
+    assertEquals(
+        List.of("creating", "canceling"),
+        taskListenersOf(withoutAnyListener)
+            .stream()
+            .map(listener -> listener.getEventType().toString())
+            .toList());
+    assertEquals(
+        List.of("creating", "custom-creating", "canceling"),
+        taskListenersOf(withTheModellersOwn)
+            .stream()
+            .map(
+                listener -> listener.getType().startsWith("io.vanillabp.userTask:")
+                    ? listener.getEventType().toString()
+                    : listener.getType())
+            .toList());
+
+  }
+
+  @Test
+  @DisplayName("A user task carrying no listeners at all gets creating, canceling and completing, in that order")
+  public void aTaskWithoutAContainerGetsTheOrderThisExtensionDocuments() {
+
+    // NOT what the extension meets in a deployment - the adapter wires first and leaves the
+    // container behind, see theAdapterLeavesTheListenerContainerBehind(). It is written down
+    // because it is the one case in which this extension and Version 1 would differ: Version 1
+    // inserted creating, completing, canceling here, this extension inserts each listener
+    // behind everything it has to run after, which reads creating, canceling, completing
+    final var bpmn = model("""
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="%s" />""".formatted(FORM_REFERENCE));
+    addCockpitTaskListeners(bpmn);
+
+    assertEquals(
+        List
+            .of(
+                ZeebeTaskListenerEventType.creating, ZeebeTaskListenerEventType.canceling,
+                ZeebeTaskListenerEventType.completing),
+        taskListenersOf(bpmn).stream().map(ZeebeTaskListener::getEventType).toList());
 
   }
 

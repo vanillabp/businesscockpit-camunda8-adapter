@@ -11,12 +11,11 @@ vanillabp:
   adapters:
     c8:
       type: camunda8
-      name-clash-avoidance: use-prefix
       job-timeout: PT30S
-      stream-enabled: false
-      stream-timeout: PT10S
-      poll-interval: PT0.1S
-      request-timeout: PT20S
+      auth:
+        method: BASIC
+        username: demo
+        password: demo
   prioritized-adapters:
     - c8
   extensions:

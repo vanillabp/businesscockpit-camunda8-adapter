@@ -36,9 +36,8 @@ import io.vanillabp.cockpit.extension.spi.WorkflowReference;
  * transition when the completion arrives, which is after this method returned.
  * <p>
  * A failure fails the job, and because these listeners carry no retries that raises an incident
- * rather than repeating quietly. That is deliberate and it is what Version 1 did: a report
- * which cannot be written is a defect somebody has to see, and the alternative - completing the
- * job anyway - would let the workflow run on while the cockpit silently loses the event.
+ * rather than repeating quietly. That is deliberate and it is what Version 1 did - see decision 5
+ * in the repository's DECISIONS.md.
  */
 public class Camunda8CockpitJobHandler implements JobHandler {
 
@@ -104,13 +103,16 @@ public class Camunda8CockpitJobHandler implements JobHandler {
     final var wired = deployments
         .listenerOf(workflowModuleId, job.getBpmnProcessId(), job.getType());
     if (wired.isEmpty()) {
-      // a job type of this extension which this workflow module did not wire: another
-      // application deployed a model of its own under the same identifiers, and its
-      // workflows are none of this module's business
+      // a job type of this extension which this workflow module did not wire. Another
+      // application deployed a model of its own under the same identifiers, and its workflows
+      // are none of this module's business - but that is a guess about somebody else's
+      // deployment, and the other reading is that this module's own model was deployed by a
+      // version of the application which wired more than the running one does, in which case
+      // the cockpit is quietly missing events
       logger
-          .debug(
-              "Camunda8[{}]: not reporting job '{}' of type '{}': workflow module '{}' wired no such listener for BPMN process '{}'",
-              scope.adapterId(), job.getKey(), job.getType(), workflowModuleId, job.getBpmnProcessId());
+          .warn(
+              "Camunda8[{}]: the Business Cockpit does not report job '{}' of type '{}' for BPMN process '{}': workflow module '{}' wired no listener of that type for that process. The job is completed. Where that process is one of this application's, its deployed model carries a listener this version no longer adds",
+              scope.adapterId(), job.getKey(), job.getType(), job.getBpmnProcessId(), workflowModuleId);
       return;
     }
     final var listener = wired.get();
@@ -133,7 +135,22 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       reportUserTask(job, listener, String.valueOf(workflowAggregateId));
       return;
     }
-    reportWorkflow(job, listener, String.valueOf(workflowAggregateId));
+    if (job.getKind() == JobKind.EXECUTION_LISTENER) {
+      reportWorkflow(job, listener, String.valueOf(workflowAggregateId));
+      return;
+    }
+    // this extension adds task listeners and execution listeners and nothing else, so a job of
+    // a third kind carrying one of its job types is a model nobody here understands. Guessing
+    // what it means would report something the cockpit then shows; failing the job says it
+    throw new IllegalStateException(
+        """
+            The Business Cockpit received the %s job '%s' (type '%s') of BPMN process '%s' in \
+            workflow module '%s'! This extension adds task listeners and execution listeners \
+            only, so a job of another kind carrying one of its types comes from a model it did \
+            not write - check which listeners the deployed model of that process carries."""
+            .formatted(
+                job.getKind(), job.getKey(), job.getType(), listener.bpmnProcessId(),
+                workflowModuleId));
 
   }
 
@@ -150,14 +167,21 @@ public class Camunda8CockpitJobHandler implements JobHandler {
             workflowModuleId, listener.bpmnProcessId(),
             Camunda8CockpitListeners.identifierOf(job.getType()));
 
-    publisher
+    final var kind = userTaskKindOf(job);
+    final var written = publisher
         .get()
         .publishUserTaskEvent(
             new UserTaskReference(
                 scope.adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(
                     job), userTaskKey, taskDefinition, job.getElementId()),
-            userTaskKindOf(job), String.valueOf(job.getKey()), OffsetDateTime.now(),
+            kind, String.valueOf(job.getKey()), now(),
             EventTransaction.NEW);
+    if (!written) {
+      logger
+          .debug(
+              "Camunda8[{}]: the {} of user task '{}' (workflow aggregate '{}' of BPMN process '{}') collapsed into the report waiting to be dispatched",
+              scope.adapterId(), kind, userTaskKey, workflowAggregateId, listener.bpmnProcessId());
+    }
 
   }
 
@@ -177,13 +201,37 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       return;
     }
 
-    publisher
+    final var kind = workflowKindOf(job, listener);
+    final var written = publisher
         .get()
         .publishWorkflowEvent(
             new WorkflowReference(
                 scope.adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(job)),
-            workflowKindOf(job, listener), String.valueOf(job.getKey()), OffsetDateTime.now(),
-            EventTransaction.NEW);
+            kind, String.valueOf(job.getKey()), now(), EventTransaction.NEW);
+    if (!written) {
+      logger
+          .debug(
+              "Camunda8[{}]: the {} of workflow '{}' (workflow aggregate '{}' of BPMN process '{}') collapsed into the report waiting to be dispatched",
+              scope.adapterId(), kind, workflowIdOf(job), workflowAggregateId, listener.bpmnProcessId());
+    }
+
+  }
+
+  /**
+   * When the cockpit is told this happened.
+   * <p>
+   * It is the worker's clock rather than the cluster's, because a listener job carries no time
+   * of its own: it is handed out while the transition it gates waits, and what the cluster
+   * records about that transition is written by the exporter afterwards - so there is nothing
+   * to read here which would be closer to the event than the moment the job arrived. The
+   * difference is the time the job spent travelling, and the cockpit shows an event which just
+   * happened either way.
+   *
+   * @return Now, as this worker's machine counts it
+   */
+  private static OffsetDateTime now() {
+
+    return OffsetDateTime.now();
 
   }
 

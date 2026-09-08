@@ -6,7 +6,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -36,7 +35,6 @@ public class Camunda8CockpitDeployments {
    * @param bpmnProcessId The BPMN process id as the application wrote it
    * @param elementId The BPMN element the listener sits on - a user task, a start event, or
    *          the process itself
-   * @param userTask Whether it is a user task's listener; the other two report the workflow
    * @param aggregateIdName The process variable the workflow aggregate's id is carried in
    */
   public record WiredListener(
@@ -44,7 +42,6 @@ public class Camunda8CockpitDeployments {
                               String scopedBpmnProcessId,
                               String bpmnProcessId,
                               String elementId,
-                              boolean userTask,
                               String aggregateIdName) {
   }
 
@@ -127,26 +124,6 @@ public class Camunda8CockpitDeployments {
         .filter(listener -> listener.listenerType().equals(listenerType))
         .filter(listener -> listener.scopedBpmnProcessId().equals(scopedBpmnProcessId))
         .findFirst();
-
-  }
-
-  /**
-   * @param workflowModuleId The workflow module
-   * @return Whether this extension wired anything of that module
-   */
-  public boolean knows(
-      final String workflowModuleId) {
-
-    return !of(workflowModuleId).isEmpty();
-
-  }
-
-  /**
-   * @return Every workflow module something was wired for
-   */
-  public Set<String> workflowModules() {
-
-    return Set.copyOf(listenersByWorkflowModule.keySet());
 
   }
 

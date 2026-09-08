@@ -6,6 +6,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 import io.camunda.client.CamundaClient;
+import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidanceSupport;
@@ -54,6 +55,17 @@ public class Camunda8Clients {
     public CamundaClient client() {
 
       return clientFactories.getFactory(scope.adapterId()).getClient();
+
+    }
+
+    /**
+     * @return What this adapter was configured with, as the adapter resolved it - which is
+     *         where the settings a worker of this extension shares with the adapter's own
+     *         workers come from
+     */
+    public Camunda8AdapterConfiguration configuration() {
+
+      return clientFactories.getFactory(scope.adapterId()).getConfiguration();
 
     }
 

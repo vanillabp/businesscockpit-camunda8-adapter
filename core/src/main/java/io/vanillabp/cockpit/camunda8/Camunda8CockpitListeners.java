@@ -1,5 +1,6 @@
 package io.vanillabp.cockpit.camunda8;
 
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
@@ -24,15 +25,15 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
  * A Camunda 8 cluster tells nobody what it is doing unless it is asked to, so the only way to
  * watch a workflow is to have the cluster hand out a job whenever something happens. Each of
  * these listeners is such a job: it is delivered to a worker of this extension, gates the
- * transition it belongs to until that worker answers, and carries the retries the modeller
- * would otherwise have to set.
+ * transition it belongs to until that worker answers, and carries no retries - see decision 5 in
+ * the repository's DECISIONS.md.
  * <p>
  * <b>The task listeners are byte-for-byte what Version 1 wrote.</b> Their job type, their
  * retries and where they are inserted are a compatibility promise rather than a choice: a
  * Version 1 application whose model is deployed again by Version 2 must produce the same bytes,
- * or the cluster stores a new process version and every running workflow keeps the old one. The
- * execution listeners are NOT the Version 1 ones - see decision 1 in the repository's
- * DECISIONS.md.
+ * or the cluster stores a new process version and every running workflow keeps the old one - see
+ * decision 4 in the repository's DECISIONS.md. The execution listeners are NOT the Version 1
+ * ones - see decision 1 there.
  * <p>
  * Every method here is idempotent: the deployment pipeline hands the same model instance to
  * every executable process of a file, and re-wiring an element which already carries this
@@ -50,8 +51,8 @@ public final class Camunda8CockpitListeners {
   /**
    * What the listeners are given as their retries. A report to the cockpit is not business
    * work the cluster may repeat on its own: a failure is an incident somebody has to look at,
-   * and the entry which carries the report is retried by the outbox rather than by the
-   * cluster.
+   * and the entry which carries the report is retried by the outbox rather than by the cluster -
+   * see decision 5 in the repository's DECISIONS.md.
    */
   public static final String RETRIES = "0";
 
@@ -296,7 +297,7 @@ public final class Camunda8CockpitListeners {
    *         library reads as "insert as the first one"
    */
   private static <T> T lastOf(
-      final java.util.Collection<T> elements) {
+      final Collection<T> elements) {
 
     return elements.isEmpty()
         ? null

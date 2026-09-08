@@ -4,11 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -69,19 +71,19 @@ public class Camunda8CockpitJobHandlerTest {
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
-                    .listenerTypeOf(PROCESS_ID), PROCESS_ID, PROCESS_ID, "Started", false, AGGREGATE_ID_NAME));
+                    .listenerTypeOf(PROCESS_ID), PROCESS_ID, PROCESS_ID, "Started", AGGREGATE_ID_NAME));
     deployments
         .register(
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
-                    .listenerTypeOf(PROCESS_ID), PROCESS_ID, PROCESS_ID, PROCESS_ID, false, AGGREGATE_ID_NAME));
+                    .listenerTypeOf(PROCESS_ID), PROCESS_ID, PROCESS_ID, PROCESS_ID, AGGREGATE_ID_NAME));
     deployments
         .register(
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
-                    .listenerTypeOf(FORM_REFERENCE), PROCESS_ID, PROCESS_ID, "Approve", true, AGGREGATE_ID_NAME));
+                    .listenerTypeOf(FORM_REFERENCE), PROCESS_ID, PROCESS_ID, "Approve", AGGREGATE_ID_NAME));
     handler = new Camunda8CockpitJobHandler(
         new Camunda8Scope("c8", null, null), MODULE_ID, deployments, () -> publisher);
 
@@ -131,7 +133,7 @@ public class Camunda8CockpitJobHandlerTest {
     handler.handle(client, aUserTaskJob(ListenerEventType.ASSIGNING));
 
     assertEquals(
-        java.util.List
+        List
             .of(
                 UserTaskEventKind.CREATED, UserTaskEventKind.CANCELED, UserTaskEventKind.COMPLETED,
                 UserTaskEventKind.UPDATED),
@@ -177,7 +179,7 @@ public class Camunda8CockpitJobHandlerTest {
                 Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID), PROCESS_ID));
 
     assertEquals(
-        java.util.List.of(WorkflowEventKind.CREATED, WorkflowEventKind.COMPLETED),
+        List.of(WorkflowEventKind.CREATED, WorkflowEventKind.COMPLETED),
         publisher.workflowEvents().stream().map(RecordingPublisher.WorkflowEvent::kind).toList());
     assertEquals("12345", publisher.workflowEvents().getFirst().workflow().workflowId());
 
@@ -196,7 +198,7 @@ public class Camunda8CockpitJobHandlerTest {
     handler.handle(client, job);
 
     assertTrue(publisher.workflowEvents().isEmpty());
-    verify(client.newCompleteCommand(anyLong()).send(), org.mockito.Mockito.atLeastOnce()).join();
+    verify(client.newCompleteCommand(anyLong()).send(), atLeastOnce()).join();
 
   }
 
@@ -230,13 +232,42 @@ public class Camunda8CockpitJobHandlerTest {
   }
 
   @Test
+  @DisplayName("A job which is neither a task nor an execution listener fails, naming what it was")
+  public void aJobOfAnUnexpectedKindFails() {
+
+    final var job = aJob(
+        JobKind.BPMN_ELEMENT, ListenerEventType.END,
+        Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID), PROCESS_ID);
+
+    handler.handle(client, job);
+
+    assertTrue(publisher.workflowEvents().isEmpty());
+    assertTrue(publisher.userTaskEvents().isEmpty());
+    verify(client.newFailCommand(88L)).retries(0);
+
+  }
+
+  @Test
+  @DisplayName("A report collapsing into one already waiting completes the job like any other")
+  public void aCollapsedReportIsNoFailure() {
+
+    publisher.collapsesReports(true);
+
+    handler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
+
+    verify(client.newCompleteCommand(88L).send(), atLeastOnce()).join();
+    verify(client.newFailCommand(anyLong()), never()).retries(0);
+
+  }
+
+  @Test
   @DisplayName("A reported job is completed only after the report was written")
   public void theJobIsCompletedAfterTheReport() {
 
     handler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
 
     assertEquals(1, publisher.userTaskEvents().size());
-    verify(client.newCompleteCommand(88L).send(), org.mockito.Mockito.atLeastOnce()).join();
+    verify(client.newCompleteCommand(88L).send(), atLeastOnce()).join();
 
   }
 

@@ -21,6 +21,8 @@
 
   <modules>
     <module>core</module>
+    <!-- before the modules whose tests use it, and published nowhere -->
+    <module>test-support</module>
     <module>spring-boot</module>
     <module>quarkus</module>
     <!-- last: it judges the reports the modules above produced -->
@@ -122,10 +124,12 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
-      <!-- one place for every io.vanillabp coordinate of the Version 2 platform: the two
-           SPI artifacts an extension implements, the core runtime it reads its configuration
-           from, the platform integrations the per-platform modules register with, and the
-           test harness. The adapter SPI is for BPMS adapters and has no business here. -->
+      <!-- one place for every io.vanillabp coordinate of the Version 2 platform: the SPI an
+           extension implements, the core runtime it reads its configuration from, the platform
+           integrations the per-platform modules register with, and the test harness. The
+           adapter SPI is in it as well: this extension reads what an adapter declared - the
+           name-clash avoidance of a workflow module and the registry naming the workflow
+           aggregate's id variable - although it implements nothing of it. -->
       <dependency>
         <groupId>io.vanillabp</groupId>
         <artifactId>vanillabp-bom</artifactId>

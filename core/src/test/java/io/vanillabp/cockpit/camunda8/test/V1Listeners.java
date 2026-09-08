@@ -19,6 +19,13 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
  * <p>
  * It is deliberately a copy rather than a call: Version 1 is not a dependency of this
  * repository, and the promise is about the bytes it produced rather than about its code.
+ * <p>
+ * The <code>isNew</code> branch below - the one for a user task carrying no listeners at all -
+ * is copied for completeness and never runs in the comparison. VanillaBP's Camunda 8 adapter
+ * wires every user task it claims before the cockpit sees the model and leaves the
+ * <code>zeebe:taskListeners</code> container behind, which is what the other branch reads, and
+ * that was as true of Version 1 as it is of Version 2. The test class pins both halves of that
+ * statement.
  */
 public final class V1Listeners {
 

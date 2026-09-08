@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -25,12 +28,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import io.camunda.client.CamundaClient;
 import io.camunda.client.api.search.enums.UserTaskState;
 import io.camunda.zeebe.model.bpmn.Bpmn;
+import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
+import io.camunda.zeebe.model.bpmn.instance.BaseElement;
 import io.camunda.zeebe.model.bpmn.instance.UserTask;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
+import io.vanillabp.cockpit.camunda8.test.support.ClusterUnderTest;
+import io.vanillabp.cockpit.camunda8.test.support.CockpitServer;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -141,7 +149,7 @@ public class Camunda8CockpitIT {
                 filter -> filter
                     .state(UserTaskState.CREATED)
                     .processInstanceVariables(
-                        java.util.Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
+                        Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
             .send()
             .join()
             .items()
@@ -168,7 +176,7 @@ public class Camunda8CockpitIT {
             .newProcessInstanceSearchRequest()
             .filter(
                 filter -> filter
-                    .variables(java.util.Map.of("id", "\"%s\"".formatted(aggregateId))))
+                    .variables(Map.of("id", "\"%s\"".formatted(aggregateId))))
             .send()
             .join()
             .items()
@@ -207,12 +215,11 @@ public class Camunda8CockpitIT {
 
   }
 
-  private static List<io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListener> executionListenersOf(
-      final io.camunda.zeebe.model.bpmn.BpmnModelInstance model,
+  private static List<ZeebeExecutionListener> executionListenersOf(
+      final BpmnModelInstance model,
       final String elementId) {
 
-    final var element = (io.camunda.zeebe.model.bpmn.instance.BaseElement) model
-        .getModelElementById(elementId);
+    final var element = (BaseElement) model.getModelElementById(elementId);
     final var listeners = element.getSingleExtensionElement(ZeebeExecutionListeners.class);
     return listeners == null
         ? List.of()
@@ -244,7 +251,7 @@ public class Camunda8CockpitIT {
         .join();
     final var model = Bpmn
         .readModelFromStream(
-            new java.io.ByteArrayInputStream(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
 
     final var scopedProcessId = "%s__%s".formatted(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID);
     final var scopedTaskDefinition = "%s__%s__%s"
@@ -333,18 +340,50 @@ public class Camunda8CockpitIT {
   }
 
   @Test
-  @DisplayName("Cancelling the user task reports it as cancelled")
-  public void cancellingTheUserTaskIsReported() {
+  @DisplayName("Cancelling the workflow reports its user task as cancelled and the workflow not at all")
+  public void cancellingTheWorkflowIsReportedAsFarAsCamundaSaysIt() {
 
     final var aggregate = aStartedWorkflow("Cleo");
     final var userTaskId = userTaskIdOf(aggregate);
+    final var workflowId = workflowIdOf(aggregate);
     CockpitServer.awaitRequest("/usertask/created");
 
     // nothing of VanillaBP is involved here: this is what an operator does, and the cockpit
     // has to hear about it
-    client().newCancelInstanceCommand(Long.parseLong(workflowIdOf(aggregate))).send().join();
+    client().newCancelInstanceCommand(Long.parseLong(workflowId)).send().join();
 
     assertNotNull(CockpitServer.awaitRequest("/usertask/%s/cancelled".formatted(userTaskId)));
+
+    // and what the cockpit does NOT hear about is the workflow: the 'end' listener of a
+    // process does not run when the instance is cancelled, and Camunda 8 has no listener for
+    // a cancellation before 8.10 - see decision 3 in the repository's DECISIONS.md
+    CockpitServer.awaitQuiet();
+    assertEquals(
+        List.of(),
+        CockpitServer.matching("/workflow/%s/completed".formatted(workflowId)),
+        "the cancelled workflow was reported as completed");
+
+  }
+
+  @Test
+  @DisplayName("A workflow started by a message reports its start with the case it is about")
+  public void aWorkflowStartedByMessageIsReported() {
+
+    final var aggregate = transactions
+        .execute(status -> {
+          final var fresh = new TestAggregate();
+          fresh.setCustomer("Klara");
+          return workflowService
+              .processes()
+              .startWorkflowByMessage(fresh, TestWorkflowService.START_MESSAGE);
+        });
+
+    // the start of such a workflow is reported by the very listener the none start event
+    // carries, and it knows the case because the aggregate id travelled with the message
+    final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Klara\"");
+    assertTrue(
+        workflow.body().contains("\"aggregateId\":\"%s\"".formatted(aggregate.getId())),
+        workflow.body());
 
   }
 

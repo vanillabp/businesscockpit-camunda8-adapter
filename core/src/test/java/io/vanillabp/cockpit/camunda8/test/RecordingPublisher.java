@@ -51,6 +51,21 @@ public class RecordingPublisher implements BusinessCockpitEventPublisher {
 
   private final List<WorkflowEvent> workflows = new LinkedList<>();
 
+  private boolean collapsing;
+
+  /**
+   * Lets this publisher answer what the real one answers while a report of the same
+   * idempotency key is still waiting to be dispatched.
+   *
+   * @param collapsing Whether the next reports collapse into an entry already written
+   */
+  public void collapsesReports(
+      final boolean collapsing) {
+
+    this.collapsing = collapsing;
+
+  }
+
   @Override
   public boolean publishUserTaskEvent(
       final UserTaskReference userTask,
@@ -60,7 +75,7 @@ public class RecordingPublisher implements BusinessCockpitEventPublisher {
       final EventTransaction transaction) {
 
     userTasks.add(new UserTaskEvent(userTask, kind, bpmsEventId, transaction));
-    return true;
+    return !collapsing;
 
   }
 
@@ -73,7 +88,7 @@ public class RecordingPublisher implements BusinessCockpitEventPublisher {
       final EventTransaction transaction) {
 
     workflows.add(new WorkflowEvent(workflow, kind, bpmsEventId, transaction));
-    return true;
+    return !collapsing;
 
   }
 

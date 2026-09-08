@@ -19,18 +19,8 @@ listener therefore sits on every start event of the process instead, as an `end`
 is where the VanillaBP Camunda 8 adapter puts its own listener for the same reason: an `end`
 listener of a start event still gates the transition, and by then the variables are written.
 
-The `end` listener at the process stays where Version 1 had it, and the task listeners of a user
-task are byte-for-byte what Version 1 wrote - their type, their retries and where they are
-inserted. So a Version 1 application which deploys its models again gets a new process version
-because of the start events and for no other reason, and its running workflows keep the version
-they are on. That is worth saying out loud in the documentation rather than hiding, and it is the
-price of reporting a workflow which knows what it is about.
-
-A listener of this extension carries no retries. A report which cannot be written is a defect
-somebody has to see, and an incident is how a cluster says so; completing the job anyway would let
-the workflow run on while the cockpit loses the event. The same rule decides where listeners are
-NOT added: a BPMN process no workflow aggregate of the application claims gets none, because a job
-nobody serves would stop such a workflow where it sits.
+The `end` listener at the process stays where Version 1 had it. What this costs an upgrading
+application is decision 4.
 
 ## 2. Which cluster a workflow module runs on is asked of the adapter
 
@@ -63,3 +53,29 @@ A workflow which was terminated rather than finished is not reported at all befo
 the cluster has no listener for it, and the `end` listener of a process does not run when the
 instance is cancelled. What the cockpit shows of such a case stays at the last event it did hear
 about, until the `canceled` execution listener of 8.10 can be wired.
+
+## 4. The task listeners are the ones Version 1 wrote
+
+The task listeners of a user task are byte-for-byte what Version 1 wrote: their type, their
+retries and where they are inserted among the listeners the model already carries. That is a
+promise rather than a preference. A cluster stores a process version per set of bytes, so an
+application which deploys the same models again after the upgrade would leave every running
+workflow behind on the old version if anything about those listeners moved.
+
+The start events of decision 1 are the one deliberate difference, so such a deployment does
+produce a new version - because of them and for no other reason. Running workflows stay on the
+version they were started on and keep reporting their user tasks, because the task listeners of
+that version are the ones this extension serves anyway. That is worth saying out loud in the
+documentation rather than hiding, and it is the price of reporting a workflow which knows what it
+is about.
+
+## 5. A listener of this extension carries no retries
+
+A report which cannot be written is a defect somebody has to see, and an incident is how a cluster
+says so; completing the job anyway would let the workflow run on while the cockpit loses the
+event. So the listeners are written with zero retries and a failing job raises an incident at
+once.
+
+The same rule decides where listeners are NOT added: a BPMN process no workflow aggregate of the
+application claims gets none, because the jobs of such listeners would be handed to nobody and
+would stop that workflow where it sits.

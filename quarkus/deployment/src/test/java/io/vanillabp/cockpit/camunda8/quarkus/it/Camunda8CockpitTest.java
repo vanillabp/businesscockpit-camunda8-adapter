@@ -12,21 +12,27 @@ import java.util.function.Supplier;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Network;
 
 import io.camunda.client.CamundaClient;
 import io.camunda.client.api.search.enums.UserTaskState;
 import io.camunda.zeebe.model.bpmn.Bpmn;
+import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
 import io.camunda.zeebe.model.bpmn.instance.BaseElement;
 import io.camunda.zeebe.model.bpmn.instance.UserTask;
+import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.quarkus.test.QuarkusExtensionTest;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
+import io.vanillabp.cockpit.camunda8.test.support.ClusterUnderTest;
+import io.vanillabp.cockpit.camunda8.test.support.CockpitServer;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 import jakarta.inject.Inject;
@@ -45,9 +51,14 @@ import jakarta.transaction.UserTransaction;
  * the application's configuration needs the mapped ports, and the extension below reads its
  * runtime properties while its field is initialized, which happens before any extension
  * callback runs.
+ * <p>
+ * That initializer is what makes the Docker check a condition of its own here, where the Spring
+ * Boot test says {@code @Testcontainers(disabledWithoutDocker = true)} and is done: a machine
+ * without Docker has to reach the skip without a container ever being asked for.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput
+@EnabledIf("dockerIsAvailable")
 public class Camunda8CockpitTest {
 
   private static final String ADAPTER_ID = "c8";
@@ -73,8 +84,23 @@ public class Camunda8CockpitTest {
    */
   private static final String GRPC_ADDRESS_PROPERTY = "businesscockpit.test.cluster.grpc";
 
+  /**
+   * Whether this machine can run the cluster these tests need. Read by the condition above and
+   * by the initializer below, which is why it is a method rather than a constant: a machine
+   * without Docker skips the class instead of failing while it is loaded.
+   *
+   * @return Whether Docker answers
+   */
+  static boolean dockerIsAvailable() {
+
+    return DockerClientFactory.instance().isDockerAvailable();
+
+  }
+
   static {
-    startTheClusterUnlessItRuns();
+    if (dockerIsAvailable()) {
+      startTheClusterUnlessItRuns();
+    }
   }
 
   private static void startTheClusterUnlessItRuns() {
@@ -118,19 +144,17 @@ public class Camunda8CockpitTest {
               .addClass(TestAggregate.class)
               .addClass(TestAggregatePersistence.class)
               .addClass(TestWorkflowService.class)
-              // the test class runs in the application's class loader, so everything it
-              // touches has to be reachable from there as well - the server it asks about
-              // what arrived, and the cluster it was started against
-              .addClass(CockpitServer.class)
-              .addClass(ClusterUnderTest.class)
-              .addClass(ClusterLog.class)
               .addAsResource("camunda8-cluster.properties"))
       .overrideRuntimeConfigKey(
           "vanillabp.extensions.business-cockpit.rest.base-url", CockpitServer.baseUrl())
+      // the fallbacks are what a machine without Docker gets, and nothing ever connects to
+      // them: this field is built while the class is loaded, and the class is skipped
       .overrideRuntimeConfigKey(
-          "vanillabp.adapters.c8.rest-address", System.getProperty(REST_ADDRESS_PROPERTY))
+          "vanillabp.adapters.c8.rest-address",
+          System.getProperty(REST_ADDRESS_PROPERTY, "http://localhost:8080"))
       .overrideRuntimeConfigKey(
-          "vanillabp.adapters.c8.grpc-address", System.getProperty(GRPC_ADDRESS_PROPERTY));
+          "vanillabp.adapters.c8.grpc-address",
+          System.getProperty(GRPC_ADDRESS_PROPERTY, "http://localhost:26500"));
 
   @Inject
   TestWorkflowService workflowService;
@@ -193,7 +217,7 @@ public class Camunda8CockpitTest {
 
   }
 
-  private io.camunda.zeebe.model.bpmn.BpmnModelInstance deployedModelOf(
+  private BpmnModelInstance deployedModelOf(
       final String scopedProcessId) {
 
     final var definitionKey = awaitValue(
@@ -215,7 +239,7 @@ public class Camunda8CockpitTest {
   }
 
   private static List<String> executionListenerTypesOf(
-      final io.camunda.zeebe.model.bpmn.BpmnModelInstance model,
+      final BpmnModelInstance model,
       final String elementId) {
 
     final var element = (BaseElement) model.getModelElementById(elementId);
@@ -225,7 +249,7 @@ public class Camunda8CockpitTest {
         : listeners
             .getExecutionListeners()
             .stream()
-            .map(io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListener::getType)
+            .map(ZeebeExecutionListener::getType)
             .toList();
 
   }
