@@ -80,7 +80,7 @@
     <camunda8.cluster.image>camunda/camunda:${camunda8.version}</camunda8.cluster.image>
     <protobuf.version>4.35.1</protobuf.version>
     <spring-boot.version>4.1.1</spring-boot.version>
-    <quarkus.version>3.39.1</quarkus.version>
+    <quarkus.version>3.39.2</quarkus.version>
   </properties>
 
   <dependencyManagement>
