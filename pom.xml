@@ -45,7 +45,7 @@
     <version.java>21</version.java>
     <maven.compiler.release>21</maven.compiler.release>
     <jacoco.version>0.8.15</jacoco.version>
-    <lombok.version>1.18.46</lombok.version>
+    <lombok.version>1.18.48</lombok.version>
     <spi-for-java.version>1.2.0-SNAPSHOT</spi-for-java.version>
     <adapter-platform.version>2.0.0-SNAPSHOT</adapter-platform.version>
     <!-- The version of every artifact, resolved into the published POMs by the flatten
