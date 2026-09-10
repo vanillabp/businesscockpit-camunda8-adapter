@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.vanillabp.businesscockpit</groupId>
+    <artifactId>businesscockpit-camunda8-adapter-parent</artifactId>
+    <version>${revision}</version>
+  </parent>
+
+  <artifactId>businesscockpit-camunda8-adapter</artifactId>
+  <name>VanillaBP Business Cockpit adapter for Camunda 8 - Core</name>
+  <description>Everything the Business Cockpit extension does with a Camunda 8 cluster and without knowing a platform: the listeners injected into the deployed models, the workers serving their jobs, and the bridge answering what the cockpit reads about a task or a workflow.</description>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>VanillaBP</id>
+      <organization>Phactum Softwareentwicklung GmbH</organization>
+      <organizationUrl>https://www.phactum.at</organizationUrl>
+    </developer>
+  </developers>
+
+  <!-- No platform integration is a dependency here, deliberately: this module compiles
+       against the extension SPI, the platform-neutral half of the cockpit extension and the
+       CORE artifact of the VanillaBP Camunda 8 adapter, and against nothing which exists only
+       on Spring Boot or only on Quarkus. -->
+
+  <dependencies>
+    <dependency>
+      <groupId>io.vanillabp.businesscockpit</groupId>
+      <artifactId>extensions-commons</artifactId>
+    </dependency>
+    <dependency>
+      <!-- names the processing context this extension is wired with, holds the scoping and
+           listener helpers its own listeners are placed against, and hands out the Camunda
+           client of each configured adapter id. It brings the Camunda client and the
+           VanillaBP SPI artifacts along. -->
+      <groupId>org.camunda.community.vanillabp</groupId>
+      <artifactId>camunda8-adapter</artifactId>
+    </dependency>
+    <dependency>
+      <!-- arrives transitively as well; declared because this module implements it -->
+      <groupId>io.vanillabp</groupId>
+      <artifactId>vanillabp-extension-spi</artifactId>
+    </dependency>
+    <dependency>
+      <!-- arrives transitively as well; declared because this module reads two of its types:
+           the name-clash avoidance a workflow module was deployed under, and the registry
+           which names the variable a BPMN process carries the workflow aggregate's id in.
+           Nothing here implements it - that is a BPMS adapter's business. -->
+      <groupId>io.vanillabp</groupId>
+      <artifactId>vanillabp-adapter-spi</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.camunda</groupId>
+      <artifactId>camunda-client-java</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- brings the output suppression every VanillaBP test class registers, and with it the
+        Mockito the cluster's own types are stood in with -->
+      <groupId>io.vanillabp</groupId>
+      <artifactId>test-utils</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

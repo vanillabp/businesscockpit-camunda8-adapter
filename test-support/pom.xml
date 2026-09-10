@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.vanillabp.businesscockpit</groupId>
+    <artifactId>businesscockpit-camunda8-adapter-parent</artifactId>
+    <version>${revision}</version>
+  </parent>
+
+  <artifactId>businesscockpit-camunda8-adapter-test-support</artifactId>
+  <name>VanillaBP Business Cockpit adapter for Camunda 8 - Test support</name>
+  <description>What the integration tests of both platform modules need and would otherwise each hold a copy of: the Camunda 8 cluster they run against, the file its output is written to, and the cockpit server they report to.</description>
+
+  <!-- Not published: these classes exist for the tests of this repository and for nothing
+       else. They live in src/main/java because a test classpath cannot read another module's
+       test classes, which is the whole reason this module exists. -->
+
+  <properties>
+    <!-- a module which exists for the tests of this repository is released nowhere: neither to
+         Maven Central nor to the snapshot repository, and it needs no sources, javadoc or
+         signature jar either -->
+    <skip.central.release>true</skip.central.release>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+    <maven.source.skip>true</maven.source.skip>
+    <gpg.skip>true</gpg.skip>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <configuration>
+          <!-- nothing to deploy - an application never sees this module -->
+          <skip>true</skip>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

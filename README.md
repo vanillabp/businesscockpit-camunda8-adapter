@@ -14,43 +14,51 @@ the business details of what it saw, and sends the result to the cockpit server.
 
 ## Status
 
-There is no implementation here yet. The repository was created ahead of the work so that the
-build and the pipelines are settled before the first line of code is written, and
-what it contains today is that skeleton and nothing else.
+The extension is here and it runs, on Spring Boot and on Quarkus, against a real cluster. It builds
+on the extension SPI of `adapter-platform-integration` and on the cockpit's `extensions-commons`
+module, both of which are still snapshots, so this repository publishes snapshots too.
 
-The extension itself arrives with the VanillaBP 2 extension work. It builds on the extension SPI of
-`adapter-platform-integration` and on the cockpit's `extensions-commons` module, and neither of
-them is released yet, so no module here could hold a class that compiles. The Version 1 adapter is
-still where it always was, as `adapters/camunda8` of the
+The Version 1 adapter is still where it always was, as `adapters/camunda8` of the
 [business-cockpit](https://github.com/vanillabp/business-cockpit) repository, and it stays there
-until the cockpit switches to VanillaBP 2. Nothing of it is moved here: this repository starts from
-the extension, so its history never carries the Version 1 shape.
+until the cockpit switches to VanillaBP 2. Nothing of it was moved here: this repository starts from
+the extension, so its history never carries the Version 1 shape. What it does carry is Version 1's
+task listeners, byte for byte, because an application upgrading has to keep the process version its
+workflows are running on ([decision 4](./DECISIONS.md)). The start events are the one deliberate
+difference, and [decision 1](./DECISIONS.md) says why.
 
 ## What is here today
 
-The parent POM, which builds green and publishes itself as a snapshot, the three GitHub Actions
-workflows, the release-line machinery both of the sections below describe, the formatting rules
-every VanillaBP repository shares, and the license and notice files. The POM already manages the
-versions of everything the extension will depend on, so adding the first module is adding a module
-rather than assembling a build.
+Four published modules and the machinery around them:
+
+|        Module        |                    Artifact                    |                                                    What is in it                                                    |
+|----------------------|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| `core`               | `businesscockpit-camunda8-adapter`             | the listeners written into a model, the workers serving their jobs, and the bridge answering what the cockpit reads |
+| `spring-boot`        | `businesscockpit-camunda8-adapter-spring-boot` | the auto-configuration and one bridge bean per configured adapter id                                                |
+| `quarkus/runtime`    | `businesscockpit-camunda8-adapter-quarkus`     | the same beans as CDI producers                                                                                     |
+| `quarkus/deployment` | `…-quarkus-deployment`                         | the build steps of that extension, and the test booting it against a cluster                                        |
+
+Beside them, `test-coverage-report` measures each platform separately and its `coverage-gate` breaks
+the build below 85 %, the three GitHub Actions workflows, the release-line machinery both of the
+sections below describe, the formatting rules every VanillaBP repository shares, and the license and
+notice files.
+
+One more module is in the tree and in no release: `test-support` holds the cluster the integration
+tests of both platforms run against, the file its output is written to and the cockpit server they
+report to. A test classpath cannot read another module's test classes, so the alternative was a second
+copy of all three.
 
 Deliberately absent, and not as an empty placeholder:
 
-- The `core`, `spring-boot`, `quarkus/runtime` and `quarkus/deployment` modules. Every class each of
-  them would hold needs the cockpit's `extensions-commons` artifact, so an empty module would only
-  publish an empty jar under coordinates somebody might resolve.
-- The `test-coverage-report` module with its coverage gate. It measures modules, and there are
-  none. The gate that the Business Cockpit repository built for `adapters-spring-boot` moves here
-  together with the code it measures.
 - The nightly build of every release line. It exists in `vanillabp/camunda8-adapter` to run each
-  line's integration tests against that line's cluster, and there is no test here to run yet. The
-  release workflow already builds every live line, so a release cannot skip one.
-- The check that the public API is identical on every line. It compares compiled classes, and there
-  are none.
-- A `DECISIONS.md` with decisions in it. The log exists and explains its own rules, and it stays
-  empty until code points at an entry.
+  line's integration tests against that line's cluster; the tests here run on the current GA line,
+  and a matrix over the other two is worth having once a line other than the current one is
+  released.
+- The check that the public API is identical on every line. It compares compiled classes of
+  different builds, and this repository has one line's worth of them.
+- A `canceled` execution listener. Camunda 8 gains it with 8.10, and until then a terminated
+  workflow is not reported as such - see [decision 3](./DECISIONS.md).
 
-## What arrives with the extension
+## How it is put together
 
 The module layout is the one every VanillaBP adapter repository uses: `core` for everything that
 needs neither Spring nor Quarkus, `spring-boot` and `quarkus/runtime` plus `quarkus/deployment` for
@@ -60,6 +68,21 @@ per-platform coverage measurement. The artifacts keep the repository name as the
 what a Spring Boot application depends on. The prefix is what keeps a jar of this repository apart
 from the jar of the VanillaBP Camunda 8 adapter it plugs into, which is a distinction Version 1 did
 not make.
+
+`core` compiles against the cockpit's `extensions-commons`, the extension SPI and the CORE artifact
+of the VanillaBP Camunda 8 adapter - which names the processing context this extension is wired
+with, brings the Camunda client, and hands out the client of each configured adapter id. No platform
+integration is a dependency of it, deliberately: a module which compiled against one would stop
+proving that it needs neither.
+
+Which cluster a pipeline call belongs to is the adapter's word. `Camunda8ProcessingContext` names the
+adapter id and the workflow module of the run, so the workers of a module are opened per cluster, and the
+identifiers in a model are read as the ones that cluster will know. Neither is worked out here by trying
+what every configured adapter would call a process.
+
+What the extension writes into a model, what its workers do with the jobs that produces and what it
+reads back is documented for users in the
+[wiki](https://github.com/vanillabp/businesscockpit-camunda8-adapter/wiki).
 
 ## Release lines
 
@@ -75,16 +98,17 @@ core and gets the Camunda client through it, so a build of this repository inher
 cluster version of the adapter build it was compiled against. A line here means the same thing it
 means there:
 
-|   Channel   |        Version        | Camunda 8 adapter line |   Client pin    |
-|-------------|-----------------------|------------------------|-----------------|
-| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.36`        |
-| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.17`        |
-| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha4` |
+|   Channel   |        Version        | Camunda 8 adapter line |   Client pin    | Tested against |
+|-------------|-----------------------|------------------------|-----------------|----------------|
+| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.37`        | not yet        |
+| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.18`        | `8.9.18`       |
+| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha4` | not yet        |
 
 The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
-Camunda offers, and they move when that repository moves. There is no tested-cluster column yet,
-because nothing here runs against a cluster; a cluster version appears in this table only once a
-build of that line has been proven against it.
+Camunda offers, and they move when that repository moves. A cluster version appears in the last
+column only once a build of that line has been proven against it: the integration tests start the
+cluster of the client their line pins, so a line's tests meet the oldest cluster its artifacts
+accept.
 
 Snapshots have no suffix. Until the first release they are `0.9.0-SNAPSHOT` of the current GA line,
 which is what a build without a profile produces, and every line still reads the same
@@ -140,13 +164,18 @@ the line always sits in the same place, and Maven sorts `0.9.0-8.10-alpha1 < 0.9
 mvn install
 ```
 
+That runs everything, the integration tests included, and those start a Camunda 8 cluster and an
+Elasticsearch beside it through Testcontainers - so a build needs Docker and takes a few minutes.
+Without Docker the integration tests skip themselves and the unit tests still run.
+
 Snapshots are published to GitHub Packages by the pipeline described below, and releases go to
 Maven Central under the groupId `io.vanillabp.businesscockpit`, like the rest of the Business
 Cockpit.
 
 ## What CI runs
 
-`build.yaml` builds and tests a pull request, on the current GA line alone. `deploy-to-github-packages.yaml`
+`build.yaml` builds and tests a pull request, on the current GA line alone, which includes the
+integration tests against a cluster of that line's client. `deploy-to-github-packages.yaml`
 publishes the snapshot when a branch is pushed. Both run under one concurrency group, queued and
 never cancelled, because the snapshot artifacts share their coordinates: two runs publishing at the
 same time would overwrite each other, and whoever finished last would decide what the other

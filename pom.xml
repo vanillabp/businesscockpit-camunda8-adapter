@@ -19,11 +19,15 @@
   <description>Business Cockpit integration for Camunda 8, built as a VanillaBP 2 extension and released once per Camunda 8 minor.</description>
   <url>https://github.com/vanillabp/businesscockpit-camunda8-adapter</url>
 
-  <!-- No modules yet. The extension itself is written by story 36 and needs the cockpit's
-       extensions-commons artifact, which does not exist. What lands here then is the layout
-       every VanillaBP adapter repository has: core, spring-boot, quarkus/runtime,
-       quarkus/deployment and test-coverage-report. See README.md, section "What is here today". -->
-  <modules/>
+  <modules>
+    <module>core</module>
+    <!-- before the modules whose tests use it, and published nowhere -->
+    <module>test-support</module>
+    <module>spring-boot</module>
+    <module>quarkus</module>
+    <!-- last: it judges the reports the modules above produced -->
+    <module>test-coverage-report</module>
+  </modules>
 
   <scm>
     <connection>scm:git:https://github.com/vanillabp/businesscockpit-camunda8-adapter.git</connection>
@@ -48,6 +52,9 @@
     <lombok.version>1.18.48</lombok.version>
     <spi-for-java.version>1.2.0-SNAPSHOT</spi-for-java.version>
     <adapter-platform.version>2.0.0-SNAPSHOT</adapter-platform.version>
+    <!-- the Business Cockpit itself: extensions-commons is the platform-neutral half of
+         this extension and is consumed as a published artifact, never copied -->
+    <business-cockpit.version>0.4.1-SNAPSHOT</business-cockpit.version>
     <!-- The version of every artifact, resolved into the published POMs by the flatten
          plugin. A plain 'mvn install' builds 0.9.0-SNAPSHOT of the current GA line, which is
          what a developer of this repository wants and needs to remember no property for. A
@@ -63,8 +70,8 @@
          here is only as good as the adapter line it was built against. -->
     <camunda8.line>8.9</camunda8.line>
     <camunda8.version>${camunda8.version.line-8.9}</camunda8.version>
-    <camunda8.version.line-8.8>8.8.36</camunda8.version.line-8.8>
-    <camunda8.version.line-8.9>8.9.17</camunda8.version.line-8.9>
+    <camunda8.version.line-8.8>8.8.37</camunda8.version.line-8.8>
+    <camunda8.version.line-8.9>8.9.18</camunda8.version.line-8.9>
     <camunda8.version.line-8.10>8.10.0-alpha4</camunda8.version.line-8.10>
     <!-- The VanillaBP Camunda 8 adapter this extension plugs into: it names the processing
          context the extension is wired with, and it brings the Camunda client. It is one
@@ -80,7 +87,15 @@
     <camunda8.cluster.image>camunda/camunda:${camunda8.version}</camunda8.cluster.image>
     <protobuf.version>4.35.1</protobuf.version>
     <spring-boot.version>4.1.1</spring-boot.version>
+
+    <testcontainers.version>2.0.5</testcontainers.version>
     <quarkus.version>3.39.2</quarkus.version>
+    <!-- where the build stops, the same number in every VanillaBP repository -->
+    <coverage.threshold.spring-boot>85</coverage.threshold.spring-boot>
+    <coverage.threshold.quarkus>85</coverage.threshold.quarkus>
+    <!-- what a report is expected to show: reported every run, never asserted, so a bad
+         week is not answered by editing a number -->
+    <coverage.rule>90</coverage.rule>
   </properties>
 
   <dependencyManagement>
@@ -111,42 +126,82 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <!-- one place for every io.vanillabp coordinate of the Version 2 platform: the SPI an
+           extension implements, the core runtime it reads its configuration from, the platform
+           integrations the per-platform modules register with, and the test harness. The
+           adapter SPI is in it as well: this extension reads what an adapter declared - the
+           name-clash avoidance of a workflow module and the registry naming the workflow
+           aggregate's id variable - although it implements nothing of it. -->
       <dependency>
         <groupId>io.vanillabp</groupId>
+        <artifactId>vanillabp-bom</artifactId>
+        <version>${adapter-platform.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!-- the platform-neutral half of this extension, and the two modules registering it
+           on Spring Boot and on Quarkus -->
+      <dependency>
+        <groupId>io.vanillabp.businesscockpit</groupId>
+        <artifactId>extensions-commons</artifactId>
+        <version>${business-cockpit.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.vanillabp.businesscockpit</groupId>
+        <artifactId>extensions-commons-spring-boot</artifactId>
+        <version>${business-cockpit.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.vanillabp.businesscockpit</groupId>
+        <artifactId>extensions-commons-quarkus</artifactId>
+        <version>${business-cockpit.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.vanillabp.businesscockpit</groupId>
+        <artifactId>extensions-commons-quarkus-deployment</artifactId>
+        <version>${business-cockpit.version}</version>
+      </dependency>
+      <!-- the cockpit's own user-facing SPI: @UserTaskDetailsProvider and what a provider
+           method receives -->
+      <dependency>
+        <groupId>io.vanillabp.businesscockpit</groupId>
         <artifactId>spi-for-java</artifactId>
-        <version>${spi-for-java.version}</version>
-      </dependency>
-      <!-- what an extension implements: ExtensionWiringService. The adapter SPI is for BPMS
-           adapters and has no business in this repository. -->
-      <dependency>
-        <groupId>io.vanillabp</groupId>
-        <artifactId>vanillabp-extension-spi</artifactId>
-        <version>${adapter-platform.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.vanillabp</groupId>
-        <artifactId>vanillabp-spring-boot-integration</artifactId>
-        <version>${adapter-platform.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.vanillabp</groupId>
-        <artifactId>vanillabp-quarkus-integration</artifactId>
-        <version>${adapter-platform.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.vanillabp</groupId>
-        <artifactId>vanillabp-quarkus-integration-deployment</artifactId>
-        <version>${adapter-platform.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.vanillabp</groupId>
-        <artifactId>test-utils</artifactId>
-        <version>${adapter-platform.version}</version>
+        <version>${business-cockpit.version}</version>
       </dependency>
       <dependency>
         <groupId>org.camunda.community.vanillabp</groupId>
         <artifactId>camunda8-adapter</artifactId>
         <version>${camunda8-adapter.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.camunda.community.vanillabp</groupId>
+        <artifactId>camunda8-adapter-spring-boot</artifactId>
+        <version>${camunda8-adapter.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.camunda.community.vanillabp</groupId>
+        <artifactId>camunda8-adapter-quarkus</artifactId>
+        <version>${camunda8-adapter.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.camunda.community.vanillabp</groupId>
+        <artifactId>camunda8-adapter-quarkus-deployment</artifactId>
+        <version>${camunda8-adapter.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.camunda</groupId>
+        <artifactId>camunda-client-java</artifactId>
+        <version>${camunda8.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers</artifactId>
+        <version>${testcontainers.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-junit-jupiter</artifactId>
+        <version>${testcontainers.version}</version>
       </dependency>
       <dependency>
         <groupId>org.projectlombok</groupId>

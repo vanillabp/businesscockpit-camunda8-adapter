@@ -1,0 +1,35 @@
+spring:
+  datasource:
+    generate-unique-name: true
+  jpa:
+    hibernate:
+      ddl-auto: create
+vanillabp:
+  outbox:
+    poll-interval: PT0.5S
+    attempt-frequency: PT0.5S
+  adapters:
+    c8:
+      type: camunda8
+      name-clash-avoidance: use-prefix
+      job-timeout: PT30S
+      stream-enabled: false
+      stream-timeout: PT10S
+      poll-interval: PT0.1S
+      request-timeout: PT20S
+  prioritized-adapters:
+    - c8
+  cockpit:
+    rest:
+      base-url: replaced-by-the-test
+  workflow-modules:
+    c8-cockpit:
+      adapters:
+        c8:
+          resources-location: classpath*:c8-cockpit/processes
+      cockpit:
+        workflow-module-uri: http://localhost:8081/c8-cockpit
+        ui-uri-type: WEBPACK_MF_REACT
+        ui-uri-path: /remoteEntry.js
+        i18n-languages: en
+        bpmn-description-language: en
