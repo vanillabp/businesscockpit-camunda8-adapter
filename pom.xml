@@ -49,7 +49,8 @@
     <version.java>21</version.java>
     <maven.compiler.release>21</maven.compiler.release>
     <jacoco.version>0.8.15</jacoco.version>
-    <lombok.version>1.18.46</lombok.version>
+    <lombok.version>1.18.48</lombok.version>
+    <spi-for-java.version>1.2.0-SNAPSHOT</spi-for-java.version>
     <adapter-platform.version>2.0.0-SNAPSHOT</adapter-platform.version>
     <!-- the Business Cockpit itself: extensions-commons is the platform-neutral half of
          this extension and is consumed as a published artifact, never copied -->
@@ -86,8 +87,9 @@
     <camunda8.cluster.image>camunda/camunda:${camunda8.version}</camunda8.cluster.image>
     <protobuf.version>4.35.1</protobuf.version>
     <spring-boot.version>4.1.1</spring-boot.version>
-    <quarkus.version>3.39.1</quarkus.version>
+
     <testcontainers.version>2.0.5</testcontainers.version>
+    <quarkus.version>3.39.2</quarkus.version>
     <!-- where the build stops, the same number in every VanillaBP repository -->
     <coverage.threshold.spring-boot>85</coverage.threshold.spring-boot>
     <coverage.threshold.quarkus>85</coverage.threshold.quarkus>
@@ -216,7 +218,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
-          <version>3.5.6</version>
+          <version>3.6.0</version>
           <configuration>
             <!-- '@{jacoco.agent}' is resolved lazily per module (late property binding),
                  forwarding coverage also into forked JVMs -->
@@ -226,7 +228,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-failsafe-plugin</artifactId>
-          <version>3.5.6</version>
+          <version>3.6.0</version>
           <configuration>
             <argLine>@{jacoco.agent}</argLine>
           </configuration>
@@ -242,7 +244,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
-          <version>3.15.0</version>
+          <version>3.16.0</version>
           <configuration>
             <release>${version.java}</release>
             <compilerArgs>
@@ -355,7 +357,7 @@
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
-        <version>3.10.1</version>
+        <version>3.10.2</version>
         <configuration>
           <pom>
             <includes>

@@ -91,7 +91,7 @@ jobs:
             -m "Release ${{ github.event.inputs.release_version }}, all lines"
           git push origin "${{ github.event.inputs.release_version }}"
       - name: Create the GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: "${{ github.event.inputs.release_version }}"
           name: "v${{ github.event.inputs.release_version }}"
