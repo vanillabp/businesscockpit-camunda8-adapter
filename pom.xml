@@ -54,7 +54,7 @@
     <adapter-platform.version>2.0.0-SNAPSHOT</adapter-platform.version>
     <!-- the Business Cockpit itself: extensions-commons is the platform-neutral half of
          this extension and is consumed as a published artifact, never copied -->
-    <business-cockpit.version>0.4.1-SNAPSHOT</business-cockpit.version>
+    <business-cockpit.version>0.9.0-SNAPSHOT</business-cockpit.version>
     <!-- The version of every artifact, resolved into the published POMs by the flatten
          plugin. A plain 'mvn install' builds 0.9.0-SNAPSHOT of the current GA line, which is
          what a developer of this repository wants and needs to remember no property for. A
