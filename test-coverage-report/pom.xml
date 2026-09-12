@@ -24,6 +24,7 @@
     <plugins>
       <plugin>
         <artifactId>maven-deploy-plugin</artifactId>
+        <version>3.1.4</version>
         <configuration>
           <!-- nothing to deploy - the reports are an artefact of the build -->
           <skip>true</skip>
