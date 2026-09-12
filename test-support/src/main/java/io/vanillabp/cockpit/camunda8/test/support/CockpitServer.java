@@ -253,9 +253,16 @@ public final class CockpitServer {
       }
       sleep();
     }
+    // what arrived on that path is named in full: a caller who only sees the paths cannot
+    // tell whether the report it wanted never came or came with another content, and that
+    // is the question every failure here raises
     throw new AssertionError(
-        "No request ending in '%s' carried '%s'. Received: %s"
-            .formatted(pathSuffix, bodyPart, received().stream().map(Request::path).toList()));
+        "No request ending in '%s' carried '%s'. What arrived on that path: %s. All paths received: %s"
+            .formatted(
+                pathSuffix,
+                bodyPart,
+                matching(pathSuffix),
+                received().stream().map(Request::path).toList()));
 
   }
 
