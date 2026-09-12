@@ -161,6 +161,19 @@ public class Camunda8CockpitIT {
 
   }
 
+  /**
+   * What the case carries now, read for a failure message: a report carrying an old value
+   * while the case carries the new one was read too early, and a case carrying the old value
+   * too was written over by somebody else.
+   */
+  private String storedCustomerOf(
+      final TestAggregate aggregate) {
+
+    return transactions
+        .execute(status -> aggregates.findById(aggregate.getId()).orElseThrow().getCustomer());
+
+  }
+
   private String workflowIdOf(
       final TestAggregate aggregate) {
 
@@ -406,7 +419,15 @@ public class Camunda8CockpitIT {
         });
 
     final var updated = CockpitServer.awaitRequest("/workflow/%s/updated".formatted(workflowId));
-    assertTrue(updated.body().contains("Emil the second"), updated.body());
+    // the stored customer is named as well, because a report carrying the old one has two
+    // possible causes and they need different work: the report read the case too early, or the
+    // case itself lost the change. The second happens while the report of the user task is
+    // dispatched, when its details provider holds the aggregate over this transaction and
+    // writes it back afterwards
+    assertTrue(
+        updated.body().contains("Emil the second"),
+        () -> "the report reads %s, and the stored case now carries the customer '%s'"
+            .formatted(updated.body(), storedCustomerOf(aggregate)));
 
   }
 
@@ -428,7 +449,11 @@ public class Camunda8CockpitIT {
         });
 
     final var updated = CockpitServer.awaitRequest("/usertask/%s/updated".formatted(userTaskId));
-    assertTrue(updated.body().contains("Frida the second"), updated.body());
+    // and the same reading aid here, for the same two causes
+    assertTrue(
+        updated.body().contains("Frida the second"),
+        () -> "the report reads %s, and the stored case now carries the customer '%s'"
+            .formatted(updated.body(), storedCustomerOf(aggregate)));
 
   }
 
