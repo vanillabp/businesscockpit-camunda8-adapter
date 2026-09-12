@@ -14,6 +14,7 @@ import java.util.Properties;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.containers.wait.strategy.WaitAllStrategy;
 import org.testcontainers.lifecycle.Startable;
 import org.testcontainers.utility.DockerImageName;
 
@@ -159,10 +160,23 @@ public final class ClusterUnderTest {
         .withEnv("CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME", "Demo")
         .withEnv("CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL", "demo@example.com")
         .withEnv("CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0", USERNAME)
-        .waitingFor(Wait
-            .forHttp("/actuator/health/readiness")
-            .forPort(9600)
-            .forStatusCode(200)
+        // A ready cluster is not yet a cluster which knows this user. The readiness probe
+        // turns UP while the initialization is still creating the user, and the tenant the
+        // test writes next then gets a 401. So a second condition asks an API which answers
+        // only a caller the cluster knows, with the credentials the tests use, and the
+        // cluster counts as started once BOTH conditions hold
+        .waitingFor(new WaitAllStrategy()
+            .withStrategy(Wait
+                .forHttp("/actuator/health/readiness")
+                .forPort(9600)
+                .forStatusCode(200)
+                .withStartupTimeout(STARTUP_TIMEOUT))
+            .withStrategy(Wait
+                .forHttp("/v2/topology")
+                .forPort(8080)
+                .withBasicCredentials(USERNAME, PASSWORD)
+                .forStatusCode(200)
+                .withStartupTimeout(STARTUP_TIMEOUT))
             .withStartupTimeout(STARTUP_TIMEOUT));
 
   }
