@@ -16,11 +16,7 @@ concurrency:
   # publishes nothing. The release has a group of its own too, so it can run beside a
   # publish: the 'central-portal' profile switches the deploy plugin off, so a release
   # uploads to Maven Central and nothing of it reaches GitHub Packages.
-  #
-  # The name of this group says 'build' because the pull-request build shared it until
-  # that build got a group per pull request. No other workflow uses the name now, so what
-  # is left behind is the name and nothing else.
-  group: businesscockpit-camunda8-adapter-build
+  group: businesscockpit-camunda8-adapter-publish
   cancel-in-progress: false
 permissions:
   contents: read
