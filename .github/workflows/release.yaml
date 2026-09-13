@@ -11,6 +11,22 @@ name: Release
         description: "Version to release, without the line suffix (e.g. 0.9.0)"
         required: true
 concurrency:
+  # One release of this repository at a time. Two releases at once would deploy the same
+  # coordinates to Maven Central and write the same tag. The lines of one release are a
+  # matrix inside the run, held in order by 'max-parallel: 1', so this group is about two
+  # runs. GitHub keeps at most one waiting run per group, so a third dispatch while one
+  # release runs and one waits ends the waiting one as 'cancelled' without ever starting a
+  # job. A release is dispatched by hand, so somebody is there to see that and dispatch
+  # again. 'cancel-in-progress: false' protects the run which is already running and
+  # nothing else, which is what a release needs: a run cut in half leaves some lines on
+  # Central and the rest nowhere.
+  #
+  # The publish keeps its own group, so a release and a publish run beside each other.
+  # They cannot write the same thing. The 'central-portal' profile switches the deploy
+  # plugin off and uploads through the Central publishing plugin instead, and the only
+  # distribution management in the POM is the snapshot repository, which a released
+  # version never uses. So nothing of a release reaches GitHub Packages, and the publish
+  # of main is what puts the snapshot there.
   group: businesscockpit-camunda8-adapter-release
   cancel-in-progress: false
 permissions:
