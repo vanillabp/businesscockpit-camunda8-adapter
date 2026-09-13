@@ -82,6 +82,11 @@ public class TestWorkflowService {
    * reported and writes into the workflow aggregate, which a details provider is allowed to do
    * and which makes it a second writer of the case.
    * <p>
+   * The write has to stay even though no test reads the note any more. It is what leaves the case
+   * dirty in the transaction which dispatches the report, and
+   * Camunda8CockpitIT#aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives needs that write to
+   * have a second writer at all.
+   * <p>
    * The gate is what a test closes to hold this call open while it changes the same case, so
    * that the two writers meet at a fixed point rather than by chance. It is open otherwise.
    *

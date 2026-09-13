@@ -355,7 +355,9 @@ public class Camunda8CockpitTest {
         userTask.body());
     assertTrue(userTask.body().contains("\"candidateGroups\":[\"approvers\"]"), userTask.body());
 
-    // the details provider ran on the real aggregate and its change was saved
+    // the details provider ran on the real aggregate and changed it. What this shows is the
+    // provider running and nothing about a database: the persistence of this application is a
+    // map which hands out the very object the provider was given
     assertEquals(TestWorkflowService.APPROVE_NOTE, aggregates.byId(started.getId()).getNote());
 
   }
