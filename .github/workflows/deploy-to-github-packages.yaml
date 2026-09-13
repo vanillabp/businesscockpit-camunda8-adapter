@@ -13,8 +13,10 @@ concurrency:
   # one, because GitHub keeps at most one waiting run per group, and for a publish of
   # main that is what should happen: the newer run carries the newer artifacts. The
   # pull-request build has a group of its own, one per pull request, because it
-  # publishes nothing.
-  group: businesscockpit-camunda8-adapter-build
+  # publishes nothing. The release has a group of its own too, so it can run beside a
+  # publish: the 'central-portal' profile switches the deploy plugin off, so a release
+  # uploads to Maven Central and nothing of it reaches GitHub Packages.
+  group: businesscockpit-camunda8-adapter-publish
   cancel-in-progress: false
 permissions:
   contents: read

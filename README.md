@@ -175,13 +175,15 @@ Cockpit.
 ## What CI runs
 
 `build.yaml` builds and tests a pull request, on the current GA line alone, which includes the
-integration tests against a cluster of that line's client. `deploy-to-github-packages.yaml`
-publishes the snapshot when a branch is pushed. Both run under one concurrency group, queued and
-never cancelled, because the snapshot artifacts share their coordinates: two runs publishing at the
-same time would overwrite each other, and whoever finished last would decide what the other
-repositories compile against. `release.yaml` is started by hand, reads the live lines out of the
-`line-*` profiles so it cannot fall behind the build, and publishes each of them to Maven Central
-from the same commit.
+integration tests against a cluster of that line's client. It runs in a group per pull request, so
+an open pull request never takes the waiting run of another one out.
+`deploy-to-github-packages.yaml` publishes the snapshot, and only for a push to `main`: the
+snapshot artifacts share their coordinates, so what the other repositories compile against has to
+be what `main` holds. It runs in a group of its own, one publish at a time, and a publish which is
+already running is never cancelled, because two runs publishing at the same time would overwrite
+each other. `release.yaml` is started by hand, reads the live lines out of the `line-*` profiles so
+it cannot fall behind the build, and publishes each of them to Maven Central from the same commit.
+It deploys no snapshot, so it can run beside a publish.
 
 ## Noteworthy & Contributors
 
