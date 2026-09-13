@@ -6,8 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -66,6 +69,25 @@ public class Camunda8CockpitIT {
 
   private static final String MODULE_ID = "c8-cockpit";
 
+  /**
+   * How often the application repeats a transaction which read a conflict. Two would do for the
+   * one other writer there is; the third is there so that a repetition which itself meets the
+   * next report does not end the test.
+   */
+  private static final int ATTEMPTS_OF_THE_APPLICATION = 3;
+
+  /**
+   * How long a wait for the cluster's searchable storage keeps hoping. It is the slowest thing
+   * in this class by far.
+   */
+  private static final Duration WAITING_FOR_THE_CLUSTER = Duration.ofMinutes(4);
+
+  /**
+   * How long a wait for the outbox keeps hoping. An entry which is due is dispatched within one
+   * cycle of half a second, so anything this side of a minute means it is not coming.
+   */
+  private static final Duration WAITING_FOR_THE_OUTBOX = Duration.ofMinutes(1);
+
   static final Network NETWORK = Network.newNetwork();
 
   @Container
@@ -111,6 +133,9 @@ public class Camunda8CockpitIT {
   @Autowired
   private Camunda8ClientFactoryRegistry clientFactories;
 
+  @Autowired
+  private DetailsProviderGate gate;
+
   @BeforeEach
   public void forgetWhatArrivedBefore() {
 
@@ -132,6 +157,30 @@ public class Camunda8CockpitIT {
           final var aggregate = new TestAggregate();
           aggregate.setCustomer(customer);
           return workflowService.processes().startWorkflow(aggregate);
+        });
+
+  }
+
+  /**
+   * Starts a workflow whose user-task details provider is held at the gate.
+   * <p>
+   * The gate is closed while the starting transaction is still open, and that is what makes the
+   * test deterministic: a workflow reaches the cluster only after the transaction of its start
+   * committed, so nothing can be reported - and no provider can run - before the gate is closed.
+   *
+   * @param customer What the case is about
+   * @return The started case
+   */
+  private TestAggregate aStartedWorkflowWhoseDetailsProviderIsHeld(
+      final String customer) {
+
+    return transactions
+        .execute(status -> {
+          final var aggregate = new TestAggregate();
+          aggregate.setCustomer(customer);
+          final var started = workflowService.processes().startWorkflow(aggregate);
+          gate.holdTheNextCallFor(started.getId());
+          return started;
         });
 
   }
@@ -162,15 +211,94 @@ public class Camunda8CockpitIT {
   }
 
   /**
-   * What the case carries now, read for a failure message: a report carrying an old value
-   * while the case carries the new one was read too early, and a case carrying the old value
-   * too was written over by somebody else.
+   * What the case carries now: a report carrying an old value while the case carries the new one
+   * was read too early, and a case carrying the old value too was written over by somebody else.
+   * <p>
+   * Read through the repository alone rather than inside a transaction of the test. A read-write
+   * transaction would flush the aggregate when it commits and would make the test one more writer
+   * of the case it is watching, which is exactly what the version attribute answers with a
+   * conflict.
    */
   private String storedCustomerOf(
       final TestAggregate aggregate) {
 
-    return transactions
-        .execute(status -> aggregates.findById(aggregate.getId()).orElseThrow().getCustomer());
+    return aggregates.findById(aggregate.getId()).orElseThrow().getCustomer();
+
+  }
+
+  /**
+   * @param aggregate The case
+   * @return What the details provider wrote into it, read the way {@link #storedCustomerOf} reads
+   */
+  private String noteOf(
+      final TestAggregate aggregate) {
+
+    return aggregates.findById(aggregate.getId()).orElseThrow().getNote();
+
+  }
+
+  /**
+   * Changes one case and reports the change, the way an application whose workflow aggregate
+   * carries a version attribute has to do it: in a transaction which is repeated where somebody
+   * else wrote the same case in between.
+   * <p>
+   * That somebody is the Business Cockpit itself. Its details provider reads the case while a
+   * report is dispatched and writes it back when that dispatch commits, so the two transactions
+   * overlap whenever an application changes a case it has just reported. Without the version
+   * attribute the later of the two writers wins silently; with it, one of them reads a conflict
+   * and repeats, which is why this loop is here rather than a single transaction.
+   *
+   * @param aggregateId The case to change
+   * @param changeAndReport Changes the attached case and reports it to the cockpit
+   */
+  private void changeTheCase(
+      final Long aggregateId,
+      final Consumer<TestAggregate> changeAndReport) {
+
+    for (var attempt = 1;; attempt++) {
+      try {
+        transactions
+            .executeWithoutResult(status -> {
+              final var attached = aggregates.findById(aggregateId).orElseThrow();
+              changeAndReport.accept(attached);
+              aggregates.save(attached);
+            });
+        return;
+      } catch (final OptimisticLockingFailureException e) {
+        if (attempt >= ATTEMPTS_OF_THE_APPLICATION) {
+          throw new AssertionError(
+              "The application gave up after %d attempts at changing case %s"
+                  .formatted(attempt, aggregateId), e);
+        }
+      }
+    }
+
+  }
+
+  /**
+   * Waits for a report of one kind which carries the value the application wrote.
+   * <p>
+   * A report carrying the older value has two possible causes and they need different work: the
+   * report read the case too early, or the case itself lost the change. So a failure names what
+   * the case carries now as well - see the version attribute of {@link TestAggregate}.
+   *
+   * @param pathSuffix What the report's path has to end with
+   * @param expected What its body has to carry
+   * @param aggregate The case the report is about
+   * @return The report
+   */
+  private CockpitServer.Request awaitReportCarrying(
+      final String pathSuffix,
+      final String expected,
+      final TestAggregate aggregate) {
+
+    try {
+      return CockpitServer.awaitRequest(pathSuffix, expected);
+    } catch (final AssertionError e) {
+      throw new AssertionError(
+          "%s And the stored case now carries the customer '%s'."
+              .formatted(e.getMessage(), storedCustomerOf(aggregate)), e);
+    }
 
   }
 
@@ -209,7 +337,40 @@ public class Camunda8CockpitIT {
       final Supplier<T> value,
       final String description) {
 
-    final var deadline = System.currentTimeMillis() + 240_000;
+    return awaitValue(value, () -> description, WAITING_FOR_THE_CLUSTER);
+
+  }
+
+  /**
+   * @param value What is waited for
+   * @param description What a failure says, read only then - so that it may name what the case
+   *          and the cockpit server carry by the time the waiting gave up
+   * @param <T> What is waited for
+   * @return The value
+   * @see #awaitValue(Supplier, String)
+   */
+  private static <T> T awaitValue(
+      final Supplier<T> value,
+      final Supplier<String> description) {
+
+    return awaitValue(value, description, WAITING_FOR_THE_CLUSTER);
+
+  }
+
+  /**
+   * @param value What is waited for
+   * @param description What a failure says
+   * @param waitingAtMost How long to keep hoping
+   * @param <T> What is waited for
+   * @return The value
+   * @see #awaitValue(Supplier, String)
+   */
+  private static <T> T awaitValue(
+      final Supplier<T> value,
+      final Supplier<String> description,
+      final Duration waitingAtMost) {
+
+    final var deadline = System.currentTimeMillis() + waitingAtMost.toMillis();
     while (System.currentTimeMillis() < deadline) {
       final var found = value.get();
       if (found != null) {
@@ -220,11 +381,11 @@ public class Camunda8CockpitIT {
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
         throw new IllegalStateException("Interrupted while waiting for "
-            + description, e);
+            + description.get(), e);
       }
     }
     throw new AssertionError("Timed out waiting for "
-        + description);
+        + description.get());
 
   }
 
@@ -325,10 +486,15 @@ public class Camunda8CockpitIT {
     // the BPMN name is what the cockpit falls back to when nothing else produced a title
     assertTrue(userTask.body().contains("Approve the order"), userTask.body());
 
-    // the details provider ran on the real aggregate and its change was saved
-    assertEquals(
-        TestWorkflowService.APPROVE_NOTE,
-        aggregates.findById(aggregate.getId()).orElseThrow().getNote());
+    // the details provider ran on the real aggregate and its change was saved. It is waited for
+    // rather than read right away: the report is sent while the transaction of the dispatch is
+    // still open, so the change of the provider reaches the database a moment after it
+    awaitValue(
+        () -> TestWorkflowService.APPROVE_NOTE.equals(noteOf(aggregate))
+            ? Boolean.TRUE
+            : null,
+        () -> "the change the details provider made to be committed",
+        WAITING_FOR_THE_OUTBOX);
 
   }
 
@@ -410,24 +576,19 @@ public class Camunda8CockpitIT {
     CockpitServer.awaitRequest("/workflow/created");
     CockpitServer.forgetRequests();
 
-    transactions
-        .executeWithoutResult(status -> {
-          final var attached = aggregates.findById(aggregate.getId()).orElseThrow();
+    changeTheCase(
+        aggregate.getId(),
+        attached -> {
           attached.setCustomer("Emil the second");
-          aggregates.save(attached);
           workflowService.businessCockpit().aggregateChanged(attached);
         });
 
-    final var updated = CockpitServer.awaitRequest("/workflow/%s/updated".formatted(workflowId));
-    // the stored customer is named as well, because a report carrying the old one has two
-    // possible causes and they need different work: the report read the case too early, or the
-    // case itself lost the change. The second happens while the report of the user task is
-    // dispatched, when its details provider holds the aggregate over this transaction and
-    // writes it back afterwards
-    assertTrue(
-        updated.body().contains("Emil the second"),
-        () -> "the report reads %s, and the stored case now carries the customer '%s'"
-            .formatted(updated.body(), storedCustomerOf(aggregate)));
+    // the report carries what the application wrote, not what the case said before it. The
+    // report of the user task may still be dispatching while this runs, and its details
+    // provider holds the case over this transaction - the version attribute of TestAggregate is
+    // what keeps that dispatch from writing the older reading back
+    awaitReportCarrying(
+        "/workflow/%s/updated".formatted(workflowId), "Emil the second", aggregate);
 
   }
 
@@ -440,20 +601,56 @@ public class Camunda8CockpitIT {
     CockpitServer.awaitRequest("/usertask/created");
     CockpitServer.forgetRequests();
 
-    transactions
-        .executeWithoutResult(status -> {
-          final var attached = aggregates.findById(aggregate.getId()).orElseThrow();
+    changeTheCase(
+        aggregate.getId(),
+        attached -> {
           attached.setCustomer("Frida the second");
-          aggregates.save(attached);
           workflowService.businessCockpit().aggregateChanged(attached, userTaskId);
         });
 
-    final var updated = CockpitServer.awaitRequest("/usertask/%s/updated".formatted(userTaskId));
-    // and the same reading aid here, for the same two causes
-    assertTrue(
-        updated.body().contains("Frida the second"),
-        () -> "the report reads %s, and the stored case now carries the customer '%s'"
-            .formatted(updated.body(), storedCustomerOf(aggregate)));
+    awaitReportCarrying(
+        "/usertask/%s/updated".formatted(userTaskId), "Frida the second", aggregate);
+
+  }
+
+  @Test
+  @DisplayName("A change made while a details provider holds the case is not written over")
+  public void aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives() {
+
+    final var aggregate = aStartedWorkflowWhoseDetailsProviderIsHeld("Nora");
+    final var userTaskId = userTaskIdOf(aggregate);
+    // the details provider of the user task now waits inside the dispatch of the CREATED
+    // report: it has read the case and has not written it back yet
+    gate.awaitTheHeldCall();
+    CockpitServer.forgetRequests();
+
+    changeTheCase(
+        aggregate.getId(),
+        attached -> {
+          attached.setCustomer("Nora the second");
+          workflowService.businessCockpit().aggregateChanged(attached, userTaskId);
+        });
+
+    gate.letTheHeldCallFinish();
+
+    // the held dispatch now writes the case back with the reading it took before the change, and
+    // the version attribute turns that into a conflict, so the write is refused. Without it the
+    // dispatch would win, the case would read "Nora" again and the report of the change would
+    // read it too - which is the failure this test is here to catch
+    awaitReportCarrying(
+        "/usertask/%s/updated".formatted(userTaskId), "Nora the second", aggregate);
+    assertEquals("Nora the second", storedCustomerOf(aggregate));
+
+    // the provider's own write is there as well, from the dispatch which went through. What
+    // happens to the report of the held dispatch is not asserted: it was sent before its
+    // transaction tried to commit, so it carries the older reading either way, and whether the
+    // outbox sends it a second time is the outbox's business
+    awaitValue(
+        () -> TestWorkflowService.APPROVE_NOTE.equals(noteOf(aggregate))
+            ? Boolean.TRUE
+            : null,
+        () -> "the change the details provider made to be committed",
+        WAITING_FOR_THE_OUTBOX);
 
   }
 
