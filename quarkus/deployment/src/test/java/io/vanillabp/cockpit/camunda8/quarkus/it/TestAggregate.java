@@ -2,7 +2,14 @@ package io.vanillabp.cockpit.camunda8.quarkus.it;
 
 import java.util.List;
 
-/** The business case of the test: what the workflow is about. */
+/**
+ * The business case of the test: what the workflow is about.
+ * <p>
+ * It carries no version attribute, unlike the entity of the Spring Boot test, and it does not
+ * need one: {@link TestAggregatePersistence} is a map which hands out the very object it holds,
+ * so a details provider changing the case changes the one copy there is. There is no older
+ * reading anybody could write back over a newer one.
+ */
 public class TestAggregate {
 
   private Long id;

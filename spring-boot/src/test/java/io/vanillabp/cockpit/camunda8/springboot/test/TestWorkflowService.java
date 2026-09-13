@@ -46,12 +46,16 @@ public class TestWorkflowService {
 
   private final BusinessCockpitService<TestAggregate> businessCockpitService;
 
+  private final DetailsProviderGate gate;
+
   public TestWorkflowService(
       final ProcessService<TestAggregate> processService,
-      final BusinessCockpitService<TestAggregate> businessCockpitService) {
+      final BusinessCockpitService<TestAggregate> businessCockpitService,
+      final DetailsProviderGate gate) {
 
     this.processService = processService;
     this.businessCockpitService = businessCockpitService;
+    this.gate = gate;
 
   }
 
@@ -75,7 +79,11 @@ public class TestWorkflowService {
 
   /**
    * Matched by the external form reference of the user task. It enriches what the cluster
-   * reported and writes into the workflow aggregate, which is what a details provider is for.
+   * reported and writes into the workflow aggregate, which a details provider is allowed to do
+   * and which makes it a second writer of the case.
+   * <p>
+   * The gate is what a test closes to hold this call open while it changes the same case, so
+   * that the two writers meet at a fixed point rather than by chance. It is open otherwise.
    *
    * @param aggregate The workflow aggregate, loaded by VanillaBP
    * @param prefilled What the cluster knew about the task
@@ -88,6 +96,7 @@ public class TestWorkflowService {
       final PrefilledUserTaskDetails prefilled,
       @DetailsEvent final DetailsEvent.Event event) {
 
+    gate.passOrWait(aggregate.getId());
     aggregate.setNote(APPROVE_NOTE);
     prefilled.setDetails(Map.of("customer", aggregate.getCustomer(), "event", event.name()));
     prefilled.setCandidateGroups(List.of("approvers"));
