@@ -2,6 +2,7 @@ package io.vanillabp.cockpit.camunda8.quarkus.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -31,9 +32,13 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.quarkus.test.QuarkusExtensionTest;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
+import io.vanillabp.cockpit.camunda8.Camunda8CockpitReads;
 import io.vanillabp.cockpit.camunda8.test.support.ClusterUnderTest;
 import io.vanillabp.cockpit.camunda8.test.support.CockpitServer;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
+import io.vanillabp.cockpit.extension.spi.UserTaskReference;
+import io.vanillabp.cockpit.extension.spi.WorkflowReference;
+import io.vanillabp.integration.spi.PhaseTwoRetryLater;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 import jakarta.inject.Inject;
 import jakarta.transaction.UserTransaction;
@@ -382,6 +387,39 @@ public class Camunda8CockpitTest {
     final var workflow = CockpitServer.awaitRequest("/updated", "\"customer\":\"Cleo the second\"");
     assertTrue(workflow.path().contains("/workflow/"), workflow.path());
     CockpitServer.awaitRequest("/usertask/%s/updated".formatted(userTaskId), "Cleo the second");
+
+  }
+
+  @Test
+  @DisplayName("A report about something the cluster does not hold asks again instead of failing")
+  public void aReportAboutSomethingTheClusterDoesNotHoldAsksAgain() throws Exception {
+
+    // see the test of the same name in the Spring Boot module for what this asks and why it asks
+    // it this way: the answer a cluster gives while its exporter is behind is the answer it gives
+    // for a key it never handed out
+    final var started = aStartedWorkflow("Dora");
+    // the keys of a partition are counted up from one number whatever they are handed out for, so
+    // a key a million past a real one is neither a user task nor a workflow of this run
+    final var unknownKey = String.valueOf(Long.parseLong(userTaskIdOf(started)) + 1_000_000L);
+    final var unknownUserTask = new UserTaskReference(
+        ADAPTER_ID, MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, String.valueOf(started
+            .getId()), unknownKey, unknownKey, TestWorkflowService.TASK_DEFINITION, TestWorkflowService.BPMN_TASK_ID);
+    final var unknownWorkflow = new WorkflowReference(
+        ADAPTER_ID, MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, String.valueOf(started.getId()), unknownKey);
+
+    final var aboutTheUserTask = assertThrows(
+        PhaseTwoRetryLater.class,
+        () -> bridges.getFirst().prefilledUserTaskDetails(unknownUserTask));
+    assertEquals(
+        Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP,
+        aboutTheUserTask.getRetryAfter(),
+        "the report does not come back within the window the extension names");
+
+    final var aboutTheWorkflow = assertThrows(
+        PhaseTwoRetryLater.class,
+        () -> bridges.getFirst().prefilledWorkflowDetails(unknownWorkflow));
+    assertEquals(
+        Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP, aboutTheWorkflow.getRetryAfter());
 
   }
 

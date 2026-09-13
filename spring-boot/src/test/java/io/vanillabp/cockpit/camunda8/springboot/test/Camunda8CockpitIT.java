@@ -2,6 +2,7 @@ package io.vanillabp.cockpit.camunda8.springboot.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -40,8 +41,13 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
+import io.vanillabp.cockpit.camunda8.Camunda8CockpitReads;
 import io.vanillabp.cockpit.camunda8.test.support.ClusterUnderTest;
 import io.vanillabp.cockpit.camunda8.test.support.CockpitServer;
+import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
+import io.vanillabp.cockpit.extension.spi.UserTaskReference;
+import io.vanillabp.cockpit.extension.spi.WorkflowReference;
+import io.vanillabp.integration.spi.PhaseTwoRetryLater;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -124,16 +130,37 @@ public class Camunda8CockpitIT {
   @Autowired
   private TransactionTemplate transactions;
 
+  /**
+   * A transaction which cannot write, for the tests which only read.
+   * <p>
+   * Reading a user task runs the application's details provider, and that provider writes the note
+   * onto the case it was handed. In a read-write transaction of the test that write is flushed when
+   * the transaction commits, which makes a test which reads a second writer of the case - and the
+   * cockpit's own dispatch is writing it at the same moment, so the version attribute of
+   * {@link TestAggregate} answered the test with a conflict whenever the two met. Reading in a
+   * transaction which flushes nothing says what the test does.
+   */
+  private TransactionTemplate readingOnly;
+
   @Autowired
   private Camunda8ClientFactoryRegistry clientFactories;
 
   @Autowired
   private DetailsProviderGate gate;
 
+  /**
+   * What the cockpit's neutral half asks about this cluster. One is registered per configured
+   * Camunda 8 adapter id, and this application configures one.
+   */
+  @Autowired
+  private BusinessCockpitBpmsBridge bridge;
+
   @BeforeEach
   public void forgetWhatArrivedBefore() {
 
     CockpitServer.forgetRequests();
+    readingOnly = new TransactionTemplate(transactions.getTransactionManager());
+    readingOnly.setReadOnly(true);
 
   }
 
@@ -472,13 +499,12 @@ public class Camunda8CockpitIT {
     // The customer in that body is what the details provider read off the case, so the report
     // shows that the provider ran on the real aggregate. Whether the case KEEPS what that
     // provider wrote into it is not asserted, on purpose. The write rides the transaction which
-    // dispatches the report, and the report is sent before that transaction commits. So the
-    // commit can still be refused: by another writer of the same case, or by a first dispatch
-    // attempt the cluster answered too early, which leaves the whole transaction unable to
-    // commit. The report stands and the write is gone with the transaction. When the entry is
-    // dispatched again is nobody's promise, so waiting for that write is waiting for something
-    // which may never come. What such a write does to a case somebody else is changing at the
-    // same time is the subject of aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives.
+    // dispatches the report, and the report is sent before that transaction commits, so another
+    // writer of the same case can still have the commit refused. The report stands and the write
+    // is gone with the transaction, and the entry is dispatched again at some point nobody
+    // promises, so waiting for that write is waiting for something which may never come. What
+    // such a write does to a case somebody else is changing at the same time is the subject of
+    // aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives.
 
   }
 
@@ -642,7 +668,7 @@ public class Camunda8CockpitIT {
     final var otherAggregate = aStartedWorkflow("Heidi");
     userTaskIdOf(otherAggregate);
 
-    final var userTask = transactions
+    final var userTask = readingOnly
         .execute(
             status -> workflowService
                 .businessCockpit()
@@ -652,7 +678,7 @@ public class Camunda8CockpitIT {
     assertEquals(TestWorkflowService.BPMN_TASK_ID, userTask.get().getBpmnTaskId());
     assertEquals(TestWorkflowService.TASK_DEFINITION, userTask.get().getTaskDefinition());
 
-    final var foreign = transactions
+    final var foreign = readingOnly
         .execute(
             status -> workflowService
                 .businessCockpit()
@@ -671,7 +697,7 @@ public class Camunda8CockpitIT {
     CockpitServer.awaitRequest("/usertask/created");
     CockpitServer.forgetRequests();
 
-    transactions
+    readingOnly
         .execute(
             status -> workflowService
                 .businessCockpit()
@@ -715,6 +741,60 @@ public class Camunda8CockpitIT {
             .join()
             .getHasIncident(),
         "the workflow carries an incident although only a report failed");
+
+  }
+
+  /**
+   * A key of the shape the cluster hands out which it cannot hold: the keys of a partition are
+   * counted up from one number, whatever they are handed out for, so a key a million past one the
+   * cluster really gave is neither a user task nor a workflow of this run. The shape matters - a
+   * number the gateway rejects as invalid is answered differently from one it simply does not
+   * hold, and it is the second answer this is for.
+   *
+   * @param keyItHandedOut A key the cluster is known to hold
+   * @return A key it does not
+   */
+  private static String aKeyTheClusterDoesNotHold(
+      final String keyItHandedOut) {
+
+    return String.valueOf(Long.parseLong(keyItHandedOut) + 1_000_000L);
+
+  }
+
+  @Test
+  @DisplayName("A report about something the cluster does not hold asks again instead of failing")
+  public void aReportAboutSomethingTheClusterDoesNotHoldAsksAgain() {
+
+    // What the searchable storage of a cluster answers while its exporter is behind is the same
+    // answer it gives for a key it never handed out, and neither the bridge nor anything above it
+    // can tell the two apart. That is what makes this the ordinary case rather than an exotic one:
+    // a report of something which just happened arrives before the record it reads, and it has to
+    // come back instead of being dropped. Asking about a key the cluster does not hold is how that
+    // is asked without waiting for an exporter to be late, which would leave the test - and the
+    // coverage of these two branches - to the speed of the machine it runs on.
+    final var aggregate = aStartedWorkflow("Dora");
+    final var unknownWorkflowId = aKeyTheClusterDoesNotHold(workflowIdOf(aggregate));
+    final var unknownUserTaskId = aKeyTheClusterDoesNotHold(userTaskIdOf(aggregate));
+    final var unknownUserTask = new UserTaskReference(
+        "c8", MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, String
+            .valueOf(aggregate
+                .getId()), unknownWorkflowId, unknownUserTaskId, TestWorkflowService.TASK_DEFINITION, TestWorkflowService.BPMN_TASK_ID);
+    final var unknownWorkflow = new WorkflowReference(
+        "c8", MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, String.valueOf(aggregate.getId()), unknownWorkflowId);
+
+    final var aboutTheUserTask = assertThrows(
+        PhaseTwoRetryLater.class,
+        () -> bridge.prefilledUserTaskDetails(unknownUserTask));
+    assertEquals(
+        Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP,
+        aboutTheUserTask.getRetryAfter(),
+        "the report does not come back within the window the extension names");
+
+    final var aboutTheWorkflow = assertThrows(
+        PhaseTwoRetryLater.class,
+        () -> bridge.prefilledWorkflowDetails(unknownWorkflow));
+    assertEquals(
+        Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP, aboutTheWorkflow.getRetryAfter());
 
   }
 
