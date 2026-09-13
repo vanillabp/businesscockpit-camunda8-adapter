@@ -79,13 +79,14 @@ public class TestWorkflowService {
 
   /**
    * Matched by the external form reference of the user task. It enriches what the cluster
-   * reported and writes into the workflow aggregate, which a details provider is allowed to do
-   * and which makes it a second writer of the case.
+   * reported, and for the one case a test asks for it also writes into the workflow aggregate,
+   * which a details provider is allowed to do and which makes it a second writer of that case.
    * <p>
-   * The write has to stay even though no test reads the note any more. It is what leaves the case
-   * dirty in the transaction which dispatches the report, and
-   * Camunda8CockpitIT#aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives needs that write to
-   * have a second writer at all.
+   * No test reads the note any more. The write is there because
+   * Camunda8CockpitIT#aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives needs a second writer,
+   * and it is asked for per case because a provider writes into whatever transaction ran it - see
+   * {@link DetailsProviderGate#letTheProviderWriteOnto(Long)} for what writing onto every case did
+   * to the tests which only read.
    * <p>
    * The gate is what a test closes to hold this call open while it changes the same case, so
    * that the two writers meet at a fixed point rather than by chance. It is open otherwise.
@@ -102,7 +103,9 @@ public class TestWorkflowService {
       @DetailsEvent final DetailsEvent.Event event) {
 
     gate.passOrWait(aggregate.getId());
-    aggregate.setNote(APPROVE_NOTE);
+    if (gate.mayWriteOnto(aggregate.getId())) {
+      aggregate.setNote(APPROVE_NOTE);
+    }
     prefilled.setDetails(Map.of("customer", aggregate.getCustomer(), "event", event.name()));
     prefilled.setCandidateGroups(List.of("approvers"));
     return prefilled;

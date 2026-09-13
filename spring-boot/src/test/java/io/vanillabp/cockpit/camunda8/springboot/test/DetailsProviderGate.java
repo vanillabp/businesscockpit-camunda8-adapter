@@ -30,6 +30,9 @@ public class DetailsProviderGate {
   /** The case whose next call is held, if any. */
   private final AtomicReference<Long> heldCase = new AtomicReference<>();
 
+  /** The case whose provider writes onto it, if any. */
+  private final AtomicReference<Long> writtenCase = new AtomicReference<>();
+
   /** Counted down once the provider is inside the call and holding the case. */
   private volatile CountDownLatch arrived = new CountDownLatch(0);
 
@@ -47,6 +50,38 @@ public class DetailsProviderGate {
     arrived = new CountDownLatch(1);
     released = new CountDownLatch(1);
     heldCase.set(aggregateId);
+
+  }
+
+  /**
+   * Lets the details provider write onto one case, which is what makes the cockpit a second writer
+   * of it.
+   * <p>
+   * Off for every other case, and that is not tidiness. A provider writes into whatever
+   * transaction ran it, and the read behind {@code BusinessCockpitService.getUserTask} runs one
+   * too, in the transaction of the caller. So a provider which writes onto every case turns a test
+   * which only reads into a writer of a case the cockpit's own dispatch is writing at the same
+   * moment, and one of the two then reads a conflict. What VanillaBP saves after a details provider
+   * and what a persistence writes anyway is decision 17 in the DECISIONS.md of
+   * vanillabp/business-cockpit.
+   *
+   * @param aggregateId The case
+   */
+  public void letTheProviderWriteOnto(
+      final Long aggregateId) {
+
+    writtenCase.set(aggregateId);
+
+  }
+
+  /**
+   * @param aggregateId The case a provider was called for
+   * @return Whether the provider may write onto it
+   */
+  public boolean mayWriteOnto(
+      final Long aggregateId) {
+
+    return aggregateId.equals(writtenCase.get());
 
   }
 
