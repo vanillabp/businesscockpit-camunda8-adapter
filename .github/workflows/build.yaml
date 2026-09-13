@@ -1,15 +1,22 @@
 name: Build
 # A pull request builds and tests. Publishing is the job of
-# deploy-to-github-packages.yaml, which shares the concurrency group below so a build
-# and a publish of this repository never run at the same time.
+# deploy-to-github-packages.yaml, which has a concurrency group of its own.
 "on":
   pull_request:
   workflow_dispatch:
 concurrency:
-  # one build of this repository at a time, queued and never cancelled: the snapshot
-  # artifacts share their coordinates across branches, so two runs publishing at once
-  # overwrite each other
-  group: businesscockpit-camunda8-adapter-build
+  # A group per pull request. GitHub keeps at most one waiting run per group, and a
+  # newer run takes the place of the one that waits. The replaced run ends as
+  # 'cancelled' without ever starting a job, so its pull request is left with no build
+  # result, and nothing in the interface says that a result is missing.
+  # 'cancel-in-progress: false' only protects the run which is already running.
+  #
+  # With the ref in the group name, a build waits only for another build of the same
+  # pull request, and there the newest commit keeps its run. Sharing the group with the
+  # publish workflow was never needed for this build: it runs 'install' with read
+  # access to the registry and uploads nothing, so it can neither overwrite a snapshot
+  # nor be overwritten by one.
+  group: businesscockpit-camunda8-adapter-pr-build-${{ github.ref }}
   cancel-in-progress: false
 permissions:
   contents: read
