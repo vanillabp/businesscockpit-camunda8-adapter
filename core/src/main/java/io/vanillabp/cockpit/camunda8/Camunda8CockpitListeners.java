@@ -129,8 +129,9 @@ public final class Camunda8CockpitListeners {
   /**
    * Adds the three task listeners of one user task, in the order Version 1 left behind.
    * <p>
-   * VanillaBP's own listeners are already there when this runs - the deployment pipeline calls
-   * an adapter before any extension - and the order this produces is the Version 1 one:
+   * VanillaBP's own listeners are already there when this runs, and the wiki page
+   * <a href="https://github.com/vanillabp/adapter-platform-integration/wiki/Extensions">Extensions</a>
+   * says why. The order this produces is the Version 1 one:
    * VanillaBP's <code>creating</code>, whatever the modeller wrote as a <code>creating</code>
    * listener, the cockpit's <code>creating</code>, the modeller's remaining listeners,
    * VanillaBP's <code>canceling</code>, and finally the cockpit's <code>canceling</code> and
