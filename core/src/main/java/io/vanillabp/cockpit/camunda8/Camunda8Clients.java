@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import io.camunda.client.CamundaClient;
 import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration;
+import io.vanillabp.camunda8.client.Camunda8ClientFactory;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidanceSupport;
 
@@ -45,11 +46,25 @@ public class Camunda8Clients {
     }
 
     /**
+     * The adapter's own factory of this cluster, which is the one object the adapter and this
+     * extension both hold per adapter id. What the extension asks it for is what a workflow
+     * module has in common across the two: the drain a listener job takes part in, and the
+     * hook which closes a module's workers if the client goes down before they did.
+     *
+     * @return The factory of this adapter id
+     */
+    public Camunda8ClientFactory factory() {
+
+      return clientFactories.getFactory(scope.adapterId());
+
+    }
+
+    /**
      * @return The client of this adapter, which the adapter hands out by identity
      */
     public CamundaClient client() {
 
-      return clientFactories.getFactory(scope.adapterId()).getClient();
+      return factory().getClient();
 
     }
 
@@ -60,7 +75,7 @@ public class Camunda8Clients {
      */
     public Camunda8AdapterConfiguration configuration() {
 
-      return clientFactories.getFactory(scope.adapterId()).getConfiguration();
+      return factory().getConfiguration();
 
     }
 

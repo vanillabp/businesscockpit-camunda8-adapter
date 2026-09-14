@@ -125,7 +125,7 @@ public class Camunda8CockpitWorkers {
         .jobType(listenerType)
         .handler(
             new Camunda8CockpitJobHandler(
-                cluster.scope(), workflowModuleId, deployments, publisher))
+                cluster, workflowModuleId, deployments, publisher))
         .timeout(settings.listenerJobTimeout(workflowModuleId, cluster.scope().adapterId()))
         .name("vanillabp-businesscockpit-%s-%s".formatted(cluster.scope().adapterId(), listenerType))
         .fetchVariables(variables);
