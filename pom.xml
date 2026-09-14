@@ -21,8 +21,6 @@
 
   <modules>
     <module>core</module>
-    <!-- before the modules whose tests use it, and published nowhere -->
-    <module>test-support</module>
     <module>spring-boot</module>
     <module>quarkus</module>
     <!-- last: it judges the reports the modules above produced -->
@@ -168,6 +166,13 @@
         <artifactId>spi-for-java</artifactId>
         <version>${business-cockpit.version}</version>
       </dependency>
+      <!-- the cockpit server the integration tests of every extension repository report to,
+           published by the cockpit so that this repository does not keep a copy of it -->
+      <dependency>
+        <groupId>io.vanillabp.businesscockpit</groupId>
+        <artifactId>extensions-commons-test-support</artifactId>
+        <version>${business-cockpit.version}</version>
+      </dependency>
       <dependency>
         <groupId>org.camunda.community.vanillabp</groupId>
         <artifactId>camunda8-adapter</artifactId>
@@ -186,6 +191,13 @@
       <dependency>
         <groupId>org.camunda.community.vanillabp</groupId>
         <artifactId>camunda8-adapter-quarkus-deployment</artifactId>
+        <version>${camunda8-adapter.version}</version>
+      </dependency>
+      <!-- the Camunda 8 cluster the integration tests run against: the adapter publishes it
+           per release line, so a line's tests here meet the cluster that line was built for -->
+      <dependency>
+        <groupId>org.camunda.community.vanillabp</groupId>
+        <artifactId>camunda8-adapter-test-support</artifactId>
         <version>${camunda8-adapter.version}</version>
       </dependency>
       <dependency>

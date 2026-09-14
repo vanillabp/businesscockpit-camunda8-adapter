@@ -25,7 +25,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.Network;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -40,13 +39,13 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
+import io.vanillabp.camunda8.test.ClusterUnderTest;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitReads;
-import io.vanillabp.cockpit.camunda8.test.support.ClusterUnderTest;
-import io.vanillabp.cockpit.camunda8.test.support.CockpitServer;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
+import io.vanillabp.cockpit.extension.test.support.CockpitServer;
 import io.vanillabp.integration.spi.PhaseTwoRetryLater;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
@@ -88,13 +87,8 @@ public class Camunda8CockpitIT {
    */
   private static final Duration WAITING_FOR_THE_CLUSTER = Duration.ofMinutes(4);
 
-  static final Network NETWORK = Network.newNetwork();
-
   @Container
-  static final GenericContainer<?> ELASTICSEARCH = ClusterUnderTest.elasticsearch(NETWORK);
-
-  @Container
-  static final GenericContainer<?> CAMUNDA = ClusterUnderTest.cluster(NETWORK, ELASTICSEARCH);
+  static final GenericContainer<?> CAMUNDA = ClusterUnderTest.cluster();
 
   @DynamicPropertySource
   static void theClusterAndTheCockpitServer(

@@ -85,40 +85,50 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <!-- the cluster these tests run against and the cockpit server they report to, shared
-        with the Quarkus module rather than copied into it -->
-      <groupId>${project.groupId}</groupId>
-      <artifactId>businesscockpit-camunda8-adapter-test-support</artifactId>
-      <version>${project.version}</version>
+      <!-- the cluster these tests run against, published by the Camunda 8 adapter per release
+        line, so these tests meet the cluster the active line was built for -->
+      <groupId>org.camunda.community.vanillabp</groupId>
+      <artifactId>camunda8-adapter-test-support</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- the cockpit server these tests report to, published by the Business Cockpit and
+        shared with the other extension repositories -->
+      <groupId>io.vanillabp.businesscockpit</groupId>
+      <artifactId>extensions-commons-test-support</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
 
   <build>
-    <testResources>
-      <testResource>
-        <filtering>true</filtering>
-        <!-- the cluster the integration tests run against follows the client the active
-             release line pins, so the image is filtered in rather than written into a test -->
-        <directory>src/test/resources</directory>
-        <includes>
-          <include>camunda8-cluster.properties</include>
-        </includes>
-      </testResource>
-      <testResource>
-        <filtering>false</filtering>
-        <directory>src/test/resources</directory>
-        <excludes>
-          <exclude>camunda8-cluster.properties</exclude>
-        </excludes>
-      </testResource>
-    </testResources>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <!-- A report of this repository travels through a cluster: the extension writes an
+              outbox entry while a listener job is handed out, the entry is dispatched after the
+              cluster's searchable storage caught up, and only then does the server see it. The
+              default of the cockpit server is 30 seconds, which is the patience of a test whose
+              report never leaves the application. -->
+            <businesscockpit.test-server.wait-millis>240000</businesscockpit.test-server.wait-millis>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
       <plugin>
         <!-- the tests of this module need a Camunda 8 cluster, which is what an integration
              test is: the parent already configured the plugin, the module says it runs one -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <!-- The integration tests of this module wait for a report which travelled through a
+              cluster, and the cockpit server's own default is the patience of a test whose report
+              never left the application. -->
+            <businesscockpit.test-server.wait-millis>240000</businesscockpit.test-server.wait-millis>
+          </systemPropertyVariables>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
