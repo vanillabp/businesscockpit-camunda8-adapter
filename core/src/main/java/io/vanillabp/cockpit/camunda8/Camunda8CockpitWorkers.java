@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.camunda.client.api.worker.JobWorker;
+import io.vanillabp.camunda8.client.Camunda8ClientFactory.WorkflowModuleShutdownRegistration;
 import io.vanillabp.camunda8.client.Camunda8Workers;
 import io.vanillabp.camunda8.observability.Camunda8Metrics;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
@@ -32,6 +33,10 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * A worker opened here is set up the way the adapter sets up its own, so an operator reads one
  * kind of worker rather than two. The counters of these workers therefore appear next to the
  * adapter's, under the adapter id they belong to and under the listener type as their job type.
+ * <p>
+ * The ordinary way these workers stop is the pipeline stopping workflow processing of their
+ * module. Where a shutdown never gets that far, the adapter's client factory closes them: it is
+ * told they are open and it stops what is still open before it closes the client.
  */
 public class Camunda8CockpitWorkers {
 
@@ -62,7 +67,19 @@ public class Camunda8CockpitWorkers {
                               String workflowModuleId) {
   }
 
-  private final Map<Subscription, List<JobWorker>> workersBySubscription = new ConcurrentHashMap<>();
+  /**
+   * What one workflow module of one cluster has open.
+   *
+   * @param workers Its workers, in the order they were opened in
+   * @param removeTheShutdownHook What takes the hook of these workers off the adapter's client
+   *          factory again once they are closed
+   */
+  private record OpenWorkers(
+                             List<JobWorker> workers,
+                             WorkflowModuleShutdownRegistration removeTheShutdownHook) {
+  }
+
+  private final Map<Subscription, OpenWorkers> openWorkers = new ConcurrentHashMap<>();
 
   /**
    * @param clients The clusters of the configured Camunda 8 adapters
@@ -97,7 +114,7 @@ public class Camunda8CockpitWorkers {
       final String workflowModuleId) {
 
     final var subscription = new Subscription(adapterId, workflowModuleId);
-    if (workersBySubscription.containsKey(subscription)) {
+    if (openWorkers.containsKey(subscription)) {
       return;
     }
     final var listenersByType = deployments.listenersByTypeOf(adapterId, workflowModuleId);
@@ -118,9 +135,18 @@ public class Camunda8CockpitWorkers {
       close(opened);
       throw e;
     }
+    // Nothing else closes these workers where a shutdown path never reaches this extension,
+    // and the client would then go down under them: the listener jobs they are serving are cut
+    // off and the activation requests they parked at the cluster stay parked. So the adapter's
+    // client factory is told they are open and closes them before its client if it has to.
+    // The hook belongs to this extension alone - the adapter's own is registered beside it and
+    // neither replaces the other
+    final var removeTheShutdownHook = cluster
+        .factory()
+        .workflowModuleStarted(workflowModuleId, () -> close(adapterId, workflowModuleId));
     // noted only once every worker of the module stands, so that a failed start leaves
     // nothing behind which a later stop would try to close a second time
-    workersBySubscription.put(subscription, opened);
+    openWorkers.put(subscription, new OpenWorkers(opened, removeTheShutdownHook));
 
   }
 
@@ -176,15 +202,18 @@ public class Camunda8CockpitWorkers {
       final String adapterId,
       final String workflowModuleId) {
 
-    final var workers = workersBySubscription.remove(new Subscription(adapterId, workflowModuleId));
-    if (workers == null) {
+    final var open = openWorkers.remove(new Subscription(adapterId, workflowModuleId));
+    if (open == null) {
       return;
     }
-    close(workers);
+    // before the workers, and only this extension's hook: one left behind would point at
+    // workers which are already closed, and the adapter would call it while it shuts down
+    open.removeTheShutdownHook().close();
+    close(open.workers());
     logger
         .info(
             "Camunda8[{}]: the Business Cockpit closed its {} worker(s) of workflow module '{}'",
-            adapterId, workers.size(), workflowModuleId);
+            adapterId, open.workers().size(), workflowModuleId);
 
   }
 
