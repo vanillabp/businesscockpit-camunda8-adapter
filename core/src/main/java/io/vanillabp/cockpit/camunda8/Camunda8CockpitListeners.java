@@ -135,8 +135,8 @@ public final class Camunda8CockpitListeners {
    * VanillaBP's <code>creating</code>, whatever the modeller wrote as a <code>creating</code>
    * listener, the cockpit's <code>creating</code>, the modeller's remaining listeners,
    * VanillaBP's <code>canceling</code>, and finally the cockpit's <code>canceling</code> and
-   * <code>completing</code>. Each of the cockpit's listeners sits behind everything which may
-   * still change what it is about to report.
+   * <code>completing</code>. Each of the cockpit's listeners sits behind the listeners of this
+   * task which may still change what it is about to report: VanillaBP's own and the modeller's.
    *
    * @param task The user task element
    * @param listenerType The type all three listeners carry
