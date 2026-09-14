@@ -13,6 +13,7 @@ import io.camunda.client.api.search.response.ProcessInstance;
 import io.camunda.client.api.search.response.UserTask;
 import io.vanillabp.camunda8.client.Camunda8Errors;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
+import io.vanillabp.camunda8.processservice.Camunda8Searches;
 import io.vanillabp.camunda8.processservice.Camunda8VariableFilters;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskDetailsPrefill;
@@ -228,25 +229,22 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
     return cluster
         .client()
         .newProcessInstanceSearchRequest()
-        // one filter call: a second one replaces the first rather than adding to it
-        .filter(filter -> {
-          filter.processDefinitionId(scopedProcessId);
-          filter
-              .variables(
-                  Map
-                      .of(
-                          aggregateIdNameOf(workflowModuleId, bpmnProcessId),
-                          Camunda8VariableFilters.aggregateIdSearchValue(workflowAggregateId)));
-          if (tenantId != null) {
-            filter.tenantId(tenantId);
-          }
-        })
+        // the process id as the cluster knows it, the tenant of the workflow module and the
+        // aggregate's id quoted as the JSON a variable is stored in - three conditions the
+        // adapter spells, because a search which spells one of them differently answers
+        // nothing, and nothing reads exactly like a workflow which was never started
+        .filter(
+            filter -> Camunda8Searches
+                .scopedTo(
+                    filter, scopedProcessId, tenantId,
+                    aggregateIdNameOf(workflowModuleId, bpmnProcessId), workflowAggregateId))
         .send()
         .join()
         .items()
         .stream()
         // a called process inherits the variables of its caller, and it is a step of the
-        // business case rather than a case of its own
+        // business case rather than a case of its own. The adapter leaves this to whoever
+        // searched, because what has to be sorted out depends on the question which was asked
         .filter(instance -> instance.getParentProcessInstanceKey() == null)
         .toList();
 
