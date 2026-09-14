@@ -23,9 +23,10 @@ import io.vanillabp.integration.extension.spi.ExtensionWiringService;
  * there is add the listeners which make a cluster say what it is doing, remember where it put
  * them, and open the workers those listeners hand their jobs to.
  * <p>
- * The order is the Business Cockpit's own, the last one, so whatever an adapter or another
- * extension does to a model has happened by the time this runs - which is also what puts the
- * cockpit's listeners behind VanillaBP's own on every element they share.
+ * The order is the Business Cockpit's own, and {@link BusinessCockpitWiringService#ORDER} says
+ * what that number means. The cockpit's listeners sit behind VanillaBP's own on every element
+ * they share, and that comes from the pipeline calling the adapter before any extension rather
+ * than from the number.
  */
 public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelInstance, Camunda8ProcessingContext> {
 
