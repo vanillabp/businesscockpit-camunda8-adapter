@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Import;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
 import io.vanillabp.camunda8.Camunda8ProcessingContext;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
+import io.vanillabp.camunda8.observability.Camunda8Metrics;
 import io.vanillabp.camunda8.springboot.client.VanillaBpCamunda8Properties;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
@@ -81,6 +82,9 @@ public class Camunda8CockpitAutoConfiguration {
    * @param clients The clusters
    * @param deployments What was wired
    * @param settings The lock of a listener job
+   * @param metrics Where the job counters of these workers go. The adapter registers this bean
+   *          where the application brought Micrometer, and an application without it counts
+   *          nothing
    * @param publisher Where an observed event is reported. It is resolved on the first event
    *          rather than now: the workers are opened while the application is still starting
    * @return The workers serving this extension's listeners
@@ -90,9 +94,11 @@ public class Camunda8CockpitAutoConfiguration {
       final Camunda8Clients clients,
       final Camunda8CockpitDeployments deployments,
       final Camunda8CockpitSettings settings,
+      final ObjectProvider<Camunda8Metrics> metrics,
       final ObjectProvider<BusinessCockpitEventPublisher> publisher) {
 
-    return new Camunda8CockpitWorkers(clients, deployments, settings, publisher::getObject);
+    return new Camunda8CockpitWorkers(
+        clients, deployments, settings, metrics.getIfAvailable(() -> Camunda8Metrics.NONE), publisher::getObject);
 
   }
 

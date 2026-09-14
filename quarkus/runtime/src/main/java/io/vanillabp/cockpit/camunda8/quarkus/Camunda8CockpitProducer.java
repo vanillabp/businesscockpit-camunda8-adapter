@@ -7,6 +7,7 @@ import io.quarkus.arc.Unremovable;
 import io.vanillabp.camunda8.Camunda8ProcessingContext;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
+import io.vanillabp.camunda8.observability.Camunda8Metrics;
 import io.vanillabp.camunda8.quarkus.runtime.VanillaBpCamunda8Properties;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
@@ -84,6 +85,9 @@ public class Camunda8CockpitProducer {
    * @param clients The clusters
    * @param deployments What was wired
    * @param settings The lock of a listener job
+   * @param metrics Where the job counters of these workers go. The adapter produces this bean
+   *          where the application brought the Micrometer extension, and an application without
+   *          it counts nothing
    * @param publisher Where an observed event is reported, resolved on the first event rather
    *          than now: the workers are opened while the application is still starting
    * @return The workers serving this extension's listeners
@@ -95,9 +99,13 @@ public class Camunda8CockpitProducer {
       final Camunda8Clients clients,
       final Camunda8CockpitDeployments deployments,
       final Camunda8CockpitSettings settings,
+      final Instance<Camunda8Metrics> metrics,
       final Instance<BusinessCockpitEventPublisher> publisher) {
 
-    return new Camunda8CockpitWorkers(clients, deployments, settings, publisher::get);
+    return new Camunda8CockpitWorkers(
+        clients, deployments, settings, metrics.isResolvable()
+            ? metrics.get()
+            : Camunda8Metrics.NONE, publisher::get);
 
   }
 
