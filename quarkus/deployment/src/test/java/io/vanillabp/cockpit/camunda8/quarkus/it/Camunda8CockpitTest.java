@@ -17,7 +17,6 @@ import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.testcontainers.DockerClientFactory;
-import org.testcontainers.containers.Network;
 
 import io.camunda.client.CamundaClient;
 import io.camunda.client.api.search.enums.UserTaskState;
@@ -31,13 +30,13 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.quarkus.test.QuarkusExtensionTest;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
+import io.vanillabp.camunda8.test.ClusterUnderTest;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitReads;
-import io.vanillabp.cockpit.camunda8.test.support.ClusterUnderTest;
-import io.vanillabp.cockpit.camunda8.test.support.CockpitServer;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
+import io.vanillabp.cockpit.extension.test.support.CockpitServer;
 import io.vanillabp.integration.spi.PhaseTwoRetryLater;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 import jakarta.inject.Inject;
@@ -113,19 +112,11 @@ public class Camunda8CockpitTest {
     if (System.getProperty(REST_ADDRESS_PROPERTY) != null) {
       return;
     }
-    final var network = Network.newNetwork();
-    final var elasticsearch = ClusterUnderTest.elasticsearch(network);
-    final var camunda = ClusterUnderTest.cluster(network, elasticsearch);
-    elasticsearch.start();
+    final var camunda = ClusterUnderTest.cluster();
     camunda.start();
     // stopped by this copy of the class rather than by a test callback: the copy which
     // starts the cluster is the one built with the application, and no test ever runs in it
-    Runtime
-        .getRuntime()
-        .addShutdownHook(new Thread(() -> {
-          camunda.stop();
-          elasticsearch.stop();
-        }));
+    Runtime.getRuntime().addShutdownHook(new Thread(camunda::stop));
     System
         .setProperty(
             REST_ADDRESS_PROPERTY,
@@ -148,8 +139,7 @@ public class Camunda8CockpitTest {
                   "workflow-module-descriptor/workflow-module", "META-INF/workflow-module")
               .addClass(TestAggregate.class)
               .addClass(TestAggregatePersistence.class)
-              .addClass(TestWorkflowService.class)
-              .addAsResource("camunda8-cluster.properties"))
+              .addClass(TestWorkflowService.class))
       .overrideRuntimeConfigKey(
           "vanillabp.cockpit.rest.base-url", CockpitServer.baseUrl())
       // the fallbacks are what a machine without Docker gets, and nothing ever connects to

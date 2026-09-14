@@ -3,6 +3,7 @@ package io.vanillabp.cockpit.camunda8.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -10,6 +11,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -23,11 +26,13 @@ import io.camunda.client.api.response.UserTaskProperties;
 import io.camunda.client.api.search.enums.JobKind;
 import io.camunda.client.api.search.enums.ListenerEventType;
 import io.camunda.client.api.worker.JobClient;
+import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
+import io.vanillabp.camunda8.client.Camunda8Drain;
+import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitJobHandler;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
-import io.vanillabp.cockpit.camunda8.Camunda8Scope;
 import io.vanillabp.cockpit.extension.spi.EventTransaction;
 import io.vanillabp.cockpit.extension.spi.UserTaskEventKind;
 import io.vanillabp.cockpit.extension.spi.WorkflowEventKind;
@@ -41,6 +46,9 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * job into the identifiers a report is made of, and a cluster would only make the same
  * assertions slower. That the listeners really produce these jobs is what the integration tests
  * are for.
+ * <p>
+ * The drain is real, because the answer to the cluster goes through it: a handler registers its
+ * job there and a shutdown is what decides whether a failure is reported at all.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8CockpitJobHandlerTest {
@@ -62,6 +70,15 @@ public class Camunda8CockpitJobHandlerTest {
   private final RecordingPublisher publisher = new RecordingPublisher();
 
   private final JobClient client = mock(JobClient.class, RETURNS_DEEP_STUBS);
+
+  /**
+   * What the adapter waits for while it shuts down. The handler asks the adapter's factory for
+   * it once per job, so the test hands the factory this one.
+   */
+  private final Camunda8Drain drain = new Camunda8Drain(ADAPTER_ID, MODULE_ID);
+
+  private final Camunda8ClientFactoryRegistry clientFactories = mock(
+      Camunda8ClientFactoryRegistry.class, RETURNS_DEEP_STUBS);
 
   private Camunda8CockpitJobHandler handler;
 
@@ -89,8 +106,9 @@ public class Camunda8CockpitJobHandlerTest {
             new WiredListener(
                 Camunda8CockpitListeners
                     .listenerTypeOf(FORM_REFERENCE), PROCESS_ID, PROCESS_ID, "Approve", AGGREGATE_ID_NAME));
+    when(clientFactories.getFactory(ADAPTER_ID).drainOf(MODULE_ID)).thenReturn(drain);
     handler = new Camunda8CockpitJobHandler(
-        new Camunda8Scope(ADAPTER_ID, null, null), MODULE_ID, deployments, () -> publisher);
+        new Camunda8Clients(clientFactories, null).of(ADAPTER_ID), MODULE_ID, deployments, () -> publisher);
 
   }
 
@@ -111,6 +129,10 @@ public class Camunda8CockpitJobHandlerTest {
     // what the cluster reports for a top-level instance: the instance is its own root
     when(job.getRootProcessInstanceKey()).thenReturn(12345L);
     when(job.getVariablesAsMap()).thenReturn(Map.of(AGGREGATE_ID_NAME, AGGREGATE_ID));
+    // how long the lock of this job still holds. The answer to the cluster is repeated while
+    // the cluster rejects it for being busy, and what bounds that repetition is the lock: an
+    // unstubbed deadline is zero, which reads as a job somebody else may already have
+    when(job.getDeadline()).thenReturn(Long.valueOf(Instant.now().plusSeconds(60).toEpochMilli()));
     return job;
 
   }
@@ -273,6 +295,59 @@ public class Camunda8CockpitJobHandlerTest {
 
     assertEquals(1, publisher.userTaskEvents().size());
     verify(client.newCompleteCommand(88L).send(), atLeastOnce()).join();
+
+  }
+
+  @Test
+  @DisplayName("A completed job carries no variables, which is what a task listener is allowed")
+  public void theCompletionCarriesNothing() {
+
+    handler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
+
+    verify(client.newCompleteCommand(88L), never()).variables(anyMap());
+
+  }
+
+  @Test
+  @DisplayName("A failure while the workflow module shuts down leaves the job to its lock")
+  public void aShutdownDoesNotFailTheJob() {
+
+    final var job = aUserTaskJob(ListenerEventType.CREATING);
+    when(job.getVariablesAsMap()).thenReturn(Map.of());
+    drain.beginShutdown();
+
+    handler.handle(client, job);
+
+    // nobody abandoned this work: the application was asked to stop, so the job keeps its lock
+    // and the next instance of the application gets it. Failing it here would raise an incident
+    // on every restart which catches a listener job in flight
+    verify(client, never()).newFailCommand(anyLong());
+
+  }
+
+  @Test
+  @DisplayName("The drain holds the job while its handler runs and is empty when it returns")
+  public void theDrainKnowsWhatIsRunning() {
+
+    // what makes a shutdown wait for this handler instead of closing the client under it. The
+    // drain is asked while the work is happening, which is what the publisher is asked for too
+    final var runningWhileTheWorkHappened = new ArrayList<Camunda8Drain.InFlightJob>();
+    final var watchingHandler = new Camunda8CockpitJobHandler(
+        new Camunda8Clients(clientFactories, null).of(ADAPTER_ID), MODULE_ID, deployments, () -> {
+          runningWhileTheWorkHappened.addAll(drain.getInFlight());
+          return publisher;
+        });
+
+    watchingHandler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
+
+    assertEquals(
+        List.of(Long.valueOf(88L)),
+        runningWhileTheWorkHappened
+            .stream()
+            .map(job -> Long.valueOf(job.jobKey()))
+            .distinct()
+            .toList());
+    assertTrue(drain.getInFlight().isEmpty());
 
   }
 

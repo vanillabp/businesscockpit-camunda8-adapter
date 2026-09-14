@@ -12,8 +12,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.camunda.client.api.worker.JobWorker;
-import io.camunda.client.api.worker.JobWorkerBuilderStep1.JobWorkerBuilderStep3;
-import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration;
+import io.vanillabp.camunda8.client.Camunda8ClientFactory.WorkflowModuleShutdownRegistration;
+import io.vanillabp.camunda8.client.Camunda8Workers;
+import io.vanillabp.camunda8.observability.Camunda8Metrics;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 
 /**
@@ -28,6 +29,14 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * deployed to, and its processing context says which adapter that is - so a start opens the
  * workers of exactly that cluster, subscribing to the job types that cluster's own models carry.
  * See decision 2 in the repository's DECISIONS.md.
+ * <p>
+ * A worker opened here is set up the way the adapter sets up its own, so an operator reads one
+ * kind of worker rather than two. The counters of these workers therefore appear next to the
+ * adapter's, under the adapter id they belong to and under the listener type as their job type.
+ * <p>
+ * The ordinary way these workers stop is the pipeline stopping workflow processing of their
+ * module. Where a shutdown never gets that far, the adapter's client factory closes them: it is
+ * told they are open and it stops what is still open before it closes the client.
  */
 public class Camunda8CockpitWorkers {
 
@@ -38,6 +47,12 @@ public class Camunda8CockpitWorkers {
   private final Camunda8CockpitDeployments deployments;
 
   private final Camunda8CockpitSettings settings;
+
+  /**
+   * Where the job counters of these workers go. An application without a metrics backend hands
+   * in {@link Camunda8Metrics#NONE}, which measures nothing.
+   */
+  private final Camunda8Metrics metrics;
 
   private final Supplier<BusinessCockpitEventPublisher> publisher;
 
@@ -52,23 +67,38 @@ public class Camunda8CockpitWorkers {
                               String workflowModuleId) {
   }
 
-  private final Map<Subscription, List<JobWorker>> workersBySubscription = new ConcurrentHashMap<>();
+  /**
+   * What one workflow module of one cluster has open.
+   *
+   * @param workers Its workers, in the order they were opened in
+   * @param removeTheShutdownHook What takes the hook of these workers off the adapter's client
+   *          factory again once they are closed
+   */
+  private record OpenWorkers(
+                             List<JobWorker> workers,
+                             WorkflowModuleShutdownRegistration removeTheShutdownHook) {
+  }
+
+  private final Map<Subscription, OpenWorkers> openWorkers = new ConcurrentHashMap<>();
 
   /**
    * @param clients The clusters of the configured Camunda 8 adapters
    * @param deployments What this extension wired
    * @param settings How long a listener job stays locked
+   * @param metrics Where the job counters of these workers go
    * @param publisher Where an observed event is reported
    */
   public Camunda8CockpitWorkers(
       final Camunda8Clients clients,
       final Camunda8CockpitDeployments deployments,
       final Camunda8CockpitSettings settings,
+      final Camunda8Metrics metrics,
       final Supplier<BusinessCockpitEventPublisher> publisher) {
 
     this.clients = clients;
     this.deployments = deployments;
     this.settings = settings;
+    this.metrics = metrics;
     this.publisher = publisher;
 
   }
@@ -84,7 +114,7 @@ public class Camunda8CockpitWorkers {
       final String workflowModuleId) {
 
     final var subscription = new Subscription(adapterId, workflowModuleId);
-    if (workersBySubscription.containsKey(subscription)) {
+    if (openWorkers.containsKey(subscription)) {
       return;
     }
     final var listenersByType = deployments.listenersByTypeOf(adapterId, workflowModuleId);
@@ -105,9 +135,18 @@ public class Camunda8CockpitWorkers {
       close(opened);
       throw e;
     }
+    // Nothing else closes these workers where a shutdown path never reaches this extension,
+    // and the client would then go down under them: the listener jobs they are serving are cut
+    // off and the activation requests they parked at the cluster stay parked. So the adapter's
+    // client factory is told they are open and closes them before its client if it has to.
+    // The hook belongs to this extension alone - the adapter's own is registered beside it and
+    // neither replaces the other
+    final var removeTheShutdownHook = cluster
+        .factory()
+        .workflowModuleStarted(workflowModuleId, () -> close(adapterId, workflowModuleId));
     // noted only once every worker of the module stands, so that a failed start leaves
     // nothing behind which a later stop would try to close a second time
-    workersBySubscription.put(subscription, opened);
+    openWorkers.put(subscription, new OpenWorkers(opened, removeTheShutdownHook));
 
   }
 
@@ -125,11 +164,19 @@ public class Camunda8CockpitWorkers {
         .jobType(listenerType)
         .handler(
             new Camunda8CockpitJobHandler(
-                cluster.scope(), workflowModuleId, deployments, publisher))
+                cluster, workflowModuleId, deployments, publisher))
         .timeout(settings.listenerJobTimeout(workflowModuleId, cluster.scope().adapterId()))
         .name("vanillabp-businesscockpit-%s-%s".formatted(cluster.scope().adapterId(), listenerType))
         .fetchVariables(variables);
-    builder = withTheAdaptersStreamTimeout(builder, cluster.configuration());
+    // what a worker cannot inherit from the client the adapter built, and therefore the only
+    // two settings this extension repeats: the stream timeout, which has no client-wide
+    // equivalent, and the job counters, which exist per worker because they carry the job
+    // type. Whether jobs are streamed, how often a worker polls and how long a request may
+    // take are set on the client, where an environment variable can still overrule them, and
+    // naming any of them here would take that escape hatch away without saying so
+    builder = Camunda8Workers
+        .applyWorkerOptions(
+            builder, cluster.scope().adapterId(), listenerType, cluster.configuration(), metrics);
     final var tenantId = cluster.scope().tenantIdOf(workflowModuleId);
     if (tenantId != null) {
       // with 'by-adapter': jobs of a tenant are only delivered to workers subscribing for
@@ -145,39 +192,6 @@ public class Camunda8CockpitWorkers {
   }
 
   /**
-   * The one worker setting this extension has to repeat, because the client does not carry it.
-   * <p>
-   * A worker of this extension polls, streams and waits the way the adapter's own workers do,
-   * and almost all of that arrives on its own: whether jobs are streamed, how often a worker
-   * polls and how long a request may take are set on the CLIENT while the adapter builds it,
-   * and every worker of that client inherits them. Setting them here as well would take that
-   * inheritance away, and with it the environment variables which may overrule the configured
-   * values on the client - the escape hatch the adapter reports at startup.
-   * <p>
-   * The stream timeout has no such client-wide setting, so a worker which does not name it
-   * streams for as long as the client's default says instead of for as long as the adapter was
-   * configured for.
-   * <p>
-   * The adapter's own metrics are missing altogether: the method which attaches them is
-   * package-private in the adapter, so the workers of this extension are counted by the cluster
-   * and not by the adapter's counters.
-   *
-   * @param builder The worker being built
-   * @param configuration What the adapter of this cluster was configured with
-   * @return The same builder
-   */
-  static JobWorkerBuilderStep3 withTheAdaptersStreamTimeout(
-      final JobWorkerBuilderStep3 builder,
-      final Camunda8AdapterConfiguration configuration) {
-
-    final var streamTimeout = configuration.getStreamTimeout();
-    return streamTimeout == null
-        ? builder
-        : builder.streamTimeout(streamTimeout);
-
-  }
-
-  /**
    * Closes the workers of one workflow module on one cluster, in the reverse order they were
    * opened in.
    *
@@ -188,15 +202,18 @@ public class Camunda8CockpitWorkers {
       final String adapterId,
       final String workflowModuleId) {
 
-    final var workers = workersBySubscription.remove(new Subscription(adapterId, workflowModuleId));
-    if (workers == null) {
+    final var open = openWorkers.remove(new Subscription(adapterId, workflowModuleId));
+    if (open == null) {
       return;
     }
-    close(workers);
+    // before the workers, and only this extension's hook: one left behind would point at
+    // workers which are already closed, and the adapter would call it while it shuts down
+    open.removeTheShutdownHook().close();
+    close(open.workers());
     logger
         .info(
             "Camunda8[{}]: the Business Cockpit closed its {} worker(s) of workflow module '{}'",
-            adapterId, workers.size(), workflowModuleId);
+            adapterId, open.workers().size(), workflowModuleId);
 
   }
 

@@ -1,6 +1,7 @@
 package io.vanillabp.cockpit.camunda8;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.function.Supplier;
 
 import org.slf4j.Logger;
@@ -11,7 +12,7 @@ import io.camunda.client.api.search.enums.JobKind;
 import io.camunda.client.api.search.enums.ListenerEventType;
 import io.camunda.client.api.worker.JobClient;
 import io.camunda.client.api.worker.JobHandler;
-import io.vanillabp.camunda8.client.Camunda8Errors;
+import io.vanillabp.camunda8.wiring.Camunda8ListenerJobs;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 import io.vanillabp.cockpit.extension.spi.EventTransaction;
@@ -35,15 +36,27 @@ import io.vanillabp.cockpit.extension.spi.WorkflowReference;
  * carries none, and there is nothing of the cluster's work to join - the cluster commits the
  * transition when the completion arrives, which is after this method returned.
  * <p>
- * A failure fails the job, and because these listeners carry no retries that raises an incident
- * rather than repeating quietly. That is deliberate and it is what Version 1 did - see decision 5
- * in the repository's DECISIONS.md.
+ * The answer to the cluster follows the adapter's own protocol for a listener job: the job is
+ * registered with the drain of its workflow module, so a shutdown waits for this handler instead
+ * of closing the client under it; a rejection the cluster sent because it is busy is repeated
+ * rather than turned into a failure; and work which a shutdown cut off is left to its lock, so
+ * the next instance of the application gets the listener once that lock expires.
+ * <p>
+ * Every other failure fails the job with no retry left, which raises an incident at once rather
+ * than repeating quietly. That is deliberate and it is what Version 1 did - see decision 5 in the
+ * repository's DECISIONS.md.
  */
 public class Camunda8CockpitJobHandler implements JobHandler {
 
   private static final Logger logger = LoggerFactory.getLogger(Camunda8CockpitJobHandler.class);
 
-  private final Camunda8Scope scope;
+  /**
+   * What a message about one of these jobs calls it, so an operator reading a shutdown can tell
+   * this extension's listeners from the adapter's own deliveries.
+   */
+  private static final String LISTENER_KIND = "Business Cockpit listener";
+
+  private final Camunda8Clients.Cluster cluster;
 
   private final String workflowModuleId;
 
@@ -52,19 +65,19 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   private final Supplier<BusinessCockpitEventPublisher> publisher;
 
   /**
-   * @param scope The cluster this worker listens to
+   * @param cluster The cluster this worker listens to
    * @param workflowModuleId The workflow module the worker was opened for
    * @param deployments What this extension wired, to translate the job's identifiers back
    * @param publisher Where an observed event is reported, asked for per event rather than up
    *          front: the workers are opened while the application is still starting
    */
   public Camunda8CockpitJobHandler(
-      final Camunda8Scope scope,
+      final Camunda8Clients.Cluster cluster,
       final String workflowModuleId,
       final Camunda8CockpitDeployments deployments,
       final Supplier<BusinessCockpitEventPublisher> publisher) {
 
-    this.scope = scope;
+    this.cluster = cluster;
     this.workflowModuleId = workflowModuleId;
     this.deployments = deployments;
     this.publisher = publisher;
@@ -76,21 +89,38 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       final JobClient client,
       final ActivatedJob job) {
 
-    try {
-      report(job);
-      client.newCompleteCommand(job.getKey()).send().join();
-    } catch (final Exception e) {
-      logger
-          .warn(
-              "Camunda8[{}]: the Business Cockpit could not report the {} job '{}' (type '{}') of workflow module '{}' - failing the job, which raises an incident because these listeners carry no retries",
-              scope.adapterId(), job.getKind(), job.getKey(), job.getType(), workflowModuleId, e);
-      client
-          .newFailCommand(job.getKey())
-          .retries(0)
-          .errorMessage(Camunda8Errors.incidentMessage(e))
-          .send()
-          .join();
-    }
+    Camunda8ListenerJobs
+        .completeOrFail(
+            adapterId(),
+            client,
+            job,
+            // asked per job rather than remembered when the worker opened: a workflow module
+            // which starts again is given a drain of its own, and a handler holding the drain
+            // of the run before would leave every job of the new run to its lock
+            cluster.factory().drainOf(workflowModuleId),
+            LISTENER_KIND,
+            Camunda8CockpitListeners.identifierOf(job.getType()),
+            job.getBpmnProcessId(),
+            // the listeners of this extension are modelled with no retry at all, so failing
+            // one raises the incident straight away - see decision 5 in the repository's
+            // DECISIONS.md
+            () -> Camunda8ListenerJobs.Failure.NO_RETRIES_LEFT,
+            () -> {
+              report(job);
+              // the completion carries no variables: this listener observes a transition and
+              // changes nothing about the workflow, and a task listener completed with a
+              // payload is refused by the cluster
+              return Map.of();
+            });
+
+  }
+
+  /**
+   * @return The configured adapter id whose cluster this handler serves
+   */
+  private String adapterId() {
+
+    return cluster.scope().adapterId();
 
   }
 
@@ -101,7 +131,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       final ActivatedJob job) {
 
     final var wired = deployments
-        .listenerOf(scope.adapterId(), workflowModuleId, job.getBpmnProcessId(), job.getType());
+        .listenerOf(adapterId(), workflowModuleId, job.getBpmnProcessId(), job.getType());
     if (wired.isEmpty()) {
       // a job type of this extension which this workflow module did not wire. Another
       // application deployed a model of its own under the same identifiers, and its workflows
@@ -112,7 +142,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       logger
           .warn(
               "Camunda8[{}]: the Business Cockpit does not report job '{}' of type '{}' for BPMN process '{}': workflow module '{}' wired no listener of that type for that process. The job is completed. Where that process is one of this application's, its deployed model carries a listener this version no longer adds",
-              scope.adapterId(), job.getKey(), job.getType(), job.getBpmnProcessId(), workflowModuleId);
+              adapterId(), job.getKey(), job.getType(), job.getBpmnProcessId(), workflowModuleId);
       return;
     }
     final var listener = wired.get();
@@ -162,7 +192,8 @@ public class Camunda8CockpitJobHandler implements JobHandler {
     final var userTaskKey = job.getUserTask() != null
         ? String.valueOf(job.getUserTask().getUserTaskKey())
         : String.valueOf(job.getKey());
-    final var taskDefinition = scope
+    final var taskDefinition = cluster
+        .scope()
         .plainTaskDefinitionOf(
             workflowModuleId, listener.bpmnProcessId(),
             Camunda8CockpitListeners.identifierOf(job.getType()));
@@ -172,7 +203,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
         .get()
         .publishUserTaskEvent(
             new UserTaskReference(
-                scope.adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(
+                adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(
                     job), userTaskKey, taskDefinition, job.getElementId()),
             // the worker's clock, because a listener job carries no time of its own: it is
             // handed out while the transition it gates waits, and what the cluster records
@@ -183,7 +214,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       logger
           .debug(
               "Camunda8[{}]: the {} of user task '{}' (workflow aggregate '{}' of BPMN process '{}') {}",
-              scope.adapterId(), kind, userTaskKey, workflowAggregateId, listener.bpmnProcessId(),
+              adapterId(), kind, userTaskKey, workflowAggregateId, listener.bpmnProcessId(),
               publisher.get().reportsUserTasks()
                   ? "collapsed into the report waiting to be dispatched"
                   : "was not reported: this application reports no user tasks");
@@ -202,7 +233,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       logger
           .debug(
               "Camunda8[{}]: not reporting the {} of process instance {}: it is a called process of workflow {}, which is the business case",
-              scope.adapterId(), job.getListenerEventType(), job.getProcessInstanceKey(), job
+              adapterId(), job.getListenerEventType(), job.getProcessInstanceKey(), job
                   .getRootProcessInstanceKey());
       return;
     }
@@ -212,14 +243,14 @@ public class Camunda8CockpitJobHandler implements JobHandler {
         .get()
         .publishWorkflowEvent(
             new WorkflowReference(
-                scope.adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(job)),
+                adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(job)),
             // the worker's clock, for the reason given where a user task is reported
             kind, String.valueOf(job.getKey()), OffsetDateTime.now(), EventTransaction.NEW);
     if (!written) {
       logger
           .debug(
               "Camunda8[{}]: the {} of workflow '{}' (workflow aggregate '{}' of BPMN process '{}') {}",
-              scope.adapterId(), kind, workflowIdOf(job), workflowAggregateId,
+              adapterId(), kind, workflowIdOf(job), workflowAggregateId,
               listener.bpmnProcessId(), publisher.get().reportsWorkflows()
                   ? "collapsed into the report waiting to be dispatched"
                   : "was not reported: this application reports no workflows");

@@ -42,10 +42,11 @@ the build below 85 %, the three GitHub Actions workflows, the release-line machi
 sections below describe, the formatting rules every VanillaBP repository shares, and the license and
 notice files.
 
-One more module is in the tree and in no release: `test-support` holds the cluster the integration
-tests of both platforms run against, the file its output is written to and the cockpit server they
-report to. A test classpath cannot read another module's test classes, so the alternative was a second
-copy of all three.
+What the integration tests of both platforms need comes from two published artifacts rather than from
+a module here. The Camunda 8 cluster is `camunda8-adapter-test-support`, published by the VanillaBP
+Camunda 8 adapter per release line, so the tests of a line meet the cluster that line was built for.
+The cockpit server they report to is `extensions-commons-test-support`, published by the Business
+Cockpit and shared with its other extension repositories.
 
 Deliberately absent, and not as an empty placeholder:
 
