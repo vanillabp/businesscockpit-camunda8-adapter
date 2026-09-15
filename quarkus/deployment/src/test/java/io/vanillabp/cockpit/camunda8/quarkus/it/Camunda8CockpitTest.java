@@ -283,12 +283,12 @@ public class Camunda8CockpitTest {
   @DisplayName("A called process is a step of the case above it, not a case of its own")
   public void aCalledProcessIsAStepOfTheCaseAboveIt() throws Exception {
 
-    final var started = aStartedCallingWorkflow("Cleo");
+    final var started = aStartedCallingWorkflow("Della");
 
     // the user task sits in the CALLED process, and the workflow it is reported under has to be
     // the calling one - see decision 3
-    final var userTask = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Cleo\"");
-    final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Cleo\"");
+    final var userTask = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Della\"");
+    final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Della\"");
     assertEquals(callingWorkflowIdOf(started), idOf(workflow, "workflowId"), workflow.body());
     assertEquals(idOf(workflow, "workflowId"), idOf(userTask, "workflowId"), userTask.body());
 
@@ -299,7 +299,7 @@ public class Camunda8CockpitTest {
         CockpitServer
             .matching("/workflow/created")
             .stream()
-            .filter(request -> request.body().contains("\"customer\":\"Cleo\""))
+            .filter(request -> request.body().contains("\"customer\":\"Della\""))
             .count(),
         "one call, one case");
 
@@ -326,6 +326,9 @@ public class Camunda8CockpitTest {
    * The process instance of the CALLING workflow of one case. Both instances carry the
    * aggregate's id, because a called process inherits the variables of its caller, so the search
    * says which of the two is meant: the one nobody called.
+   * <p>
+   * The process is named as well, because every workflow aggregate of this application counts its
+   * ids for itself: a case of this workflow and a case of another one share the id 1.
    */
   private String callingWorkflowIdOf(
       final CallingAggregate aggregate) {
@@ -335,6 +338,8 @@ public class Camunda8CockpitTest {
             .newProcessInstanceSearchRequest()
             .filter(
                 filter -> filter
+                    .processDefinitionId(
+                        "%s__%s".formatted(MODULE_ID, CallingWorkflowService.BPMN_PROCESS_ID))
                     .variables(Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
             .send()
             .join()
