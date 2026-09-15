@@ -2,7 +2,6 @@ package io.vanillabp.cockpit.camunda8;
 
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -14,7 +13,6 @@ import io.camunda.client.api.search.response.UserTask;
 import io.vanillabp.camunda8.client.Camunda8Errors;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
 import io.vanillabp.camunda8.processservice.Camunda8Searches;
-import io.vanillabp.camunda8.processservice.Camunda8VariableFilters;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskDetailsPrefill;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
@@ -279,23 +277,22 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
         .client()
         .newUserTaskSearchRequest()
         .filter(filter -> {
-          filter.bpmnProcessId(scopedProcessId);
-          // the variable filter is what makes an id answerable only for the aggregate it
-          // belongs to, so that a guessed key cannot read another case's task
-          filter
-              .processInstanceVariables(
-                  Map
-                      .of(
-                          aggregateIdNameOf(workflowModuleId, bpmnProcessId),
-                          Camunda8VariableFilters.aggregateIdSearchValue(workflowAggregateId)));
+          // the process id as the cluster knows it, the tenant of the workflow module and
+          // the aggregate's id as a variable of the process instance. The adapter spells all
+          // three, because a search which spells one of them differently answers nothing,
+          // and nothing reads exactly like a case which has no such task. It also means a
+          // key somebody guessed reads no task of another case
+          Camunda8Searches
+              .scopedTo(
+                  filter, scopedProcessId, tenantId,
+                  aggregateIdNameOf(workflowModuleId, bpmnProcessId), workflowAggregateId);
+          // which tasks of that aggregate are meant is this bridge's own question, so it
+          // adds that part itself
           if (userTaskKey != null) {
             filter.userTaskKey(userTaskKey);
           }
           if (activeOnly) {
             filter.state(UserTaskState.CREATED);
-          }
-          if (tenantId != null) {
-            filter.tenantId(tenantId);
           }
         })
         .send()
