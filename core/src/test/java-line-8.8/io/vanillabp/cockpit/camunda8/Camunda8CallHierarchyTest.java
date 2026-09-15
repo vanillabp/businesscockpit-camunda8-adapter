@@ -7,9 +7,11 @@ import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +40,22 @@ public class Camunda8CallHierarchyTest {
   private final Camunda8CallHierarchy hierarchy = new Camunda8CallHierarchy(
       new Camunda8Clients(clientFactories, null).of(ADAPTER_ID));
 
+  /**
+   * How long the lookup waits for the searchable storage: the adapter's
+   * <code>workflow-visibility-timeout</code>, which a test sets to something it can wait for.
+   */
+  @BeforeEach
+  public void aClusterWhoseExporterIsGivenAMoment() {
+
+    when(
+        clientFactories
+            .getFactory(ADAPTER_ID)
+            .getConfiguration()
+            .workflowVisibilityWindow())
+        .thenReturn(Duration.ofMillis(300));
+
+  }
+
   @Test
   @DisplayName("A job of a called process names the workflow above it")
   public void aCalledProcessNamesItsRoot() {
@@ -65,6 +83,29 @@ public class Camunda8CallHierarchyTest {
     clusterAnswers(12345L, List.of());
 
     assertNull(hierarchy.rootProcessInstanceKeyOf(aJobOf(12345L)));
+
+  }
+
+  @Test
+  @DisplayName("A window of zero asks once and waits for nothing")
+  public void whereTheWaitingIsSwitchedOff() {
+
+    when(
+        clientFactories
+            .getFactory(ADAPTER_ID)
+            .getConfiguration()
+            .workflowVisibilityWindow())
+        .thenReturn(Duration.ZERO);
+    final var asked = new AtomicInteger();
+    when(client().newProcessInstanceGetCallHierarchyRequest(12345L).send().join())
+        .thenAnswer(request -> {
+          asked.incrementAndGet();
+          return List.of();
+        });
+
+    assertNull(hierarchy.rootProcessInstanceKeyOf(aJobOf(12345L)));
+
+    assertEquals(1, asked.get());
 
   }
 
