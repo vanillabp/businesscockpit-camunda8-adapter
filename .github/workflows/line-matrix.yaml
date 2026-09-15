@@ -13,6 +13,9 @@ name: Release lines
   workflow_dispatch:
   # so the pull-request checks can run the matrix when a pin moves
   workflow_call:
+# A called workflow may not ask for more than the workflow calling it granted, and the
+# pull-request checks grant 'contents: read'. Nothing here needs more: what the build reads from
+# GitHub Packages it reads with VANILLABP_USER_TOKEN and not with the workflow's own token.
 permissions:
   contents: read
 env:
@@ -42,9 +45,6 @@ jobs:
   line:
     needs: discover
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
     strategy:
       fail-fast: false
       matrix:
