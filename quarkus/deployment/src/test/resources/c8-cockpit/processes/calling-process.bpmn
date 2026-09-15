@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="CallingDefinitions" targetNamespace="http://vanillabp.io/businesscockpit/camunda8">
+  <!--
+    A business case which has a step done by a process of its own. Both processes belong to one
+    workflow service and one workflow aggregate, which is what decomposition looks like in
+    VanillaBP, and the cockpit shows ONE case for the two of them - see decision 3.
+
+    The call activity names the plain process id. The adapter rewrites it to the scoped one while
+    it prepares the model, the same way it rewrites the process ids themselves, so this model
+    reads the way the application wrote it.
+  -->
+  <bpmn:process id="CallingProcess" isExecutable="true">
+    <bpmn:startEvent id="CallingStart">
+      <bpmn:outgoing>ToCall</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToCall" sourceRef="CallingStart" targetRef="Call" />
+    <bpmn:callActivity id="Call" name="Have the order handled">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="CalledProcess" propagateAllChildVariables="true" propagateAllParentVariables="true" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToCall</bpmn:incoming>
+      <bpmn:outgoing>ToCallingEnd</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="ToCallingEnd" sourceRef="Call" targetRef="CallingEnd" />
+    <bpmn:endEvent id="CallingEnd">
+      <bpmn:incoming>ToCallingEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:process id="CalledProcess" isExecutable="true">
+    <bpmn:startEvent id="CalledStart">
+      <bpmn:outgoing>ToHandle</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToHandle" sourceRef="CalledStart" targetRef="Handle" />
+    <bpmn:userTask id="Handle" name="Handle the order">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="handle" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToHandle</bpmn:incoming>
+      <bpmn:outgoing>ToCalledEnd</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="ToCalledEnd" sourceRef="Handle" targetRef="CalledEnd" />
+    <bpmn:endEvent id="CalledEnd">
+      <bpmn:incoming>ToCalledEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

@@ -22,9 +22,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 
 import io.camunda.client.api.search.filter.ProcessInstanceFilter;
+import io.camunda.client.api.search.response.UserTask;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
+import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidance;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidanceSupport;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
@@ -65,6 +67,14 @@ public class Camunda8CockpitBridgeTest {
   private static final String AGGREGATE_ID = "4711";
 
   private static final String AGGREGATE_ID_NAME = "loanId";
+
+  /** The workflow a case is, which a call activity of it started the instance below. */
+  private static final String CALLING_INSTANCE = "2251799813685331";
+
+  /** The instance the called process runs in, which is a step of that case and no case itself. */
+  private static final Long CALLED_INSTANCE = 2251799813685341L;
+
+  private static final String USER_TASK_ID = "2251799813685350";
 
   private Camunda8CockpitBridge bridge() {
 
@@ -131,6 +141,38 @@ public class Camunda8CockpitBridgeTest {
 
     assertTrue(found.isEmpty());
     verifyNoInteractions(workflowTaskWiring);
+
+  }
+
+  @Test
+  @DisplayName("The task of a called process is prefilled with the case above it")
+  public void aTaskOfACalledProcessKeepsItsCase() {
+
+    final var task = mock(UserTask.class, RETURNS_DEEP_STUBS);
+    // what the cluster says: the task sits in the instance the call activity started
+    when(task.getProcessInstanceKey()).thenReturn(CALLED_INSTANCE);
+    when(task.getProcessDefinitionVersion()).thenReturn(1);
+    // the prefill copies both lists, and a cluster answers with empty ones rather than none
+    when(task.getCandidateUsers()).thenReturn(List.of());
+    when(task.getCandidateGroups()).thenReturn(List.of());
+    when(
+        clientFactories
+            .getFactory("c8")
+            .getClient()
+            .newUserTaskGetRequest(Long.parseLong(USER_TASK_ID))
+            .send()
+            .join())
+        .thenReturn(task);
+
+    final var prefill = bridge()
+        .prefilledUserTaskDetails(
+            new UserTaskReference(
+                "c8", MODULE_ID, PROCESS_ID, AGGREGATE_ID, CALLING_INSTANCE, USER_TASK_ID, "handle", "Handle"))
+        .orElseThrow();
+
+    // the case is the calling workflow, and the instance the task sits in is the step below it
+    assertEquals(CALLING_INSTANCE, prefill.workflowId());
+    assertEquals(String.valueOf(CALLED_INSTANCE), prefill.subWorkflowId());
 
   }
 

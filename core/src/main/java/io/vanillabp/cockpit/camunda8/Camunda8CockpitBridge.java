@@ -97,7 +97,11 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
             UserTaskDetailsPrefill
                 .builder()
                 .bpmnProcessVersion(String.valueOf(task.getProcessDefinitionVersion()))
-                .workflowId(String.valueOf(task.getProcessInstanceKey()))
+                // the workflow of a task is the business case, which is the instance the
+                // reference carries: for a task of a called process the cluster's own
+                // processInstanceKey is the step below that case, and it is reported as the
+                // sub-workflow on the next line - see decision 3
+                .workflowId(userTask.workflowId())
                 .subWorkflowId(subWorkflowIdOf(userTask, task))
                 .bpmnTaskName(task.getName())
                 .bpmnProcessName(task.getProcessName())
