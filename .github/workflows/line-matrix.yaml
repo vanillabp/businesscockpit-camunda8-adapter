@@ -35,11 +35,26 @@ jobs:
       - uses: actions/checkout@v7
       - id: list
         name: Collect the release lines
+        # A line whose cluster cannot serve this extension at all is named here and left out,
+        # because a matrix which is always red stops being read. It is one line of shell and a
+        # reason rather than a profile which quietly disappears: the line still exists, it is
+        # still released, and its code is still compiled on every pull request by the API check.
+        #
+        # 8.10: a user-task LISTENER job never reaches its worker on camunda/camunda:8.10.0-alpha4.
+        # The REST gateway throws a NullPointerException while converting the job and drops the
+        # whole activate-jobs batch (camunda/camunda#58193, open), which starves the execution
+        # listeners beside it. Ten of fifteen integration tests then sit in their deadline, and
+        # the run of the 15th of September 2026 took 44 minutes to say so. The VanillaBP Camunda 8
+        # adapter keeps the same alpha out of its pull-request checks for the same bug. Take the
+        # line out of this list once Camunda ships the fix.
         run: |
+          skipped="8.10"
           list=$(sed -n 's|.*<id>line-\([0-9][^<]*\)</id>.*|\1|p' pom.xml \
+            | grep -v -x -F "${skipped}" \
             | jq -R -s -c 'split("\n")[:-1]')
           echo "lines=${list}" >> "$GITHUB_OUTPUT"
           echo "Building lines: ${list}"
+          echo "Not built, see the comment above: ${skipped}"
 
   # One build per line, against the cluster that line pins, with its own version string.
   line:
