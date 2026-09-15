@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -122,6 +123,9 @@ public class Camunda8CockpitIT {
   private RetriedWorkflowService retriedWorkflowService;
 
   @Autowired
+  private CallingWorkflowService callingWorkflowService;
+
+  @Autowired
   private TransactionTemplate transactions;
 
   @Autowired
@@ -159,6 +163,70 @@ public class Camunda8CockpitIT {
           aggregate.setCustomer(customer);
           return workflowService.processes().startWorkflow(aggregate);
         });
+
+  }
+
+  private CallingAggregate aStartedCallingWorkflow(
+      final String customer) {
+
+    return transactions
+        .execute(status -> {
+          final var aggregate = new CallingAggregate();
+          aggregate.setCustomer(customer);
+          return callingWorkflowService.processes().startWorkflow(aggregate);
+        });
+
+  }
+
+  /**
+   * The process instance of the CALLING workflow of one case.
+   * <p>
+   * Both instances of such a case carry the aggregate's id, because a called process inherits the
+   * variables of its caller, so the search says which of the two is meant: the one nobody called.
+   * <p>
+   * The process is named as well, and it has to be. Every workflow aggregate of this application
+   * counts its ids for itself, so a case of this workflow and a case of another one share the id
+   * 1, and a search by the variable alone finds whichever of them the cluster lists first.
+   */
+  private String callingWorkflowIdOf(
+      final CallingAggregate aggregate) {
+
+    return awaitValue(
+        () -> client()
+            .newProcessInstanceSearchRequest()
+            .filter(
+                filter -> filter
+                    .processDefinitionId(
+                        "%s__%s".formatted(MODULE_ID, CallingWorkflowService.BPMN_PROCESS_ID))
+                    .variables(Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
+            .send()
+            .join()
+            .items()
+            .stream()
+            .filter(instance -> instance.getParentProcessInstanceKey() == null)
+            .findFirst()
+            .map(instance -> String.valueOf(instance.getProcessInstanceKey()))
+            .orElse(null),
+        "the calling workflow of aggregate %s".formatted(aggregate.getId()));
+
+  }
+
+  /**
+   * Reads one identifier out of a body the cockpit server received.
+   *
+   * @param request What arrived
+   * @param field The field to read, which carries a key as a string
+   * @return Its value
+   */
+  private static String idOf(
+      final CockpitServer.Request request,
+      final String field) {
+
+    final var matcher = Pattern
+        .compile("\"%s\"\\s*:\\s*\"([^\"]+)\"".formatted(field))
+        .matcher(request.body());
+    assertTrue(matcher.find(), "no '%s' in %s".formatted(field, request.body()));
+    return matcher.group(1);
 
   }
 
@@ -488,6 +556,37 @@ public class Camunda8CockpitIT {
     // aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives asks for that. The reason it is asked
     // for per case is that a write in a provider lands in whatever transaction ran the provider -
     // the dispatch of a report here, and the caller of getUserTask in the tests which read.
+
+  }
+
+  @Test
+  @DisplayName("A called process is a step of the case above it, not a case of its own")
+  public void aCalledProcessIsAStepOfTheCaseAboveIt() {
+
+    final var aggregate = aStartedCallingWorkflow("Della");
+
+    // The user task sits in the CALLED process, and the workflow it is reported under has to be
+    // the calling one. Which that is the job says only from 8.9 on; on 8.8 the extension asks the
+    // cluster for the call hierarchy, and that answer comes from the searchable storage, so this
+    // is also the test of whether the answer is there by the time a listener runs.
+    final var userTask = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Della\"");
+    final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Della\"");
+    assertEquals(
+        callingWorkflowIdOf(aggregate), idOf(workflow, "workflowId"), workflow.body());
+    assertEquals(
+        idOf(workflow, "workflowId"), idOf(userTask, "workflowId"), userTask.body());
+
+    // and the called process did not become a case beside it
+    CockpitServer.awaitQuiet();
+    assertEquals(
+        1,
+        CockpitServer
+            .matching("/workflow/created")
+            .stream()
+            .filter(request -> request.body().contains("\"customer\":\"Della\""))
+            .count(),
+        "one call, one case: "
+            + CockpitServer.received().stream().map(CockpitServer.Request::path).toList());
 
   }
 
