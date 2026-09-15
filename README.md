@@ -95,7 +95,7 @@ means there:
 
 |   Channel   |        Version        | Camunda 8 adapter line |   Client pin    | Tested against |
 |-------------|-----------------------|------------------------|-----------------|----------------|
-| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.37`        | not yet        |
+| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.37`        | `8.8.37`       |
 | current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.18`        | `8.9.18`       |
 | preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha4` | not yet        |
 
@@ -104,6 +104,14 @@ Camunda offers, and they move when that repository moves. A cluster version appe
 column only once a build of that line has been proven against it: the integration tests start the
 cluster of the client their line pins, so a line's tests meet the oldest cluster its artifacts
 accept.
+
+The preview line is compiled but not run. A user-task listener job never reaches its worker on
+`camunda/camunda:8.10.0-alpha4`: the REST gateway throws a `NullPointerException` while converting
+it and drops the whole activate-jobs batch, which starves the execution listeners beside it
+(`camunda/camunda#58193`, open). Ten of the fifteen integration tests then sit in their deadline,
+so the nightly matrix leaves this line out and says so, while the API check still compiles it on
+every pull request. The VanillaBP Camunda 8 adapter keeps the same alpha out of its pull-request
+checks for the same bug.
 
 Snapshots have no suffix. Until the first release they are `0.9.0-SNAPSHOT` of the current GA line,
 which is what a build without a profile produces, and every line still reads the same
