@@ -1,0 +1,133 @@
+name: Release lines
+# Every release line, built and tested against the cluster its own pin names. A pull
+# request builds the current GA line alone, because the Camunda 8 integration tests are
+# the slowest thing in this repository and a story would otherwise pay for every line.
+# What a story does not prove is proven here, once a night.
+"on":
+  schedule:
+    # Early enough to be green or red before anybody starts working, and late enough not
+    # to sit in the same queue as the matrix of vanillabp/camunda8-adapter, which asks for
+    # 00:23. GitHub queues a scheduled run rather than starting it at the given time, and
+    # the wait is longest on the hour, so the minute here is a crooked one as well.
+    - cron: "37 1 * * *"
+  workflow_dispatch:
+  # so the pull-request checks can run the matrix when a pin moves
+  workflow_call:
+# A called workflow may not ask for more than the workflow calling it granted, and the
+# pull-request checks grant 'contents: read'. Nothing here needs more: what the build reads from
+# GitHub Packages it reads with VANILLABP_USER_TOKEN and not with the workflow's own token.
+permissions:
+  contents: read
+env:
+  # The VanillaBP artifacts, the cockpit's extensions-commons and the Camunda 8 adapter are
+  # snapshots in GitHub Packages until the release. Reading them needs a token, see
+  # github-packages-settings.xml.
+  USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
+  USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
+jobs:
+  # The live lines are not maintained here: they are the line-* profiles of the POM, which
+  # also carry the pins. So the matrix cannot fall behind the build.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      lines: "${{ steps.list.outputs.lines }}"
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        name: Collect the release lines
+        run: |
+          list=$(sed -n 's|.*<id>line-\([0-9][^<]*\)</id>.*|\1|p' pom.xml \
+            | jq -R -s -c 'split("\n")[:-1]')
+          echo "lines=${list}" >> "$GITHUB_OUTPUT"
+          echo "Building lines: ${list}"
+
+  # One build per line, against the cluster that line pins, with its own version string.
+  line:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        line: "${{ fromJSON(needs.discover.outputs.lines) }}"
+    steps:
+      - uses: actions/checkout@v7
+      # This repository compiles against the core of the VanillaBP Camunda 8 adapter and
+      # gets the Camunda client through it, and its integration tests start the cluster
+      # that adapter's test-support names. So a line here is only real if the adapter
+      # underneath it is the same line. The adapter publishes one snapshot, built against
+      # the current GA client, so the other lines have to be built here. It is a compile,
+      # not a test run: what the adapter does is proven by the adapter's own matrix.
+      - uses: actions/checkout@v7
+        with:
+          repository: vanillabp/camunda8-adapter
+          ref: main
+          path: camunda8-adapter
+      - uses: actions/setup-java@v6
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+      - name: "Build the Camunda 8 adapter of line ${{ matrix.line }}"
+        # Only the modules this repository consumes, plus what they need: the adapter's
+        # integration tests, its smoke test and its native-image tests are none of our
+        # business. The revision names the line, so the local repository holds one
+        # artifact per line and nothing can quietly fall back to the published snapshot
+        # of the current GA line.
+        #
+        # 'maven.test.skip' and not 'skipTests': the adapter's Failsafe executions run
+        # under plain '-DskipTests' anyway, and the run measured that as three quarters of
+        # an hour of integration tests against a cluster we did not want to start here.
+        # Skipping the test compilation as well is what actually makes this a compile.
+        run: mvn -f camunda8-adapter/pom.xml
+          -s "$GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml"
+          --batch-mode --no-transfer-progress --update-snapshots
+          -Pline-${{ matrix.line }} -Drevision=2.0.0-${{ matrix.line }}-SNAPSHOT
+          -Dmaven.test.skip=true
+          -pl core,spring-boot,quarkus/runtime,quarkus/deployment,test-support -am
+          clean install
+      - name: "Build and test line ${{ matrix.line }}"
+        # 'clean', because classes compiled against another client are binary compatible
+        # with nothing, and the revision is the version string this line would publish,
+        # so the build proves the coordinates as well as the code. The adapter version is
+        # the one built above. 'install' without 'verify': install runs every phase verify
+        # has, and naming both compiled each module twice for nothing.
+        run: mvn -s "$GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml"
+          --batch-mode --no-transfer-progress --update-snapshots
+          -Pline-${{ matrix.line }} -Drevision=0.9.0-${{ matrix.line }}-SNAPSHOT
+          "-Dcamunda8-adapter.version.line-${{ matrix.line }}=2.0.0-${{ matrix.line }}-SNAPSHOT"
+          clean install
+      # A nightly line going red otherwise leaves nothing behind, so whoever reads the
+      # matrix in the morning sees which test failed and never why. The reports hold what
+      # the test asserted, and the logs hold what the application and the cluster did while
+      # it waited, which is the half a timeout never tells on its own.
+      - name: Upload the test reports of a failed line
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          # one name per line: a matrix uploading twice under one name conflicts
+          name: test-reports-${{ matrix.line }}
+          path: |
+            **/target/surefire-reports/**
+            **/target/failsafe-reports/**
+            **/target/*application*.log
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: The cluster and the client this line was tested against
+        # the cluster is the adapter's word, not ours: its test-support carries the image
+        # and the secondary storage of its line, and the tests here start what it names
+        if: always()
+        run: |
+          cat camunda8-adapter/test-support/target/classes/camunda8-cluster.properties
+          cat camunda8-adapter/core/target/classes/META-INF/vanillabp/adapter-camunda8.properties
+
+  # One name that never changes, so branch protection and the pull-request checks have
+  # something to require while the matrix grows and shrinks with the lines.
+  lines-verified:
+    if: always()
+    needs: line
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every line built
+        run: |
+          echo "lines: ${{ needs.line.result }}"
+          [ "${{ needs.line.result }}" = "success" ]

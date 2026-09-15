@@ -38,7 +38,7 @@ Four published modules and the machinery around them:
 | `quarkus/deployment` | `…-quarkus-deployment`                         | the build steps of that extension, and the test booting it against a cluster                                        |
 
 Beside them, `test-coverage-report` measures each platform separately and its `coverage-gate` breaks
-the build below 85 %, the three GitHub Actions workflows, the release-line machinery both of the
+the build below 85 %, the four GitHub Actions workflows, the release-line machinery both of the
 sections below describe, the formatting rules every VanillaBP repository shares, and the license and
 notice files.
 
@@ -50,12 +50,6 @@ Cockpit and shared with its other extension repositories.
 
 Deliberately absent, and not as an empty placeholder:
 
-- The nightly build of every release line. It exists in `vanillabp/camunda8-adapter` to run each
-  line's integration tests against that line's cluster; the tests here run on the current GA line,
-  and a matrix over the other two is worth having once a line other than the current one is
-  released.
-- The check that the public API is identical on every line. It compares compiled classes of
-  different builds, and this repository has one line's worth of them.
 - A `canceled` execution listener. Camunda 8 gains it with 8.10, and until then a terminated
   workflow is not reported as such - see [decision 3](./DECISIONS.md).
 
@@ -140,6 +134,37 @@ that cannot be shared goes into a per-line source directory added by `build-help
 that cannot compile against every supported client, and code that uses something only a newer
 cluster has.
 
+Two of those exist today, and both are line 8.8 answering from the cluster what the newer clients
+put into the job: which workflow a job belongs to when its process was called by another one
+(`Camunda8CallHierarchy`), and the business key a workflow is shown under (`Camunda8BusinessIds`).
+What a report says is the same on every line; what it costs is not. See
+[decision 7](./DECISIONS.md).
+
+### What proves a line
+
+Every line is built and tested once a night by `line-matrix.yaml`, which reads the live lines out of
+the `line-*` profiles, so the matrix cannot fall behind the build. A pull request builds the current
+GA line alone, because the Camunda 8 integration tests are the slowest thing here and a story would
+otherwise pay for every line. When a pull request moves a pin, the matrix runs on that pull request
+as well: a pin of line 8.8 is not compiled by a build of line 8.9, so it would otherwise be merged
+unbuilt.
+
+A line of this repository needs the adapter of the same line underneath it, and the VanillaBP
+Camunda 8 adapter publishes one snapshot, built against the current GA client. So the nightly job
+checks that adapter out and compiles the modules this repository consumes, under the version string
+of the line it is building. That is a compile and no test run: what the adapter itself does is
+proven by the adapter's own matrix. Once the adapter publishes a snapshot per line, the three
+`camunda8-adapter.version.line-*` properties point at those and the step falls away.
+
+The cluster a line meets is the adapter's word rather than ours. Its `test-support` artifact carries
+the image and the secondary storage of its line, and the tests here start what that artifact names,
+which is why line 8.8 runs with an Elasticsearch beside the cluster and the newer lines do not.
+
+What no cluster can answer is whether the lines offer the same thing. `bin/api-identity.sh` builds
+every line and compares the public API of every JAR with `javap`, and the job `api-identity` runs it
+on every pull request. A line may differ in what it does, never in what it offers: a user must never
+read the version suffix to find out which methods exist.
+
 ### Version ordering, and why Renovate does not use maven versioning
 
 Maven orders the suffix as an addition rather than as a pre-release, which is what makes it usable
@@ -177,7 +202,13 @@ Cockpit.
 
 `build.yaml` builds and tests a pull request, on the current GA line alone, which includes the
 integration tests against a cluster of that line's client. It runs in a group per pull request, so
-an open pull request never takes the waiting run of another one out.
+an open pull request never takes the waiting run of another one out. Three checks beside it are
+about the lines: `api-identity` proves that every line offers the same API, `renovate-configuration`
+validates the Renovate files and runs the gating check, and `pin-change` starts the whole line
+matrix when a pull request moves a pin, because a pin of another line is not compiled by a build of
+the current one.
+`line-matrix.yaml` builds and tests every line once a night, and it is what the section
+[Release lines](#release-lines) is proven by.
 `deploy-to-github-packages.yaml` publishes the snapshot, and only for a push to `main`: the
 snapshot artifacts share their coordinates, so what the other repositories compile against has to
 be what `main` holds. It runs in a group of its own, one publish at a time, and a publish which is

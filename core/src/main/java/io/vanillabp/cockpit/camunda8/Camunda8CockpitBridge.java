@@ -132,7 +132,10 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
     return Optional
         .of(
             new WorkflowDetailsPrefill(
-                String.valueOf(instance.getProcessDefinitionVersion()), instance.getBusinessId(), instance
+                String.valueOf(instance.getProcessDefinitionVersion()),
+                // where a business key comes from differs per release line, see
+                // Camunda8BusinessIds in the per-line sources
+                Camunda8BusinessIds.businessIdOf(instance, workflow), instance
                     .getProcessDefinitionName(), null));
 
   }

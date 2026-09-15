@@ -79,10 +79,11 @@
     <camunda8-adapter.version.line-8.8>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.8>
     <camunda8-adapter.version.line-8.9>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.9>
     <camunda8-adapter.version.line-8.10>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.10>
-    <!-- the cluster the integration tests run against follows the pinned client: the client a
-         build was compiled against IS the minimum cluster version of that build, so testing
-         anything newer would prove nothing about it -->
-    <camunda8.cluster.image>camunda/camunda:${camunda8.version}</camunda8.cluster.image>
+    <!-- Which cluster the integration tests start is not decided here. It is decided by
+         camunda8-adapter-test-support of the line this build compiles against: that artifact
+         carries the image and the secondary storage of its line as a filtered resource, and
+         ClusterUnderTest reads them from it. A property here would only look like it decides
+         something, which is what the one that stood here did. -->
     <protobuf.version>4.35.1</protobuf.version>
     <spring-boot.version>4.1.1</spring-boot.version>
 

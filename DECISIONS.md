@@ -89,3 +89,36 @@ The workers follow. They used to be opened once per workflow module, across ever
 adapters said held it, subscribing each cluster to the job types of all of them. They are opened
 per adapter id and workflow module instead, and what was wired is remembered under the same pair,
 so a worker subscribes to exactly what its own cluster's models carry.
+
+## 7. A line differs in what it costs, not in what it reports
+
+The extension reads two things which arrived with the 8.9 client: the root process instance of a
+job, which is what tells a called process from a business case (decision 3), and the business id of
+a process instance. Line 8.8 has neither, and 8.8 is a cluster version Camunda still supports, so
+dropping the line would send those users away from the cockpit over a field.
+
+Both are answered on 8.8 without changing what a report says.
+
+The root comes from the cluster's call hierarchy, which 8.8 answers with the chain from the root
+down to the instance asked about. `Camunda8CallHierarchy` lives once per line: on 8.9 and above it
+reads the job, on 8.8 it asks. What a hierarchy answered is remembered per process instance, since
+an instance's root is settled when it is created, so a workflow which produces many jobs pays for
+one request.
+
+The business id is the workflow aggregate's id. VanillaBP starts every workflow with that id, writes
+it into a variable and finds the instance again by it, and the reference the cockpit asked about
+carries it already. On 8.9 and above a business id the cluster holds wins, because an instance
+somebody else started may carry a case name of its own; on 8.8 there is no such field and the
+aggregate id is the answer. Reading the variable back would cost a request to arrive at the id which
+is already in hand.
+
+What line 8.8 pays for this is written where it happens. The call hierarchy is served by the
+searchable storage, so it lags behind the transition whose listener is running, and a job of a
+process which just started can be asked about before the cluster knows it. The lookup waits for the
+answer, at most as long as a dispatch waits for the same storage, and treats the job as a case of
+its own when the window runs out - a case too many in the cockpit, rather than an incident on a
+workflow which is doing nothing wrong (decision 5).
+
+This is the shape every later gap of this kind takes: the per-line source directory carries how a
+line finds something out, never what it then reports. A line which cannot answer at all is what
+would end a line, and a field which arrived one minor later is not that.
