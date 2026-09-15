@@ -22,8 +22,8 @@ The Version 1 adapter is still where it always was, as `adapters/camunda8` of th
 [business-cockpit](https://github.com/vanillabp/business-cockpit) repository, and it stays there
 until the cockpit switches to VanillaBP 2. Nothing of it was moved here: this repository starts from
 the extension, so its history never carries the Version 1 shape. What it does carry is Version 1's
-task listeners, byte for byte, because an application upgrading has to keep the process version its
-workflows are running on ([decision 4](./DECISIONS.md)). The start events are the one deliberate
+task listeners, byte for byte, because an application which upgrades has to keep the process version
+its workflows are running on ([decision 4](./DECISIONS.md)). The start events are the one deliberate
 difference, and [decision 1](./DECISIONS.md) says why.
 
 ## What is here today
@@ -37,10 +37,10 @@ Four published modules and the machinery around them:
 | `quarkus/runtime`    | `businesscockpit-camunda8-adapter-quarkus`     | the same beans as CDI producers                                                                                     |
 | `quarkus/deployment` | `…-quarkus-deployment`                         | the build steps of that extension, and the test booting it against a cluster                                        |
 
-Beside them, `test-coverage-report` measures each platform separately and its `coverage-gate` breaks
-the build below 85 %, the four GitHub Actions workflows, the release-line machinery both of the
-sections below describe, the formatting rules every VanillaBP repository shares, and the license and
-notice files.
+Beside them stands the machinery. `test-coverage-report` measures each platform separately, and its
+`coverage-gate` breaks the build below 85 %. Then there are the four GitHub Actions workflows, the
+release-line machinery both of the sections below describe, the formatting rules every VanillaBP
+repository shares, and the license and notice files.
 
 What the integration tests of both platforms need comes from two published artifacts rather than from
 a module here. The Camunda 8 cluster is `camunda8-adapter-test-support`, published by the VanillaBP
@@ -60,15 +60,14 @@ needs neither Spring nor Quarkus, `spring-boot` and `quarkus/runtime` plus `quar
 the glue that registers the extension with each platform, and `test-coverage-report` for the
 per-platform coverage measurement. The artifacts keep the repository name as their prefix, so
 `businesscockpit-camunda8-adapter` is the core and `businesscockpit-camunda8-adapter-spring-boot` is
-what a Spring Boot application depends on. The prefix is what keeps a jar of this repository apart
-from the jar of the VanillaBP Camunda 8 adapter it plugs into, which is a distinction Version 1 did
-not make.
+what a Spring Boot application depends on. The prefix keeps a jar of this repository apart from
+the jar of the VanillaBP Camunda 8 adapter it plugs into. Version 1 did not make that distinction.
 
 `core` compiles against the cockpit's `extensions-commons`, the extension SPI and the CORE artifact
-of the VanillaBP Camunda 8 adapter - which names the processing context this extension is wired
-with, brings the Camunda client, and hands out the client of each configured adapter id. No platform
-integration is a dependency of it, deliberately: a module which compiled against one would stop
-proving that it needs neither.
+of the VanillaBP Camunda 8 adapter. That last one names the processing context this extension is
+wired with, brings the Camunda client, and hands out the client of each configured adapter id. No
+platform integration is a dependency of `core`, and that is deliberate: a module which compiled
+against one would stop proving that it needs neither.
 
 Which cluster a pipeline call belongs to is the adapter's word. `Camunda8ProcessingContext` names the
 adapter id and the workflow module of the run, so the workers of a module are opened per cluster, and the
@@ -81,12 +80,13 @@ reads back is documented for users in the
 
 ## Release lines
 
-A Camunda 8 cluster upgrade is expensive, more so organizationally than technically, and users sit
-on different minors at the same time. Camunda promises a client against clusters of its own version
-and newer and says nothing about the other direction, so the client a build was compiled against IS
-the lowest cluster version that build accepts. One artifact cannot serve every minor, which is why
-the [VanillaBP Camunda 8 adapter](https://github.com/vanillabp/camunda8-adapter) is published once
-per Camunda 8 minor, with the minor in the version.
+A Camunda 8 cluster upgrade is expensive, and it costs the organization more than it costs the
+technology, so users sit on different minors at the same time. Camunda promises a client against
+clusters of its own version and newer, and says nothing about the other direction. So the client a
+build was compiled against IS the lowest cluster version that build accepts. One artifact cannot
+serve every minor. That is why the
+[VanillaBP Camunda 8 adapter](https://github.com/vanillabp/camunda8-adapter) is published once per
+Camunda 8 minor, with the minor in the version.
 
 This repository follows that scheme, and it has to. The extension compiles against the adapter's
 core and gets the Camunda client through it, so a build of this repository inherits the minimum
@@ -101,15 +101,15 @@ means there:
 
 The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
 Camunda offers, and they move when that repository moves. A cluster version appears in the last
-column only once a build of that line has been proven against it: the integration tests start the
+column only once a build of that line has been proven against it. The integration tests start the
 cluster of the client their line pins, so a line's tests meet the oldest cluster its artifacts
 accept.
 
 The preview line is compiled but not run. A user-task listener job never reaches its worker on
-`camunda/camunda:8.10.0-alpha4`: the REST gateway throws a `NullPointerException` while converting
+`camunda/camunda:8.10.0-alpha4`. The REST gateway throws a `NullPointerException` while converting
 it and drops the whole activate-jobs batch, which starves the execution listeners beside it
-(`camunda/camunda#58193`, open). Ten of the fifteen integration tests then sit in their deadline,
-so the nightly matrix leaves this line out and says so, while the API check still compiles it on
+(`camunda/camunda#58193`, open). Ten of the fifteen integration tests then sit in their deadline.
+So the nightly matrix leaves this line out and says so, while the API check still compiles it on
 every pull request. The VanillaBP Camunda 8 adapter keeps the same alpha out of its pull-request
 checks for the same bug.
 
@@ -130,8 +130,8 @@ mvn -Pline-8.10 -Drevision=0.9.0-8.10-alpha1 clean install
 ```
 
 Switching a line always needs `clean`, and the CI does it that way. Classes compiled against one
-Camunda client are binary compatible with no other one: a method the newer model library inherits
-from a type the older one does not have at all is called through the owner the compiler saw, so a
+Camunda client are binary compatible with no other one. A method the newer model library inherits
+from a type the older one does not have at all is called through the owner the compiler saw. So a
 stale `target/` fails at runtime with a `NoClassDefFoundError` rather than at compile time.
 Building the same line again is fine.
 
@@ -142,12 +142,12 @@ that cannot be shared goes into a per-line source directory added by `build-help
 that cannot compile against every supported client, and code that uses something only a newer
 cluster has.
 
-Two of those exist today, and both are line 8.8 answering from the cluster what the newer clients
-put into the job: which workflow a job belongs to when its process was called by another one
+Two of those exist today. In both of them line 8.8 asks the cluster for what the newer clients put
+into the job: which workflow a job belongs to when its process was called by another one
 (`Camunda8CallHierarchy`), and the business key a workflow is shown under (`Camunda8BusinessIds`).
-What a report says is the same on every line; what it costs is not. How long line 8.8 waits for the
+What a report says is the same on every line. What it costs is not. How long line 8.8 waits for the
 cluster's answer is the adapter's `vanillabp.adapters.<id>.workflow-visibility-timeout`, the same key
-that governs the adapter's own waiting for the same storage. See [decision 7](./DECISIONS.md).
+the adapter waits out for the same storage. See [decision 7](./DECISIONS.md).
 
 ### What proves a line
 
@@ -171,13 +171,14 @@ which is why line 8.8 runs with an Elasticsearch beside the cluster and the newe
 
 What no cluster can answer is whether the lines offer the same thing. `bin/api-identity.sh` builds
 every line and compares the public API of every JAR with `javap`, and the job `api-identity` runs it
-on every pull request. A line may differ in what it does, never in what it offers: a user must never
+on every pull request. A line may differ in what it does, never in what it offers. A user must never
 read the version suffix to find out which methods exist.
 
 ### Version ordering, and why Renovate does not use maven versioning
 
-Maven orders the suffix as an addition rather than as a pre-release, which is what makes it usable
-at all: `0.9.0-8.8 > 0.9.0`, and `0.9.0-8.9 < 0.9.0-8.10` numerically rather than lexically. One
+Maven orders the suffix as an addition rather than as a pre-release, and that is what makes the
+suffix usable at all: `0.9.0-8.8 > 0.9.0`, and `0.9.0-8.9 < 0.9.0-8.10` numerically rather than
+lexically. One
 comparison goes wrong, and it is the whole risk of a suffix: `0.9.0-8.9 < 0.10.0-8.8`, so "the
 newest version" can cross a line boundary. Renovate reads the suffix as a compatibility value
 instead of a version part, which fixes exactly that. Extend the preset shipped here to inherit it
@@ -199,8 +200,8 @@ the line always sits in the same place, and Maven sorts `0.9.0-8.10-alpha1 < 0.9
 mvn install
 ```
 
-That runs everything, the integration tests included, and those start a Camunda 8 cluster and an
-Elasticsearch beside it through Testcontainers - so a build needs Docker and takes a few minutes.
+That runs everything, the integration tests included. Those start a Camunda 8 cluster and an
+Elasticsearch beside it through Testcontainers, so a build needs Docker and takes a few minutes.
 Without Docker the integration tests skip themselves and the unit tests still run.
 
 Snapshots are published to GitHub Packages by the pipeline described below, and releases go to
@@ -218,7 +219,7 @@ matrix when a pull request moves a pin, because a pin of another line is not com
 the current one.
 `line-matrix.yaml` builds and tests every line once a night, and it is what the section
 [Release lines](#release-lines) is proven by.
-`deploy-to-github-packages.yaml` publishes the snapshot, and only for a push to `main`: the
+`deploy-to-github-packages.yaml` publishes the snapshot, and only for a push to `main`. The
 snapshot artifacts share their coordinates, so what the other repositories compile against has to
 be what `main` holds. It runs in a group of its own, one publish at a time, and a publish which is
 already running is never cancelled, because two runs publishing at the same time would overwrite
