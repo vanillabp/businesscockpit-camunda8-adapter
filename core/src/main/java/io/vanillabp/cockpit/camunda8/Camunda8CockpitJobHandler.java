@@ -183,7 +183,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
     throw new IllegalStateException(
         """
             The Business Cockpit received the %s job '%s' (type '%s') of BPMN process '%s' in \
-            workflow module '%s'! This extension adds task listeners and execution listeners \
+            workflow module '%s'! The cockpit adapter adds task listeners and execution listeners \
             only, so a job of another kind carrying one of its types comes from a model it did \
             not write - check which listeners the deployed model of that process carries."""
             .formatted(
