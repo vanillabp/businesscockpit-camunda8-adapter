@@ -115,7 +115,10 @@ What line 8.8 pays for this is written where it happens. The call hierarchy is s
 searchable storage, so it lags behind the transition whose listener is running, and a job of a
 process which just started can be asked about before the cluster knows it. How long the lookup waits
 for the answer is the adapter's word: `vanillabp.adapters.<id>.workflow-visibility-timeout`, ten
-seconds by default and zero for no waiting at all. It is the key the Camunda 8 adapter waits out for
+seconds by default and zero for no waiting at all. Waiting means asking again: the lookup repeats the
+request every 100 milliseconds until the storage answers or the window is used up
+(`ASK_AGAIN_AFTER` in `Camunda8CallHierarchy`). The storage says nothing about when it will hold the
+answer, so there is nothing to wait for other than the next attempt. It is the key the Camunda 8 adapter waits out for
 the same storage when it knows a workflow is there. A cluster whose exporter is slow is slow for both
 of them, so it is one number rather than two. It is not the distance between two attempts of a
 report, which is short on purpose and is multiplied by the attempts the outbox allows. When the
