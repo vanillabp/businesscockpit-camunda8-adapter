@@ -22,20 +22,20 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
  * The listeners the Business Cockpit puts into a Camunda 8 model, and the one place which
  * knows what they look like.
  * <p>
- * A Camunda 8 cluster tells nobody what it is doing unless it is asked to, so the only way to
+ * A Camunda 8 cluster tells nobody what it is doing unless it is asked to. So the only way to
  * watch a workflow is to have the cluster hand out a job whenever something happens. Each of
- * these listeners is such a job: it is delivered to a worker of this extension, gates the
- * transition it belongs to until that worker answers, and carries no retries - see decision 5 in
- * the repository's DECISIONS.md.
+ * these listeners is such a job. It is delivered to a worker of this extension, it gates the
+ * transition it belongs to until that worker answers, and it carries no retries. See decision 5
+ * in the repository's DECISIONS.md.
  * <p>
- * <b>The task listeners are byte-for-byte what Version 1 wrote.</b> Their job type, their
- * retries and where they are inserted are a compatibility promise rather than a choice: a
- * Version 1 application whose model is deployed again by Version 2 must produce the same bytes,
- * or the cluster stores a new process version and every running workflow keeps the old one - see
+ * The task listeners are byte-for-byte what Version 1 wrote. Their job type, their retries and
+ * where they are inserted are a compatibility promise rather than a choice. A Version 1
+ * application whose model is deployed again by Version 2 must produce the same bytes. Otherwise
+ * the cluster stores a new process version and every running workflow keeps the old one. See
  * decision 4 in the repository's DECISIONS.md. The execution listeners are NOT the Version 1
- * ones - see decision 1 in the repository's DECISIONS.md.
+ * ones, and decision 1 in the repository's DECISIONS.md says why.
  * <p>
- * Every method here is idempotent: the deployment pipeline hands the same model instance to
+ * Every method here is idempotent. The deployment pipeline hands the same model instance to
  * every executable process of a file, and re-wiring an element which already carries this
  * extension's listener leaves it alone.
  */
@@ -49,10 +49,10 @@ public final class Camunda8CockpitListeners {
   public static final String LISTENER_TYPE_PREFIX = "io.vanillabp.businesscockpit:";
 
   /**
-   * What the listeners are given as their retries. A report to the cockpit is not business
-   * work the cluster may repeat on its own: a failure is an incident somebody has to look at,
-   * and the entry which carries the report is retried by the outbox rather than by the cluster -
-   * see decision 5 in the repository's DECISIONS.md.
+   * What the listeners are given as their retries. A report to the cockpit is not business work
+   * the cluster may repeat on its own. A failure is an incident somebody has to look at, and the
+   * entry which carries the report is retried by the outbox rather than by the cluster. See
+   * decision 5 in the repository's DECISIONS.md.
    */
   public static final String RETRIES = "0";
 
@@ -185,9 +185,9 @@ public final class Camunda8CockpitListeners {
    * Adds the listener which reports that a workflow began.
    * <p>
    * It is an <code>end</code> listener of the START EVENT and not a <code>start</code> listener
-   * of the process, although the process is what began: a process-level <code>start</code>
-   * listener runs before the variables the workflow was started with exist, so the workflow
-   * aggregate's id - the one thing every report needs - would be missing. See decision 1 in the
+   * of the process, although the process is what began. A <code>start</code> listener at the
+   * process runs before the variables the workflow was started with exist, so the workflow
+   * aggregate's id would be missing, and every report needs that id. See decision 1 in the
    * repository's DECISIONS.md.
    *
    * @param startEvent The start event element
@@ -280,7 +280,7 @@ public final class Camunda8CockpitListeners {
 
   /**
    * An element which carries no extension elements at all needs the container before anything
-   * can be put into it - a start event drawn without any configuration is the common case.
+   * can be put into it. A start event drawn without any configuration is the common case.
    */
   private static ExtensionElements extensionElementsOf(
       final BaseElement element) {
@@ -294,8 +294,8 @@ public final class Camunda8CockpitListeners {
   }
 
   /**
-   * @return The element to insert behind, or <code>null</code> - which is what the model
-   *         library reads as "insert as the first one"
+   * @return The element to insert behind, or <code>null</code>, which the model library reads
+   *         as "insert as the first one"
    */
   private static <T> T lastOf(
       final Collection<T> elements) {

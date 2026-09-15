@@ -76,10 +76,10 @@ public class Camunda8CockpitTest {
   /**
    * Where the addresses of the cluster are published.
    * <p>
-   * This class is initialized twice - once while the application is built and again inside the
-   * class loader of the running application - so a cluster started unconditionally would be two
+   * This class is initialized twice, once while the application is built and again inside the
+   * class loader of the running application. So a cluster started unconditionally would be two
    * clusters, and the copy running the tests would look at the empty one. The first copy starts
-   * it and writes its addresses down; the second finds them and touches Testcontainers not at
+   * it and writes its addresses down. The second finds them and touches Testcontainers not at
    * all.
    */
   private static final String REST_ADDRESS_PROPERTY = "businesscockpit.test.cluster.rest";
@@ -286,7 +286,7 @@ public class Camunda8CockpitTest {
     final var started = aStartedCallingWorkflow("Della");
 
     // the user task sits in the CALLED process, and the workflow it is reported under has to be
-    // the calling one - see decision 3
+    // the calling one. See decision 3
     final var userTask = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Della\"");
     final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Della\"");
     assertEquals(callingWorkflowIdOf(started), idOf(workflow, "workflowId"), workflow.body());
@@ -407,7 +407,7 @@ public class Camunda8CockpitTest {
     final var model = deployedModelOf(scopedProcessId);
 
     // a listener of this extension carries no retries, so a job nobody serves would stop the
-    // workflow where it sits - and nobody serves a process this application knows no case of
+    // workflow where it sits, and nobody serves a process this application knows no case of
     assertEquals(List.of(), executionListenerTypesOf(model, scopedProcessId));
     assertEquals(List.of(), executionListenerTypesOf(model, "RetriedStart"));
     assertFalse(

@@ -27,24 +27,24 @@ import io.vanillabp.cockpit.extension.spi.WorkflowReference;
  * The handler does two things and nothing else: it turns the job into the identifiers the
  * cockpit addresses a task or a workflow by, and it writes one outbox entry. Reading what the
  * cluster knows about the task and asking the application for the business details happens
- * later, while that entry is dispatched - a listener job holds the transition it belongs to
- * open for as long as this method runs, and a report which talked to a cockpit server here
- * would hold a user task from appearing for as long as that server takes.
+ * later, while that entry is dispatched. A listener job holds the transition it belongs to open
+ * for as long as this method runs, so a report which talked to a cockpit server here would hold
+ * a user task from appearing for as long as that server takes.
  * <p>
  * <b>The job is completed after the entry was committed</b>, never before. The entry gets a
  * transaction of its own ({@link EventTransaction#NEW}): a worker thread of the Camunda client
- * carries none, and there is nothing of the cluster's work to join - the cluster commits the
+ * carries none, and there is nothing of the cluster's work to join. The cluster commits the
  * transition when the completion arrives, which is after this method returned.
  * <p>
- * The answer to the cluster follows the adapter's own protocol for a listener job: the job is
+ * The answer to the cluster follows the adapter's own protocol for a listener job. The job is
  * registered with the drain of its workflow module, so a shutdown waits for this handler instead
- * of closing the client under it; a rejection the cluster sent because it is busy is repeated
- * rather than turned into a failure; and work which a shutdown cut off is left to its lock, so
+ * of closing the client under it. A rejection the cluster sent because it is busy is repeated
+ * rather than turned into a failure. And work which a shutdown cut off is left to its lock, so
  * the next instance of the application gets the listener once that lock expires.
  * <p>
  * Every other failure fails the job with no retry left, which raises an incident at once rather
- * than repeating quietly. That is deliberate and it is what Version 1 did - see decision 5 in the
- * repository's DECISIONS.md.
+ * than repeating quietly. That is deliberate, and it is what Version 1 did. See decision 5 in
+ * the repository's DECISIONS.md.
  */
 public class Camunda8CockpitJobHandler implements JobHandler {
 
@@ -110,7 +110,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
             Camunda8CockpitListeners.identifierOf(job.getType()),
             job.getBpmnProcessId(),
             // the listeners of this extension are modelled with no retry at all, so failing
-            // one raises the incident straight away - see decision 5 in the repository's
+            // one raises the incident straight away. See decision 5 in the repository's
             // DECISIONS.md
             () -> Camunda8ListenerJobs.Failure.NO_RETRIES_LEFT,
             () -> {
@@ -141,12 +141,12 @@ public class Camunda8CockpitJobHandler implements JobHandler {
     final var wired = deployments
         .listenerOf(adapterId(), workflowModuleId, job.getBpmnProcessId(), job.getType());
     if (wired.isEmpty()) {
-      // a job type of this extension which this workflow module did not wire. Another
-      // application deployed a model of its own under the same identifiers, and its workflows
-      // are none of this module's business - but that is a guess about somebody else's
-      // deployment, and the other reading is that this module's own model was deployed by a
-      // version of the application which wired more than the running one does, in which case
-      // the cockpit is quietly missing events
+      // a job type of this extension which this workflow module did not wire. One reading is
+      // that another application deployed a model of its own under the same identifiers, and
+      // its workflows are none of this module's business. But that is a guess about somebody
+      // else's deployment. The other reading is that this module's own model was deployed by a
+      // version of the application which wired more than the running one does, and then the
+      // cockpit is quietly missing events
       logger
           .warn(
               "Camunda8[{}]: the Business Cockpit does not report job '{}' of type '{}' for BPMN process '{}': workflow module '{}' wired no listener of that type for that process. The job is completed. Where that process is one of this application's, its deployed model carries a listener this version no longer adds",
@@ -177,7 +177,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       reportWorkflow(job, listener, String.valueOf(workflowAggregateId));
       return;
     }
-    // this extension adds task listeners and execution listeners and nothing else, so a job of
+    // this extension adds task listeners and execution listeners and nothing else. So a job of
     // a third kind carrying one of its job types is a model nobody here understands. Guessing
     // what it means would report something the cockpit then shows; failing the job says it
     throw new IllegalStateException(
@@ -213,7 +213,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
             new UserTaskReference(
                 adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(
                     job), userTaskKey, taskDefinition, job.getElementId()),
-            // the worker's clock, because a listener job carries no time of its own: it is
+            // the worker's clock, because a listener job carries no time of its own. It is
             // handed out while the transition it gates waits, and what the cluster records
             // about that transition is written by the exporter afterwards
             kind, String.valueOf(job.getKey()), OffsetDateTime.now(),
@@ -236,7 +236,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       final String workflowAggregateId) {
 
     // the cockpit shows business cases, and a called process is a step of one rather than a
-    // case of its own - see decision 3 in the repository's DECISIONS.md
+    // case of its own. See decision 3 in the repository's DECISIONS.md
     final var rootProcessInstanceKey = callHierarchy.rootProcessInstanceKeyOf(job);
     if (rootProcessInstanceKey != null) {
       logger
@@ -268,10 +268,10 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   }
 
   /**
-   * What happened to the user task, as the cockpit distinguishes it. The three listeners this
-   * extension adds report the three transitions a task goes through; a cluster which delivers
-   * another one (a task somebody assigned, say) reports a change of the task and nothing more
-   * specific.
+   * What happened to the user task, as the cockpit tells the cases apart. The three listeners
+   * this extension adds report the three transitions a task goes through. A cluster which
+   * delivers another one, a task somebody assigned for example, reports a change of the task and
+   * nothing more specific.
    */
   private static UserTaskEventKind userTaskKindOf(
       final ActivatedJob job) {
@@ -291,11 +291,11 @@ public class Camunda8CockpitJobHandler implements JobHandler {
 
   /**
    * What happened to the workflow. Both of this extension's execution listeners are
-   * <code>end</code> listeners and they are told apart by what they sit on: the process itself
-   * ends the workflow, a start event begins it.
+   * <code>end</code> listeners, and what they sit on tells them apart: the process itself ends
+   * the workflow, a start event begins it.
    * <p>
    * A workflow which was terminated rather than finished is not reported as such, because
-   * Camunda 8 has no listener for it before 8.10 - see decision 3 in the repository's
+   * Camunda 8 has no listener for it before 8.10. See decision 3 in the repository's
    * DECISIONS.md.
    */
   private static WorkflowEventKind workflowKindOf(
@@ -312,7 +312,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   }
 
   /**
-   * The instance a business case is: an element of a called process belongs to the workflow its
+   * The instance a business case is. An element of a called process belongs to the workflow its
    * whole hierarchy hangs below.
    */
   private String workflowIdOf(

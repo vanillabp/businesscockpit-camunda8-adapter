@@ -7,11 +7,11 @@ import io.vanillabp.cockpit.extension.spi.WorkflowReference;
  * The business key a workflow is shown under. This is the 8.10 variant.
  * <p>
  * Since 8.9 a process instance carries a business id of its own, and a cluster which holds one
- * has the last word: an instance may have been started by something other than this application,
+ * has the last word. An instance may have been started by something other than this application,
  * and what that something called the case is what an operator searches for.
  * <p>
- * Where the cluster holds none - which is every workflow VanillaBP started, because the adapter
- * creates instances without one - the workflow aggregate's id is the business key. VanillaBP
+ * The cluster holds none for every workflow VanillaBP started, because the adapter creates
+ * instances without one. Then the workflow aggregate's id is the business key. VanillaBP
  * addresses a workflow by that id everywhere else, and the reference the cockpit asked about
  * already carries it, so nothing is read for it.
  */

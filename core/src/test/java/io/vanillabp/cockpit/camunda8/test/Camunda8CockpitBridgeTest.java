@@ -35,12 +35,12 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 /**
  * What the bridge answers without asking the cluster at all.
  * <p>
- * Everything else it does is a request to a cluster and is tested against a real one; what stays
- * here is the handful of answers a cluster would only be able to confirm - and the one which
- * must never reach it.
+ * Everything else it does is a request to a cluster and is tested against a real one. What stays
+ * here is the handful of answers a cluster would only be able to confirm, and the one which must
+ * never reach it.
  * <p>
  * The filter a search is narrowed with is asserted here as well, although a cluster runs the
- * search. A condition spelled differently does not fail against a cluster: the search answers
+ * search. A condition spelled differently does not fail against a cluster. The search answers
  * nothing, and nothing reads exactly like a workflow which was never started.
  */
 @ExtendWith(SuppressOutputExtension.class)
@@ -135,7 +135,7 @@ public class Camunda8CockpitBridgeTest {
   public void anIdOfAnotherBpmsIsNotLookedUp() {
 
     // during a migration an application still holds ids the other BPMS gave it, and none of
-    // them is a task of this cluster - asking would spend a request to be told so
+    // them is a task of this cluster. Asking would spend a request to be told so
     final var found = bridge()
         .userTaskOfAggregate(MODULE_ID, PROCESS_ID, "4711", "a-camunda-7-task-id");
 
@@ -185,7 +185,7 @@ public class Camunda8CockpitBridgeTest {
     final var filter = theFilterOfTheSearch();
     verify(filter).processDefinitionId(SCOPED_PROCESS_ID);
     // quoted, because the cluster stores every variable as JSON and compares against that JSON
-    // verbatim - the plain 4711 would match nothing
+    // word for word. The plain 4711 would match nothing
     verify(filter).variables(Map.of(AGGREGATE_ID_NAME, "\"4711\""));
     // 'use-prefix' puts no workflow module into a tenant, and a tenant nobody uses would
     // narrow the search to workflows which do not exist

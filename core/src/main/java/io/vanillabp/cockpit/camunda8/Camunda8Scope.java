@@ -7,10 +7,10 @@ import io.vanillabp.integration.adapter.spi.NameClashAvoidanceSupport;
  * How one configured Camunda 8 cluster names the things the extension asks it about.
  * <p>
  * Name-clash avoidance decides whether a workflow module's processes are deployed under a
- * tenant, under prefixed identifiers or under neither, and every request the extension sends to
- * a cluster has to spell an identifier the way that cluster stores it - while everything the
+ * tenant, under prefixed identifiers or under neither. Every request the extension sends to a
+ * cluster has to spell an identifier the way that cluster stores it, while everything the
  * cockpit is told is spelled the way the application wrote it. The rules are the adapter's, so
- * they are asked of the adapter's own helper rather than rebuilt here: a prefix which the
+ * they are asked of the adapter's own helper rather than rebuilt here. A prefix which the
  * extension assembles itself is a prefix which drifts apart from the adapter's on the next
  * change.
  */

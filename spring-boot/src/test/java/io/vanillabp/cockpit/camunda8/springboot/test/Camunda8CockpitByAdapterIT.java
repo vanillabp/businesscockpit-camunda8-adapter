@@ -41,13 +41,13 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * gets when it configures none.
  * <p>
  * That default is <code>by-adapter</code>, which on Camunda 8 means a TENANT named after the
- * workflow module - Version 1's behaviour, and therefore the mode an application upgrading runs
- * under unless it decides otherwise. What it costs the test is a cluster which asks for
- * credentials: Camunda refuses to start with multi-tenancy on and its API unprotected.
+ * workflow module. That is Version 1's behaviour, so it is the mode an application which upgrades
+ * runs under unless it decides otherwise. What it costs the test is a cluster which asks for
+ * credentials, because Camunda refuses to start with multi-tenancy on and its API unprotected.
  * <p>
  * What is asserted here and nowhere else: the identifiers stay PLAIN in the model and in every
  * report, and the listener jobs still reach the extension although they are handed out for a
- * tenant - a worker which had not subscribed for it would never see them.
+ * tenant. A worker which had not subscribed for it would never see them.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput

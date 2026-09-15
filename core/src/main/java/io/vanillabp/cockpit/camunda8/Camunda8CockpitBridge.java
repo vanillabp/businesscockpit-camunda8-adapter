@@ -26,9 +26,10 @@ import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
  * What one configured Camunda 8 cluster answers the Business Cockpit.
  * <p>
  * Every question here is answered by the cluster's searchable storage rather than by its
- * engine: the engine takes commands and hands out jobs, and what a user task looks like right
+ * engine. The engine takes commands and hands out jobs, and what a user task looks like right
  * now is something only the storage behind it can be asked. That storage runs behind the engine
- * by design, which decides what a missing record means - see {@link Camunda8CockpitReads}.
+ * by design, and that is what decides what a missing record means. See
+ * {@link Camunda8CockpitReads}.
  * <p>
  * One bridge serves one adapter id, because during a migration each cluster holds workflows of
  * its own and the cockpit addresses a workflow by the cluster holding it.
@@ -98,9 +99,9 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
                 .builder()
                 .bpmnProcessVersion(String.valueOf(task.getProcessDefinitionVersion()))
                 // the workflow of a task is the business case, which is the instance the
-                // reference carries: for a task of a called process the cluster's own
-                // processInstanceKey is the step below that case, and it is reported as the
-                // sub-workflow on the next line - see decision 3
+                // reference carries. For a task of a called process the cluster's own
+                // processInstanceKey is the step below that case, and the next line reports it
+                // as the sub-workflow. See decision 3
                 .workflowId(userTask.workflowId())
                 .subWorkflowId(subWorkflowIdOf(userTask, task))
                 .bpmnTaskName(task.getName())
@@ -237,9 +238,9 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
         .client()
         .newProcessInstanceSearchRequest()
         // the process id as the cluster knows it, the tenant of the workflow module and the
-        // aggregate's id quoted as the JSON a variable is stored in - three conditions the
-        // adapter spells, because a search which spells one of them differently answers
-        // nothing, and nothing reads exactly like a workflow which was never started
+        // aggregate's id quoted as the JSON a variable is stored in. The adapter spells all
+        // three, because a search which spells one of them differently answers nothing, and
+        // nothing reads exactly like a workflow which was never started
         .filter(
             filter -> Camunda8Searches
                 .scopedTo(
@@ -319,8 +320,8 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   }
 
   /**
-   * The workflow a task lives in, where that is not the workflow the cockpit knows the case by
-   * - a call activity's child, whose tasks belong to the case above it.
+   * The workflow a task lives in, where that is not the workflow the cockpit knows the case by.
+   * That happens for a call activity's child, whose tasks belong to the case above it.
    */
   private static String subWorkflowIdOf(
       final UserTaskReference userTask,
@@ -345,10 +346,10 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * Says out loud that a change the application reported reaches nobody.
    * <p>
    * The application called this inside its own transaction, and a workflow started by that very
-   * transaction is not searchable yet - Camunda 8 receives the start command after the commit,
-   * and its searchable storage learns about it later still. Waiting here would hold the
-   * business transaction open for an exporter, so the change is not reported and the reason is
-   * said instead. The workflow's own start is reported by this extension's start-event listener
+   * transaction is not searchable yet. Camunda 8 receives the start command after the commit,
+   * and its searchable storage learns about it later still. Waiting here would hold the business
+   * transaction open for an exporter. So the change is not reported, and the reason is said
+   * instead. The workflow's own start is reported by this extension's start-event listener
    * either way, with whatever the aggregate holds at that moment.
    */
   private void reportNothingToSee(

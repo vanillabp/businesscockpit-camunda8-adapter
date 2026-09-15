@@ -84,7 +84,7 @@ public class TestWorkflowService {
    * <p>
    * No test reads the note any more. The write is there because
    * Camunda8CockpitIT#aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives needs a second writer,
-   * and it is asked for per case because a provider writes into whatever transaction ran it - see
+   * and it is asked for per case because a provider writes into whatever transaction ran it. See
    * {@link DetailsProviderGate#letTheProviderWriteOnto(Long)} for what writing onto every case did
    * to the tests which only read.
    * <p>

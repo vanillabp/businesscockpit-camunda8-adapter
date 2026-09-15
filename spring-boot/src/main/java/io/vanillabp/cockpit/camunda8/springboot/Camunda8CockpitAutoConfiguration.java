@@ -26,10 +26,9 @@ import io.vanillabp.integration.extension.spi.ExtensionWiringService;
 /**
  * Registers the Camunda 8 half of the Business Cockpit extension on Spring Boot.
  * <p>
- * Nothing here decides anything: what the extension does with a cluster is decided in the
- * platform-neutral module of this repository, and this class does what only Spring can do -
- * find the beans and put the extension's own where VanillaBP and the Camunda 8 adapter collect
- * them.
+ * Nothing here decides anything. What the extension does with a cluster is decided in the
+ * platform-neutral module of this repository. This class does what only Spring can do: find the
+ * beans, and put the extension's own where VanillaBP and the Camunda 8 adapter collect them.
  * <p>
  * It runs after VanillaBP's own auto-configuration, named rather than referenced, because an
  * extension does not compile against a platform integration.
