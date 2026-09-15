@@ -145,8 +145,9 @@ cluster has.
 Two of those exist today, and both are line 8.8 answering from the cluster what the newer clients
 put into the job: which workflow a job belongs to when its process was called by another one
 (`Camunda8CallHierarchy`), and the business key a workflow is shown under (`Camunda8BusinessIds`).
-What a report says is the same on every line; what it costs is not. See
-[decision 7](./DECISIONS.md).
+What a report says is the same on every line; what it costs is not. How long line 8.8 waits for the
+cluster's answer is the adapter's `vanillabp.adapters.<id>.workflow-visibility-timeout`, the same key
+that governs the adapter's own waiting for the same storage. See [decision 7](./DECISIONS.md).
 
 ### What proves a line
 

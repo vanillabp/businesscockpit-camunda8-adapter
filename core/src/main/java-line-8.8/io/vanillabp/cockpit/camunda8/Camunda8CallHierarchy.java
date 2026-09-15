@@ -28,10 +28,17 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * <p>
  * It is served by the searchable storage, so it lags behind the transition whose listener is
  * running. A job of a process which was started a moment ago can get an answer which does not
- * exist yet, and the lookup therefore waits for it, up to
- * {@link Camunda8CockpitReads#WHILE_THE_EXPORTER_CATCHES_UP}. Waiting inside a listener job
- * holds that job's transition open, which is why the window is short and why the wait happens
- * only when the cluster has nothing to say yet.
+ * exist yet, and the lookup therefore waits for it. How long is the adapter's word:
+ * <code>vanillabp.adapters.&lt;id&gt;.workflow-visibility-timeout</code> is what the Camunda 8
+ * adapter waits out for the same storage when it knows a workflow is there, ten seconds by
+ * default, and zero switches the waiting off here as it does there. A cluster whose exporter is
+ * slow is slow for both of them, so it is one number and not two.
+ * <p>
+ * It is NOT the window between two attempts of a report, which is short on purpose and is
+ * multiplied by the attempts the outbox allows - see
+ * {@link Camunda8CockpitReads#WHILE_THE_EXPORTER_CATCHES_UP}. Waiting inside a listener job holds
+ * that job's transition open, which is why the wait happens only when the cluster has nothing to
+ * say yet, and why a deployment which cannot afford it sets the adapter's key to zero.
  * <p>
  * If the window runs out, the job is treated as the root of its own hierarchy and the reason is
  * logged. That is the lesser of two wrong answers: a called process reported as a case adds a
@@ -45,13 +52,7 @@ final class Camunda8CallHierarchy {
 
   private static final Logger logger = LoggerFactory.getLogger(Camunda8CallHierarchy.class);
 
-  /**
-   * How long the lookup waits for the searchable storage before it answers without it, and how
-   * often it asks in that time. Both are read where the extension already answers the same
-   * question for a dispatch, so there is one window in this repository rather than two.
-   */
-  private static final Duration WAIT_FOR_THE_HIERARCHY = Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP;
-
+  /** How often the lookup asks again while it waits. */
   private static final Duration ASK_AGAIN_AFTER = Duration.ofMillis(100);
 
   /**
@@ -114,7 +115,7 @@ final class Camunda8CallHierarchy {
   private Long rootAccordingToTheCluster(
       final Long processInstanceKey) {
 
-    final var giveUpAt = System.nanoTime() + WAIT_FOR_THE_HIERARCHY.toNanos();
+    final var giveUpAt = System.nanoTime() + waitForTheHierarchy().toNanos();
     while (true) {
       final var root = askOnce(processInstanceKey);
       if (root != null) {
@@ -137,6 +138,21 @@ final class Camunda8CallHierarchy {
         return processInstanceKey;
       }
     }
+
+  }
+
+  /**
+   * How long this lookup waits for the searchable storage, which is what the adapter of this
+   * cluster waits out for the same storage elsewhere.
+   *
+   * @return The adapter's <code>workflow-visibility-timeout</code>, its default where the
+   *         application configured none, and zero where the application switched the waiting off
+   */
+  private Duration waitForTheHierarchy() {
+
+    // the adapter's own resolution, so the default lives where the key does and a later change of
+    // it reaches this lookup without anybody remembering to copy a number
+    return cluster.configuration().workflowVisibilityWindow();
 
   }
 

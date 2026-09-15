@@ -114,9 +114,13 @@ is already in hand.
 
 What line 8.8 pays for this is written where it happens. The call hierarchy is served by the
 searchable storage, so it lags behind the transition whose listener is running, and a job of a
-process which just started can be asked about before the cluster knows it. The lookup waits for the
-answer, at most as long as a dispatch waits for the same storage, and treats the job as a case of
-its own when the window runs out - a case too many in the cockpit, rather than an incident on a
+process which just started can be asked about before the cluster knows it. How long the lookup waits
+for the answer is the adapter's word: `vanillabp.adapters.<id>.workflow-visibility-timeout`, the key
+the Camunda 8 adapter waits out for the same storage when it knows a workflow is there, ten seconds
+by default and zero for no waiting at all. A cluster whose exporter is slow is slow for both of
+them, so it is one number rather than two, and it is not the distance between two attempts of a
+report, which is short on purpose and is multiplied by the attempts the outbox allows. The lookup
+treats the job as a case of its own when the window runs out - a case too many in the cockpit, rather than an incident on a
 workflow which is doing nothing wrong (decision 5).
 
 This is the shape every later gap of this kind takes: the per-line source directory carries how a
