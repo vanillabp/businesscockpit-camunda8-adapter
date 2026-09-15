@@ -14,13 +14,13 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
  * while deploying it, taken from
  * <code>io.vanillabp.cockpit.adapter.camunda8.deployments.Camunda8DeploymentAdapter</code>. A
  * test wires one model with it and one with the extension, and the two have to serialize to the
- * same bytes - which is what keeps an upgrading application on the process version it is
+ * same bytes. That is what keeps an application which upgrades on the process version it is
  * running on.
  * <p>
- * It is deliberately a copy rather than a call: Version 1 is not a dependency of this
+ * It is deliberately a copy rather than a call. Version 1 is not a dependency of this
  * repository, and the promise is about the bytes it produced rather than about its code.
  * <p>
- * The <code>isNew</code> branch below - the one for a user task carrying no listeners at all -
+ * The <code>isNew</code> branch below, the one for a user task carrying no listeners at all,
  * is copied for completeness and never runs in the comparison. VanillaBP's Camunda 8 adapter
  * wires every user task it claims before the cockpit sees the model and leaves the
  * <code>zeebe:taskListeners</code> container behind, which is what the other branch reads, and

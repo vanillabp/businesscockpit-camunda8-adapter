@@ -25,8 +25,8 @@ import io.vanillabp.integration.extension.spi.ExtensionWiringService;
  * <p>
  * The order is the Business Cockpit's own, and {@link BusinessCockpitWiringService#ORDER} says
  * what that number means. The cockpit's listeners sit behind VanillaBP's own on every element
- * they share, and that comes from the pipeline calling the adapter before any extension rather
- * than from the number.
+ * they share. That is not the number's doing: the pipeline calls the adapter before it calls any
+ * extension.
  */
 public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelInstance, Camunda8ProcessingContext> {
 
@@ -92,10 +92,10 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
     final var adapterId = context.getAdapterId();
     final var aggregateIdName = aggregateIdNameOf(workflowModuleId, bpmnProcessId);
     if (aggregateIdName == null) {
-      // A listener carries no retries, so an unserved job stops the workflow where it sits.
-      // A BPMN process no @WorkflowService class claims has no workflow aggregate, therefore
-      // nothing the cockpit could report a case for, and therefore no listener either - see
-      // decision 5 in the repository's DECISIONS.md
+      // A listener carries no retries, so a job nobody serves stops the workflow where it sits.
+      // A BPMN process which no @WorkflowService class claims has no workflow aggregate, so
+      // there is nothing the cockpit could report a case for, and it gets no listener either.
+      // See decision 5 in the repository's DECISIONS.md
       logger
           .debug(
               "Camunda8: the Business Cockpit adds no listeners to BPMN process '{}' of workflow module '{}' (file '{}'): no workflow aggregate of this application claims it",
@@ -165,15 +165,15 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * extension's business: VanillaBP delivers it like any other task.
    * <p>
    * Which user tasks those are, and what each of them is called, is not decided here. The
-   * adapter's own deployment path decides it, and this is that very method: a task the adapter
-   * wired is a task the cockpit reports, under the same task definition - the external form
-   * reference, which is what a <code>&#64;UserTaskDetailsProvider</code> method is matched by
-   * and what Version 1 named its listeners after. Reading the model with the method meant for
-   * models a cluster already holds would take a Version 1 formKey as a task definition and
-   * produce a listener type Version 1 never wrote.
+   * adapter's own deployment path decides it, and this is that very method. A task the adapter
+   * wired is a task the cockpit reports, under the same task definition. That definition is the
+   * external form reference, which is what a <code>&#64;UserTaskDetailsProvider</code> method is
+   * matched by and what Version 1 named its listeners after. Reading the model with the method
+   * meant for models a cluster already holds would take a Version 1 formKey as a task definition
+   * and produce a listener type Version 1 never wrote.
    * <p>
-   * Calling it a second time adds nothing: the adapter ran before this extension and its
-   * listeners are already in the model, which is what that method checks before it inserts
+   * Calling it a second time adds nothing. The adapter ran before this extension, so its
+   * listeners are already in the model, and that method checks for them before it inserts
    * anything. A user task it would refuse has already ended the deployment by then.
    *
    * @param adapterId The configured adapter id whose models are being wired
@@ -233,11 +233,11 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * The BPMN process this call is about, as it stands in the model.
    * <p>
    * The pipeline hands over the process id the application wrote, while the model already
-   * carries the identifier the cluster will know - name-clash avoidance rewrote it before any
-   * wiring ran. Which of the two spellings this model uses is decided by the adapter it was
-   * prepared for, and the processing context says which adapter that is, so the id is asked of
-   * that one adapter's scope. Trying every configured adapter's spelling instead stops
-   * answering the moment two of them avoid name clashes differently.
+   * carries the identifier the cluster will know, because name-clash avoidance rewrote it before
+   * any wiring ran. Which of the two spellings this model uses is decided by the adapter it was
+   * prepared for, and the processing context says which adapter that is. So the id is asked of
+   * that one adapter's scope. Trying every configured adapter's spelling instead stops answering
+   * the moment two of them avoid name clashes differently.
    */
   private Optional<Process> processInModel(
       final BpmnModelInstance model,

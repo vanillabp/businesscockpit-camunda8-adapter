@@ -14,14 +14,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * serving it are opened and for as long as they are.
  * <p>
  * Two things have to survive the wiring. The workers need to know which job types exist and
- * which variable each of them has to ask the cluster for, and every job arriving later has to
- * be translated back: it carries the identifiers the CLUSTER knows, while everything the
- * cockpit is told - and everything the application's own methods are matched by - is spelled
- * the way the application wrote it.
+ * which variable each of them has to ask the cluster for. And every job arriving later has to be
+ * translated back, because it carries the identifiers the CLUSTER knows, while everything the
+ * cockpit is told is spelled the way the application wrote it. So is everything the
+ * application's own methods are matched by.
  * <p>
  * Everything here is per adapter id and workflow module. A module deployed to two Camunda 8
- * clusters is wired twice, once per adapter, and the two runs put different identifiers into
- * their models wherever the two avoid name clashes differently - so the workers of one cluster
+ * clusters is wired twice, once per adapter. The two runs put different identifiers into their
+ * models wherever the two avoid name clashes differently, so the workers of one cluster
  * subscribe to what THAT cluster's models carry and to nothing else.
  */
 public class Camunda8CockpitDeployments {
@@ -33,8 +33,8 @@ public class Camunda8CockpitDeployments {
    *          to
    * @param scopedBpmnProcessId The BPMN process id as the cluster knows it
    * @param bpmnProcessId The BPMN process id as the application wrote it
-   * @param elementId The BPMN element the listener sits on - a user task, a start event, or
-   *          the process itself
+   * @param elementId The BPMN element the listener sits on, which is a user task, a start event
+   *          or the process itself
    * @param aggregateIdName The process variable the workflow aggregate's id is carried in
    */
   public record WiredListener(
@@ -89,7 +89,7 @@ public class Camunda8CockpitDeployments {
   /**
    * @param adapterId The configured adapter id whose cluster the workers are opened on
    * @param workflowModuleId The workflow module
-   * @return Its listeners by job type, in the order they were wired - which is one worker each
+   * @return Its listeners by job type, in the order they were wired, which is one worker each
    */
   public Map<String, List<WiredListener>> listenersByTypeOf(
       final String adapterId,
@@ -128,8 +128,8 @@ public class Camunda8CockpitDeployments {
    * @param workflowModuleId The workflow module the worker was opened for
    * @param scopedBpmnProcessId The BPMN process id the job carries
    * @param listenerType The job's type
-   * @return The listener the job comes from, or empty where this module wired none such - a
-   *         job of a model somebody else deployed under the same job type
+   * @return The listener the job comes from, or empty where this module wired no such listener.
+   *         Then the job comes from a model somebody else deployed under the same job type
    */
   public Optional<WiredListener> listenerOf(
       final String adapterId,

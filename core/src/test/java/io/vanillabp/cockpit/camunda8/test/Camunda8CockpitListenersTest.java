@@ -114,10 +114,10 @@ public class Camunda8CockpitListenersTest {
    * Both models are wired by VanillaBP's Camunda 8 adapter first, which is not a convenience of
    * the test but the situation being measured. That adapter puts a <code>creating</code> and a
    * <code>canceling</code> listener on every user task it claims, and with them the
-   * <code>zeebe:taskListeners</code> container - so by the time either the Version 1 code or
-   * this extension runs, the container is always there. Version 1 had a second branch for a
-   * task which carried none, and it wrote a different order (<code>creating</code>,
-   * <code>completing</code>, <code>canceling</code>); that branch was unreachable behind the
+   * <code>zeebe:taskListeners</code> container. So by the time either the Version 1 code or this
+   * extension runs, the container is always there. Version 1 had a second branch for a task
+   * which carried none, and it wrote a different order (<code>creating</code>,
+   * <code>completing</code>, <code>canceling</code>). That branch was unreachable behind the
    * adapter then and is unreachable now, which is why the byte-identity is measured on the
    * branch which did run. What this extension produces for a task without a container is
    * pinned separately by {@link #aTaskWithoutAContainerGetsTheOrderThisExtensionDocuments()}.
@@ -207,7 +207,7 @@ public class Camunda8CockpitListenersTest {
   @DisplayName("A user task carrying no listeners at all gets creating, canceling and completing, in that order")
   public void aTaskWithoutAContainerGetsTheOrderThisExtensionDocuments() {
 
-    // NOT what the extension meets in a deployment - the adapter wires first and leaves the
+    // NOT what the extension meets in a deployment. The adapter wires first and leaves the
     // container behind, see theAdapterLeavesTheListenerContainerBehind(). It is written down
     // because it is the one case in which this extension and Version 1 would differ: Version 1
     // inserted creating, completing, canceling here, this extension inserts each listener

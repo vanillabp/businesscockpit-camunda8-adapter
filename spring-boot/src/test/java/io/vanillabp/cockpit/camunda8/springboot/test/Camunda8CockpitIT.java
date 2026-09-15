@@ -234,8 +234,8 @@ public class Camunda8CockpitIT {
    * Starts a workflow whose user-task details provider is held at the gate.
    * <p>
    * The gate is closed while the starting transaction is still open, and that is what makes the
-   * test deterministic: a workflow reaches the cluster only after the transaction of its start
-   * committed, so nothing can be reported - and no provider can run - before the gate is closed.
+   * test deterministic. A workflow reaches the cluster only after the transaction of its start
+   * committed, so nothing is reported and no provider runs before the gate is closed.
    *
    * @param customer What the case is about
    * @return The started case
@@ -342,9 +342,9 @@ public class Camunda8CockpitIT {
   /**
    * Waits for a report of one kind which carries the value the application wrote.
    * <p>
-   * A report carrying the older value has two possible causes and they need different work: the
+   * A report carrying the older value has two possible causes, and they need different work. The
    * report read the case too early, or the case itself lost the change. So a failure names what
-   * the case carries now as well - see the version attribute of {@link TestAggregate}.
+   * the case carries now as well. See the version attribute of {@link TestAggregate}.
    *
    * @param pathSuffix What the report's path has to end with
    * @param expected What its body has to carry
@@ -407,8 +407,8 @@ public class Camunda8CockpitIT {
 
   /**
    * @param value What is waited for
-   * @param description What a failure says, read only then - so that it may name what the case
-   *          and the cockpit server carry by the time the waiting gave up
+   * @param description What a failure says. It is read only then, so that it may name what the
+   *          case and the cockpit server carry by the time the waiting gave up
    * @param <T> What is waited for
    * @return The value
    * @see #awaitValue(Supplier, String)
@@ -625,9 +625,9 @@ public class Camunda8CockpitIT {
 
     assertNotNull(CockpitServer.awaitRequest("/usertask/%s/cancelled".formatted(userTaskId)));
 
-    // and what the cockpit does NOT hear about is the workflow: the 'end' listener of a
+    // and what the cockpit does NOT hear about is the workflow. The 'end' listener of a
     // process does not run when the instance is cancelled, and Camunda 8 has no listener for
-    // a cancellation before 8.10 - see decision 3 in the repository's DECISIONS.md
+    // a cancellation before 8.10. See decision 3 in the repository's DECISIONS.md
     CockpitServer.awaitQuiet();
     assertEquals(
         List.of(),
@@ -649,9 +649,9 @@ public class Camunda8CockpitIT {
               .startWorkflowByMessage(fresh, TestWorkflowService.START_MESSAGE);
         });
 
-    // the start of such a workflow is reported by the listener the MESSAGE start event
-    // carries - every start event of a process gets one - and it knows the case because the
-    // aggregate id travelled with the message
+    // the start of such a workflow is reported by the listener the MESSAGE start event carries,
+    // because every start event of a process gets one. It knows the case because the aggregate
+    // id travelled with the message
     final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Klara\"");
     assertTrue(
         workflow.body().contains("\"aggregateId\":\"%s\"".formatted(aggregate.getId())),
@@ -677,7 +677,7 @@ public class Camunda8CockpitIT {
 
     // the report carries what the application wrote, not what the case said before it. The
     // report of the user task may still be dispatching while this runs, and its details
-    // provider holds the case over this transaction - the version attribute of TestAggregate is
+    // provider holds the case over this transaction. The version attribute of TestAggregate is
     // what keeps that dispatch from writing the older reading back
     awaitReportCarrying(
         "/workflow/%s/updated".formatted(workflowId), "Emil the second", aggregate);
@@ -728,7 +728,7 @@ public class Camunda8CockpitIT {
     // the held dispatch now writes the case back with the reading it took before the change, and
     // the version attribute turns that into a conflict, so the write is refused. Without it the
     // dispatch would win, the case would read "Nora" again and the report of the change would
-    // read it too - which is the failure this test is here to catch
+    // read it too, which is the failure this test is here to catch
     awaitReportCarrying(
         "/usertask/%s/updated".formatted(userTaskId), "Nora the second", aggregate);
     assertEquals("Nora the second", storedCustomerOf(aggregate));
@@ -827,9 +827,9 @@ public class Camunda8CockpitIT {
   }
 
   /**
-   * A key of the shape the cluster hands out which it cannot hold: the keys of a partition are
+   * A key of the shape the cluster hands out which it cannot hold. The keys of a partition are
    * counted up from one number, whatever they are handed out for, so a key a million past one the
-   * cluster really gave is neither a user task nor a workflow of this run. The shape matters - a
+   * cluster really gave is neither a user task nor a workflow of this run. The shape matters. A
    * number the gateway rejects as invalid is answered differently from one it simply does not
    * hold, and it is the second answer this is for.
    *
@@ -852,8 +852,8 @@ public class Camunda8CockpitIT {
     // can tell the two apart. That is what makes this the ordinary case rather than an exotic one:
     // a report of something which just happened arrives before the record it reads, and it has to
     // come back instead of being dropped. Asking about a key the cluster does not hold is how that
-    // is asked without waiting for an exporter to be late, which would leave the test - and the
-    // coverage of these two branches - to the speed of the machine it runs on.
+    // is asked without waiting for an exporter to be late. Waiting would leave the test, and the
+    // coverage of these two branches, to the speed of the machine it runs on.
     final var aggregate = aStartedWorkflow("Dora");
     final var unknownWorkflowId = aKeyTheClusterDoesNotHold(workflowIdOf(aggregate));
     final var unknownUserTaskId = aKeyTheClusterDoesNotHold(userTaskIdOf(aggregate));

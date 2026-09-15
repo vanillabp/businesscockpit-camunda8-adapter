@@ -19,9 +19,9 @@ import jakarta.inject.Inject;
  * <p>
  * Both processes are served by this one service and share one workflow aggregate, which is how
  * VanillaBP decomposes a process. The cockpit shows the case, so the called process is a step of
- * it and never a case of its own - see decision 3. The user task sits in the CALLED process,
- * which is what makes it worth testing: the workflow the cockpit hangs it on has to be the
- * calling one.
+ * it and never a case of its own. See decision 3. The user task sits in the CALLED process, which
+ * is what makes it worth testing: the workflow the cockpit hangs it on has to be the calling
+ * one.
  */
 @ApplicationScoped
 @WorkflowService(workflowAggregateClass = CallingAggregate.class,

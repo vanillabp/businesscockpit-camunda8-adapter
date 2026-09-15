@@ -17,36 +17,36 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * variant.
  * <p>
  * The cockpit shows business cases, and a called process is a step of one rather than a case of
- * its own - see decision 3 in the repository's DECISIONS.md. So every report has to know the
- * root of the hierarchy its job sits in.
+ * its own. See decision 3 in the repository's DECISIONS.md. So every report has to know the root
+ * of the hierarchy its job sits in.
  * <p>
  * Since 8.9 the job carries that root, and the 8.9 variant of this class reads it off the job.
- * The 8.8 job does not carry it, so the cluster is asked: its call-hierarchy request answers
- * with the chain from the root down to the instance, and the first entry is the root. Two things
- * follow from where that answer comes from, and both are the reason this class is the expensive
- * one.
+ * The 8.8 job does not carry it, so the cluster is asked. Its call-hierarchy request answers
+ * with the chain from the root down to the instance, and the first entry is the root. Where that
+ * answer comes from is what makes this class the expensive one, in two ways.
  * <p>
  * It is served by the searchable storage, so it lags behind the transition whose listener is
  * running. A job of a process which was started a moment ago can get an answer which does not
- * exist yet, and the lookup therefore waits for it. How long is the adapter's word:
+ * exist yet, and the lookup therefore waits for it. How long is the adapter's word.
  * <code>vanillabp.adapters.&lt;id&gt;.workflow-visibility-timeout</code> is what the Camunda 8
  * adapter waits out for the same storage when it knows a workflow is there, ten seconds by
  * default, and zero switches the waiting off here as it does there. A cluster whose exporter is
  * slow is slow for both of them, so it is one number and not two.
  * <p>
  * It is NOT the window between two attempts of a report, which is short on purpose and is
- * multiplied by the attempts the outbox allows - see
+ * multiplied by the attempts the outbox allows. See
  * {@link Camunda8CockpitReads#WHILE_THE_EXPORTER_CATCHES_UP}. Waiting inside a listener job holds
- * that job's transition open, which is why the wait happens only when the cluster has nothing to
+ * that job's transition open. That is why the wait happens only when the cluster has nothing to
  * say yet, and why a deployment which cannot afford it sets the adapter's key to zero.
  * <p>
  * If the window runs out, the job is treated as the root of its own hierarchy and the reason is
- * logged. That is the lesser of two wrong answers: a called process reported as a case adds a
- * case the cockpit should not show, while the alternative - failing the job - raises an incident
- * on a workflow which is doing nothing wrong (see decision 5).
+ * logged. That is the lesser of two wrong answers. A called process reported as a case adds a
+ * case the cockpit should not show. Failing the job, which is the other option, raises an
+ * incident on a workflow which is doing nothing wrong (see decision 5).
  * <p>
  * It also costs a request per job, so what a hierarchy answered is remembered per process
- * instance. The relation cannot change: an instance's root is settled when it is created.
+ * instance. The relation cannot change, because an instance's root is settled when it is
+ * created.
  */
 final class Camunda8CallHierarchy {
 
@@ -59,16 +59,16 @@ final class Camunda8CallHierarchy {
    * How many hierarchies are remembered before the memory is emptied. A workflow which is running
    * produces jobs of the same process instance again and again, so a small map already takes the
    * repeated requests off the cluster, and an entry which is dropped is one request away from
-   * being back. Emptying it wholesale is what keeps this class a class: an eviction order would
-   * need a map of its own, and a line may not carry a type the other lines do not have.
+   * being back. Emptying the whole map is what keeps this class a single class. An eviction order
+   * would need a map of its own, and a line may not carry a type the other lines do not have.
    */
   private static final int REMEMBERED_HIERARCHIES = 1_000;
 
   private final Camunda8Clients.Cluster cluster;
 
   /**
-   * What the cluster answered, by process instance key, holding the ROOT key of each - the key
-   * itself where the instance is its own root.
+   * What the cluster answered, by process instance key, holding the ROOT key of each. That is
+   * the key itself where the instance is its own root.
    */
   private final Map<Long, Long> rootsAnswered = new ConcurrentHashMap<>();
 
@@ -150,8 +150,8 @@ final class Camunda8CallHierarchy {
    */
   private Duration waitForTheHierarchy() {
 
-    // the adapter's own resolution, so the default lives where the key does and a later change of
-    // it reaches this lookup without anybody remembering to copy a number
+    // the adapter resolves the key itself, so the default lives where the key does and a later
+    // change of it reaches this lookup without anybody remembering to copy a number
     return cluster.configuration().workflowVisibilityWindow();
 
   }

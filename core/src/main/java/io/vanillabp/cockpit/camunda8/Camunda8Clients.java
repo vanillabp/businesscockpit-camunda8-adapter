@@ -16,9 +16,8 @@ import io.vanillabp.integration.adapter.spi.NameClashAvoidanceSupport;
  * here: it owns their authentication, their executors and their shutdown, and a second client
  * beside them would be a second connection nobody configured.
  * <p>
- * <b>Which cluster a call is about</b> is said by the adapter's own processing context, which
- * every step of the deployment pipeline hands over - see decision 2 in the repository's
- * DECISIONS.md.
+ * Which cluster a call is about is said by the adapter's own processing context, which every
+ * step of the deployment pipeline hands over. See decision 2 in the repository's DECISIONS.md.
  */
 public class Camunda8Clients {
 
@@ -69,9 +68,9 @@ public class Camunda8Clients {
     }
 
     /**
-     * @return What this adapter was configured with, as the adapter resolved it - which is
-     *         where the stream timeout of a worker of this extension comes from, the one
-     *         worker setting the adapter's client does not already carry
+     * @return What this adapter was configured with, as the adapter resolved it. The stream
+     *         timeout of a worker of this extension comes from there, and it is the one worker
+     *         setting the adapter's client does not already carry
      */
     public Camunda8AdapterConfiguration configuration() {
 

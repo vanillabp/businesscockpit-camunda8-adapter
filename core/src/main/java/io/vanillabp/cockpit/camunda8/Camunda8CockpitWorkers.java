@@ -26,17 +26,17 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * is dispatched, so a listener job which travels less is a user task which appears sooner.
  * <p>
  * The pipeline starts this extension once per configured Camunda 8 adapter a module was
- * deployed to, and its processing context says which adapter that is - so a start opens the
- * workers of exactly that cluster, subscribing to the job types that cluster's own models carry.
- * See decision 2 in the repository's DECISIONS.md.
+ * deployed to, and its processing context says which adapter that is. So a start opens the
+ * workers of exactly that cluster, and they subscribe to the job types that cluster's own
+ * models carry. See decision 2 in the repository's DECISIONS.md.
  * <p>
  * A worker opened here is set up the way the adapter sets up its own, so an operator reads one
  * kind of worker rather than two. The counters of these workers therefore appear next to the
  * adapter's, under the adapter id they belong to and under the listener type as their job type.
  * <p>
- * The ordinary way these workers stop is the pipeline stopping workflow processing of their
- * module. Where a shutdown never gets that far, the adapter's client factory closes them: it is
- * told they are open and it stops what is still open before it closes the client.
+ * These workers usually stop because the pipeline stops workflow processing of their module.
+ * Where a shutdown never gets that far, the adapter's client factory closes them. It is told
+ * they are open, and it stops what is still open before it closes the client.
  */
 public class Camunda8CockpitWorkers {
 
@@ -129,17 +129,17 @@ public class Camunda8CockpitWorkers {
               listenerType,
               listeners) -> opened.add(open(cluster, workflowModuleId, listenerType, listeners)));
     } catch (final RuntimeException e) {
-      // a module which is half subscribed is worse than one which is not subscribed at all:
-      // it reports some of what happens and lets the rest of its listener jobs run into an
-      // incident, so what was opened is closed again and the start fails
+      // a module which is half subscribed is worse than one which is not subscribed at all. It
+      // reports some of what happens and lets the rest of its listener jobs run into an
+      // incident. So what was opened is closed again and the start fails
       close(opened);
       throw e;
     }
-    // Nothing else closes these workers where a shutdown path never reaches this extension,
-    // and the client would then go down under them: the listener jobs they are serving are cut
-    // off and the activation requests they parked at the cluster stay parked. So the adapter's
-    // client factory is told they are open and closes them before its client if it has to.
-    // The hook belongs to this extension alone - the adapter's own is registered beside it and
+    // Where a shutdown path never reaches this extension, nothing else closes these workers and
+    // the client goes down under them. The listener jobs they are serving are cut off, and the
+    // activation requests they parked at the cluster stay parked. So the adapter's client
+    // factory is told they are open, and it closes them before its client if it has to. The
+    // hook belongs to this extension alone. The adapter's own hook is registered beside it, and
     // neither replaces the other
     final var removeTheShutdownHook = cluster
         .factory()
@@ -168,12 +168,12 @@ public class Camunda8CockpitWorkers {
         .timeout(settings.listenerJobTimeout(workflowModuleId, cluster.scope().adapterId()))
         .name("vanillabp-businesscockpit-%s-%s".formatted(cluster.scope().adapterId(), listenerType))
         .fetchVariables(variables);
-    // what a worker cannot inherit from the client the adapter built, and therefore the only
-    // two settings this extension repeats: the stream timeout, which has no client-wide
-    // equivalent, and the job counters, which exist per worker because they carry the job
-    // type. Whether jobs are streamed, how often a worker polls and how long a request may
-    // take are set on the client, where an environment variable can still overrule them, and
-    // naming any of them here would take that escape hatch away without saying so
+    // the two things a worker cannot inherit from the client the adapter built, and therefore
+    // the only two this extension repeats: the stream timeout, which the client has no setting
+    // for, and the job counters, which exist per worker because they carry the job type.
+    // Whether jobs are streamed, how often a worker polls and how long a request may take are
+    // set on the client, where an environment variable can still overrule them. Naming any of
+    // them here would take that way out away without saying so
     builder = Camunda8Workers
         .applyWorkerOptions(
             builder, cluster.scope().adapterId(), listenerType, cluster.configuration(), metrics);
@@ -206,7 +206,7 @@ public class Camunda8CockpitWorkers {
     if (open == null) {
       return;
     }
-    // before the workers, and only this extension's hook: one left behind would point at
+    // before the workers, and only this extension's hook. One left behind would point at
     // workers which are already closed, and the adapter would call it while it shuts down
     open.removeTheShutdownHook().close();
     close(open.workers());
@@ -218,8 +218,8 @@ public class Camunda8CockpitWorkers {
   }
 
   /**
-   * Closes what is open, in the reverse order it was opened in - the last worker to subscribe
-   * is the first to stop.
+   * Closes what is open, in the reverse order it was opened in. The last worker to subscribe is
+   * the first to stop.
    *
    * @param workers The workers to close
    */

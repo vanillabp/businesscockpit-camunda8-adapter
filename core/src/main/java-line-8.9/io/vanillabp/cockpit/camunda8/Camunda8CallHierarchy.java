@@ -7,7 +7,7 @@ import io.camunda.client.api.response.ActivatedJob;
  * variant.
  * <p>
  * The cockpit shows business cases, and a called process is a step of one rather than a case of
- * its own - see decision 3 in the repository's DECISIONS.md. So every report has to know the
+ * its own. See decision 3 in the repository's DECISIONS.md. So every report has to know the
  * root of the hierarchy its job sits in.
  * <p>
  * Since 8.9 the job carries it: the cluster puts the root process instance key into the job it

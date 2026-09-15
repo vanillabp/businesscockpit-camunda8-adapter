@@ -27,12 +27,12 @@ import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
 
 /**
- * Registers the Camunda 8 half of the Business Cockpit extension on Quarkus - the twin of the
- * Spring Boot module's auto-configuration, doing the same things with CDI.
+ * Registers the Camunda 8 half of the Business Cockpit extension on Quarkus. It is the twin of
+ * the Spring Boot module's auto-configuration and does the same things with CDI.
  * <p>
  * The producers are <code>&#64;Singleton</code> rather than
- * <code>&#64;ApplicationScoped</code>: what they produce has no no-argument constructor and is
- * therefore not client-proxyable.
+ * <code>&#64;ApplicationScoped</code>, because what they produce has no no-argument constructor
+ * and is therefore not client-proxyable.
  */
 @ApplicationScoped
 public class Camunda8CockpitProducer {
@@ -141,11 +141,10 @@ public class Camunda8CockpitProducer {
    * <p>
    * WHICH adapter ids those are is {@code MigrationAdapterProperties#adapterIdsOfType}, the same
    * answer the Spring Boot half reads through the platform's registrar support. Filtering the
-   * configured types is not that answer: an id named in <code>prioritized-adapters</code> needs
+   * configured types is not that answer. An id named in <code>prioritized-adapters</code> needs
    * no section of its own, and an application which configured nothing at all has the id the
-   * classpath derives - so a migration setup and a single-dependency application are exactly the
-   * two cases where an extension answering it itself registers no bridge while the adapter
-   * registers fine.
+   * classpath derives. Those two are exactly the cases where an extension which answers the
+   * question itself registers no bridge while the adapter registers fine.
    *
    * @param clients The clusters
    * @param properties VanillaBP's resolved configuration, which names the configured adapters

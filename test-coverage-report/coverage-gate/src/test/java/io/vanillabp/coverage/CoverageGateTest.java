@@ -55,9 +55,8 @@ public class CoverageGateTest {
           ROOT.resolve("test-coverage-report/quarkus/pom.xml"));
 
   /**
-   * Modules whose execution data belongs to no coverage report. Each entry is a
-   * decision - a module missing here and missing from both aggregates is the defect
-   * this test exists for.
+   * Modules whose execution data belongs to no coverage report. Each entry is a decision. A
+   * module missing here and missing from both aggregates is the defect this test exists for.
    */
   private static final Set<String> DELIBERATELY_NOT_AGGREGATED = Set.of();
 
