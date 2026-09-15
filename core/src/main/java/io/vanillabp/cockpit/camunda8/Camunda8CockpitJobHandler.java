@@ -58,6 +58,13 @@ public class Camunda8CockpitJobHandler implements JobHandler {
 
   private final Camunda8Clients.Cluster cluster;
 
+  /**
+   * Which workflow a job belongs to, which is not the job's own process instance when that
+   * instance was called by another one. How it is found differs per release line, see
+   * {@link Camunda8CallHierarchy} in the per-line sources.
+   */
+  private final Camunda8CallHierarchy callHierarchy;
+
   private final String workflowModuleId;
 
   private final Camunda8CockpitDeployments deployments;
@@ -78,6 +85,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       final Supplier<BusinessCockpitEventPublisher> publisher) {
 
     this.cluster = cluster;
+    this.callHierarchy = new Camunda8CallHierarchy(cluster);
     this.workflowModuleId = workflowModuleId;
     this.deployments = deployments;
     this.publisher = publisher;
@@ -229,12 +237,13 @@ public class Camunda8CockpitJobHandler implements JobHandler {
 
     // the cockpit shows business cases, and a called process is a step of one rather than a
     // case of its own - see decision 3 in the repository's DECISIONS.md
-    if (!isRootWorkflow(job)) {
+    final var rootProcessInstanceKey = callHierarchy.rootProcessInstanceKeyOf(job);
+    if (rootProcessInstanceKey != null) {
       logger
           .debug(
               "Camunda8[{}]: not reporting the {} of process instance {}: it is a called process of workflow {}, which is the business case",
-              adapterId(), job.getListenerEventType(), job.getProcessInstanceKey(), job
-                  .getRootProcessInstanceKey());
+              adapterId(), job.getListenerEventType(), job.getProcessInstanceKey(),
+              rootProcessInstanceKey);
       return;
     }
 
@@ -306,22 +315,11 @@ public class Camunda8CockpitJobHandler implements JobHandler {
    * The instance a business case is: an element of a called process belongs to the workflow its
    * whole hierarchy hangs below.
    */
-  private static String workflowIdOf(
+  private String workflowIdOf(
       final ActivatedJob job) {
 
-    return String
-        .valueOf(
-            job.getRootProcessInstanceKey() == null
-                ? job.getProcessInstanceKey()
-                : job.getRootProcessInstanceKey());
-
-  }
-
-  private static boolean isRootWorkflow(
-      final ActivatedJob job) {
-
-    return (job.getRootProcessInstanceKey() == null) || (job.getRootProcessInstanceKey() == job
-        .getProcessInstanceKey());
+    final var root = callHierarchy.rootProcessInstanceKeyOf(job);
+    return String.valueOf(root == null ? job.getProcessInstanceKey() : root);
 
   }
 

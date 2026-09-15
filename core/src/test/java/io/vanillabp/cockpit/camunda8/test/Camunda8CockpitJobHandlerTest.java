@@ -125,9 +125,9 @@ public class Camunda8CockpitJobHandlerTest {
     when(job.getType()).thenReturn(jobType);
     when(job.getElementId()).thenReturn(elementId);
     when(job.getBpmnProcessId()).thenReturn(PROCESS_ID);
-    when(job.getProcessInstanceKey()).thenReturn(12345L);
-    // what the cluster reports for a top-level instance: the instance is its own root
-    when(job.getRootProcessInstanceKey()).thenReturn(12345L);
+    // a workflow nobody called. Where a line reads that from differs, see JobsInAHierarchy in
+    // the per-line test sources
+    JobsInAHierarchy.isItsOwnRoot(clientFactories, ADAPTER_ID, job, 12345L);
     when(job.getVariablesAsMap()).thenReturn(Map.of(AGGREGATE_ID_NAME, AGGREGATE_ID));
     // how long the lock of this job still holds. The answer to the cluster is repeated while
     // the cluster rejects it for being busy, and what bounds that repetition is the lock: an
@@ -219,8 +219,7 @@ public class Camunda8CockpitJobHandlerTest {
     final var job = aJob(
         JobKind.EXECUTION_LISTENER, ListenerEventType.END,
         Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID), PROCESS_ID);
-    when(job.getProcessInstanceKey()).thenReturn(777L);
-    when(job.getRootProcessInstanceKey()).thenReturn(12345L);
+    JobsInAHierarchy.isCalledBy(clientFactories, ADAPTER_ID, job, 777L, 12345L);
 
     handler.handle(client, job);
 

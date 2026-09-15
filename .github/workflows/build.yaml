@@ -20,6 +20,12 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: read
+env:
+  # The VanillaBP artifacts, the cockpit's extensions-commons and the Camunda 8 adapter are
+  # snapshots in GitHub Packages until the release. Reading them needs a token, see
+  # github-packages-settings.xml.
+  USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
+  USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -57,3 +63,101 @@ jobs:
             **/target/*application*.log
           retention-days: 7
           if-no-files-found: ignore
+
+  # The ground rule of the release lines: a user must never read the version suffix of an
+  # artifact to find out which methods exist. This job keeps that true, and it needs no
+  # cluster, so it runs on every pull request while the integration tests of the other
+  # lines wait for the nightly matrix.
+  api-identity:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+      - name: The public API is the same on every line
+        env:
+          MAVEN_ARGS: -s ${{ github.workspace }}/.github/workflows/github-packages-settings.xml
+            --update-snapshots
+        run: bin/api-identity.sh
+
+  # The Renovate configuration is not read, it is run: the validator on the repository
+  # configuration and on the shareable preset, and the gating check which proves that a
+  # consumer of one line is never offered another one.
+  renovate-configuration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install Renovate
+        run: npm install --no-save --no-audit --no-fund renovate
+      - name: Validate renovate.json
+        run: npx --no-install renovate-config-validator --strict
+      - name: Validate the shareable preset
+        # the validator decides by file name what it is looking at, so the preset is
+        # checked as what a downstream repository will read it as
+        run: |
+          mkdir -p target/preset
+          cp renovate/camunda8-lines.json target/preset/renovate.json
+          (cd target/preset && npx --no-install renovate-config-validator --strict)
+      - name: A consumer of one line is never offered another
+        run: node renovate/verify-line-gating.js
+
+  # A pull request builds the current GA line alone, which is enough for a story: the other
+  # lines are proven by the nightly matrix. It is not enough for a pin: the pin of line 8.8
+  # is not compiled by a build of line 8.9, so an update of it would be merged unbuilt and
+  # show up in the night. When a pull request moves a pin, the whole matrix runs here.
+  #
+  # Two kinds of pin count. The Camunda client of a line says which cluster that line
+  # accepts, and the adapter version of a line says which build of the VanillaBP Camunda 8
+  # adapter it sits on; both decide what a line IS.
+  #
+  # Only the ADDED and REMOVED lines carry that decision. A diff carries three lines of
+  # context around every hunk, so reading the whole diff would make every change near a pin
+  # a pin move.
+  pin-change:
+    runs-on: ubuntu-latest
+    outputs:
+      pins: "${{ steps.diff.outputs.pins }}"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        name: Does this pull request move a pin
+        run: |
+          if git diff "origin/${{ github.base_ref }}...HEAD" -- pom.xml \
+            | grep -qE '^[+-].*(camunda8\.version\.line-|camunda8-adapter\.version\.line-)'; then
+            echo "pins=true" >> "$GITHUB_OUTPUT"
+            echo "A pin moves, so every line is built."
+          else
+            echo "pins=false" >> "$GITHUB_OUTPUT"
+            echo "No pin moves, so the nightly matrix keeps the other lines."
+          fi
+
+  lines:
+    needs: pin-change
+    if: needs.pin-change.outputs.pins == 'true'
+    uses: ./.github/workflows/line-matrix.yaml
+    secrets: inherit
+
+  # One name that reports on every pull request, whether the matrix ran or not, so branch
+  # protection can require it without blocking the pull requests which do not need it.
+  line-pins-verified:
+    if: always()
+    needs: [pin-change, lines]
+    runs-on: ubuntu-latest
+    steps:
+      - name: The lines a moved pin affects were built
+        run: |
+          echo "pins: ${{ needs.pin-change.outputs.pins }}, lines: ${{ needs.lines.result }}"
+          [ "${{ needs.pin-change.outputs.pins }}" = "true" ] \
+            || { echo "No pin moved."; exit 0; }
+          [ "${{ needs.lines.result }}" = "success" ]
