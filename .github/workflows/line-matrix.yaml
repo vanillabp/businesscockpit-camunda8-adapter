@@ -5,11 +5,15 @@ name: Release lines
 # What a story does not prove is proven here, once a night.
 "on":
   schedule:
-    # Early enough to be green or red before anybody starts working, and late enough not
-    # to sit in the same queue as the matrix of vanillabp/camunda8-adapter, which asks for
-    # 00:23. GitHub queues a scheduled run rather than starting it at the given time, and
-    # the wait is longest on the hour, so the minute here is a crooked one as well.
-    - cron: "37 1 * * *"
+    # Early enough to be green or red before anybody starts working. GitHub queues a
+    # scheduled run rather than starting it at the given time, and the wait is hours long:
+    # asked for 01:37 UTC, the run of the 16th of September 2026 started at 06:38, which is
+    # half past eight in Berlin and right when somebody is pushing to this repository. The
+    # matrix of vanillabp/camunda8-adapter answers that the same way, by asking hours before
+    # the hour it wants, and its runs start between 04:45 and 05:10 UTC. So this one asks
+    # the night before. The minute is a crooked one because GitHub's queue is longest on the
+    # hour, and it is not the 23rd, so the two repositories do not ask at the same moment.
+    - cron: "47 23 * * *"
   workflow_dispatch:
   # so the pull-request checks can run the matrix when a pin moves
   workflow_call:
