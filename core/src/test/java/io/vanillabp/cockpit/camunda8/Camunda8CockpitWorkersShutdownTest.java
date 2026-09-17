@@ -79,7 +79,7 @@ public class Camunda8CockpitWorkersShutdownTest {
         .register(
             ADAPTER_ID,
             MODULE_ID,
-            new WiredListener(LISTENER_TYPE, PROCESS_ID, PROCESS_ID, PROCESS_ID, "loanId"));
+            new WiredListener(LISTENER_TYPE, PROCESS_ID, PROCESS_ID, PROCESS_ID, null, null, "loanId"));
     workers = new Camunda8CockpitWorkers(
         new Camunda8Clients(clientFactories, null), deployments, (
             workflowModuleId,

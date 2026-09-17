@@ -28,6 +28,8 @@ public class Camunda8Clients {
 
     private final Camunda8Scope scope;
 
+    private final Camunda8EventBeingReported eventBeingReported = new Camunda8EventBeingReported();
+
     private Cluster(
         final Camunda8Scope scope) {
 
@@ -41,6 +43,20 @@ public class Camunda8Clients {
     public Camunda8Scope scope() {
 
       return scope;
+
+    }
+
+    /**
+     * The handover between the worker which observes an event of this cluster and the bridge
+     * which is asked what that event says. Both hold this one cluster, which is why it lives
+     * here: a workflow module is wired per adapter id, and the two halves are given the same
+     * cluster on both platforms.
+     *
+     * @return What a listener job of this cluster is saying right now
+     */
+    public Camunda8EventBeingReported eventBeingReported() {
+
+      return eventBeingReported;
 
     }
 

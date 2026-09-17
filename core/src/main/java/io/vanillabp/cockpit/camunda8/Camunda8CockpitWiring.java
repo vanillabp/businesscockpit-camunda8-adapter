@@ -113,7 +113,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
     }
     reportTheWorkflow(adapterId, workflowModuleId, bpmnProcessId, process.get(), aggregateIdName);
     reportTheUserTasks(
-        adapterId, workflowModuleId, filename, bpmnProcessId, model, process.get().getId(), aggregateIdName);
+        adapterId, workflowModuleId, filename, bpmnProcessId, model, process.get(), aggregateIdName);
 
   }
 
@@ -136,6 +136,9 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
 
     final var scopedBpmnProcessId = process.getId();
     final var listenerType = Camunda8CockpitListeners.listenerTypeOf(scopedBpmnProcessId);
+    // read once, and read here: a job names the process it comes from and never what the
+    // process is called, while a report which produced no title of its own shows that name
+    final var bpmnProcessName = nameOrIdentifier(process.getName(), bpmnProcessId);
 
     Camunda8CockpitListeners
         .startEventsOf(process)
@@ -146,7 +149,8 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
                   adapterId,
                   workflowModuleId,
                   new WiredListener(
-                      listenerType, scopedBpmnProcessId, bpmnProcessId, startEvent.getId(), aggregateIdName));
+                      listenerType, scopedBpmnProcessId, bpmnProcessId, startEvent.getId(), nameOrIdentifier(
+                          startEvent.getName(), startEvent.getId()), bpmnProcessName, aggregateIdName));
         });
 
     Camunda8CockpitListeners.addProcessListener(process, listenerType);
@@ -155,7 +159,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
             adapterId,
             workflowModuleId,
             new WiredListener(
-                listenerType, scopedBpmnProcessId, bpmnProcessId, scopedBpmnProcessId, aggregateIdName));
+                listenerType, scopedBpmnProcessId, bpmnProcessId, scopedBpmnProcessId, bpmnProcessName, bpmnProcessName, aggregateIdName));
 
   }
 
@@ -181,7 +185,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * @param filename The file being wired, for the message a refused user task produces
    * @param bpmnProcessId The BPMN process id as the application wrote it
    * @param model The model of the file being wired
-   * @param scopedBpmnProcessId The process id the cluster will know
+   * @param process The BPMN process element, carrying the id the cluster will know
    * @param aggregateIdName The variable the workflow aggregate's id is carried in
    */
   private void reportTheUserTasks(
@@ -190,15 +194,19 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final String filename,
       final String bpmnProcessId,
       final BpmnModelInstance model,
-      final String scopedBpmnProcessId,
+      final Process process,
       final String aggregateIdName) {
 
+    final var scopedBpmnProcessId = process.getId();
     Camunda8TaskWiring
         .userTasksOf(model, scopedBpmnProcessId, workflowModuleId, filename)
         .forEach(userTask -> {
           final var listenerType = Camunda8CockpitListeners
               .listenerTypeOf(userTask.externalFormReference());
-          if (model.getModelElementById(userTask.activityId()) instanceof UserTask element) {
+          final var element = model.getModelElementById(userTask.activityId()) instanceof UserTask found
+              ? found
+              : null;
+          if (element != null) {
             Camunda8CockpitListeners.addUserTaskListeners(element, listenerType);
           }
           deployments
@@ -206,7 +214,11 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
                   adapterId,
                   workflowModuleId,
                   new WiredListener(
-                      listenerType, scopedBpmnProcessId, bpmnProcessId, userTask.activityId(), aggregateIdName));
+                      listenerType, scopedBpmnProcessId, bpmnProcessId, userTask.activityId(), nameOrIdentifier(
+                          element == null
+                              ? null
+                              : element.getName(),
+                          userTask.activityId()), nameOrIdentifier(process.getName(), bpmnProcessId), aggregateIdName));
         });
 
   }
@@ -226,6 +238,29 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final Camunda8ProcessingContext bpmsProcessingContext) {
 
     workers.close(bpmsProcessingContext.getAdapterId(), workflowModuleId);
+
+  }
+
+  /**
+   * What a report shows where neither a template nor a details provider produced a title.
+   * <p>
+   * It is the BPMN name of the element, and where the model carries none it is the identifier
+   * the application wrote. An identifier says more on a screen than an empty line, and it is
+   * also what the cluster's searchable storage answers for such an element, so a report does not
+   * change its title depending on where it was built. The plain identifier, never the one the
+   * cluster knows: name-clash avoidance is nothing a person reading the cockpit has to see.
+   *
+   * @param name What the model says, which may be nothing
+   * @param identifier The identifier to fall back to
+   * @return The name to report
+   */
+  private static String nameOrIdentifier(
+      final String name,
+      final String identifier) {
+
+    return (name == null) || name.isBlank()
+        ? identifier
+        : name;
 
   }
 

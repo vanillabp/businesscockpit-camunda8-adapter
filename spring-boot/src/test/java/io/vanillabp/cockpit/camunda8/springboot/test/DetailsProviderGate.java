@@ -8,15 +8,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.stereotype.Component;
 
 /**
- * Lets a test stop the user-task details provider in the middle of a dispatch, so that the
- * window in which two writers meet on one workflow aggregate is a fixed point of the test
- * rather than a coincidence.
+ * Lets a test stop the user-task details provider in the middle of an event, so that the moment
+ * a report is built from is a fixed point of the test rather than a coincidence.
  * <p>
- * The provider reads the case in the transaction which dispatches the report, and that
- * transaction writes the case back when it commits. Held here, the provider has read the case
- * and has not written it back yet, and the test can change the very same case from a
- * transaction of its own. What happens then is what the version attribute of
- * {@link TestAggregate} is for.
+ * The provider runs inside the listener job of the task, holding the case as that event left it.
+ * Held here, it has read the case and has not answered yet, and the test can change the very same
+ * case from a transaction of its own. What the report then carries is the state of its event, and
+ * not the state of the moment it is sent.
  * <p>
  * The gate is open unless a test closes it, so every other test runs at its own speed, and it
  * holds the FIRST call for the case it was closed for and lets every later one through.
@@ -29,9 +27,6 @@ public class DetailsProviderGate {
 
   /** The case whose next call is held, if any. */
   private final AtomicReference<Long> heldCase = new AtomicReference<>();
-
-  /** The case whose provider writes onto it, if any. */
-  private final AtomicReference<Long> writtenCase = new AtomicReference<>();
 
   /** Counted down once the provider is inside the call and holding the case. */
   private volatile CountDownLatch arrived = new CountDownLatch(0);
@@ -54,40 +49,8 @@ public class DetailsProviderGate {
   }
 
   /**
-   * Lets the details provider write onto one case, which is what makes the cockpit a second writer
-   * of it.
-   * <p>
-   * Off for every other case, and that is not tidiness. A provider writes into whatever
-   * transaction ran it, and the read behind {@code BusinessCockpitService.getUserTask} runs one
-   * too, in the transaction of the caller. So a provider which writes onto every case turns a test
-   * which only reads into a writer of a case the cockpit's own dispatch is writing at the same
-   * moment, and one of the two then reads a conflict. What VanillaBP saves after a details provider
-   * and what a persistence writes anyway is decision 17 in the DECISIONS.md of
-   * vanillabp/business-cockpit.
-   *
-   * @param aggregateId The case
-   */
-  public void letTheProviderWriteOnto(
-      final Long aggregateId) {
-
-    writtenCase.set(aggregateId);
-
-  }
-
-  /**
-   * @param aggregateId The case a provider was called for
-   * @return Whether the provider may write onto it
-   */
-  public boolean mayWriteOnto(
-      final Long aggregateId) {
-
-    return aggregateId.equals(writtenCase.get());
-
-  }
-
-  /**
    * What the details provider calls. Where this case is the one being held, it waits until the
-   * test says the provider may write back.
+   * test lets the event finish.
    *
    * @param aggregateId The case the provider was called for
    */
@@ -102,7 +65,7 @@ public class DetailsProviderGate {
     }
     final var open = released;
     arrived.countDown();
-    await(open, "the test to let the details provider of case %s write back".formatted(aggregateId));
+    await(open, "the test to let the details provider of case %s answer".formatted(aggregateId));
 
   }
 

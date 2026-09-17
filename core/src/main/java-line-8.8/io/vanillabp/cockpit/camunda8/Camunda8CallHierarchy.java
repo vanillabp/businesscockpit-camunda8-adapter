@@ -33,11 +33,11 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * default, and zero switches the waiting off here as it does there. A cluster whose exporter is
  * slow is slow for both of them, so it is one number and not two.
  * <p>
- * It is NOT the window between two attempts of a report, which is short on purpose and is
- * multiplied by the attempts the outbox allows. See
- * {@link Camunda8CockpitReads#WHILE_THE_EXPORTER_CATCHES_UP}. Waiting inside a listener job holds
- * that job's transition open. That is why the wait happens only when the cluster has nothing to
- * say yet, and why a deployment which cannot afford it sets the adapter's key to zero.
+ * Waiting inside a listener job holds that job's transition open, and this is the one thing the
+ * extension still waits for there. That is why the wait happens only when the cluster has nothing
+ * to say yet, and why a deployment which cannot afford it sets the adapter's key to zero. Nothing
+ * else a report needs is read from that storage: it is built from the job. See
+ * {@link Camunda8CockpitJobHandler}.
  * <p>
  * If the window runs out, the job is treated as the root of its own hierarchy and the reason is
  * logged. That is the lesser of two wrong answers. A called process reported as a case adds a

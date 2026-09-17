@@ -1,6 +1,5 @@
 package io.vanillabp.cockpit.camunda8.springboot.test;
 
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.stereotype.Service;
@@ -13,33 +12,32 @@ import io.vanillabp.spi.service.BpmnProcess;
 import io.vanillabp.spi.service.WorkflowService;
 
 /**
- * A workflow whose details provider fails before it answers.
+ * A workflow whose details provider always fails.
  * <p>
- * The cockpit's reports are written into an outbox and a details provider runs while such an
- * entry is dispatched, so a provider throwing costs a repetition of that entry and nothing
- * else: the workflow it belongs to has long moved on, and the cluster never learns about it.
- * Version 1 ran the provider inside the listener job and answered a failure with an incident.
+ * The cockpit builds its report at the moment of the event, which on Camunda 8 is inside the
+ * listener job of the task. A provider which throws therefore fails that job, and a listener of
+ * this extension carries no retries, so the cluster raises an incident and the transition waits
+ * for somebody to look at it. That is meant: only reading happens on this way, but what is read
+ * has to be right, and a defect which repetitions hide is a defect nobody fixes. See decision 8
+ * in the repository's DECISIONS.md.
  */
 @Service
-@WorkflowService(workflowAggregateClass = RetriedAggregate.class,
-    bpmnProcess = @BpmnProcess(bpmnProcessId = RetriedWorkflowService.BPMN_PROCESS_ID))
-public class RetriedWorkflowService {
+@WorkflowService(workflowAggregateClass = IncidentAggregate.class,
+    bpmnProcess = @BpmnProcess(bpmnProcessId = IncidentWorkflowService.BPMN_PROCESS_ID))
+public class IncidentWorkflowService {
 
   /** The BPMN process of this workflow. */
-  public static final String BPMN_PROCESS_ID = "RetriedDetailsProcess";
+  public static final String BPMN_PROCESS_ID = "IncidentDetailsProcess";
 
   /** The external form reference of its user task. */
-  public static final String TASK_DEFINITION = "retriedApprove";
+  public static final String TASK_DEFINITION = "incidentApprove";
 
-  /** How often the details provider throws before it answers. */
-  public static final int FAILURES_BEFORE_THE_PROVIDER_ANSWERS = 2;
-
-  private final ProcessService<RetriedAggregate> processService;
+  private final ProcessService<IncidentAggregate> processService;
 
   private final AtomicInteger attempts = new AtomicInteger();
 
-  public RetriedWorkflowService(
-      final ProcessService<RetriedAggregate> processService) {
+  public IncidentWorkflowService(
+      final ProcessService<IncidentAggregate> processService) {
 
     this.processService = processService;
 
@@ -48,7 +46,7 @@ public class RetriedWorkflowService {
   /**
    * @return The process service, so that a test can start this workflow
    */
-  public ProcessService<RetriedAggregate> processes() {
+  public ProcessService<IncidentAggregate> processes() {
 
     return processService;
 
@@ -64,18 +62,15 @@ public class RetriedWorkflowService {
   }
 
   /**
-   * @param prefilled What the cluster knew about the task
-   * @return The enriched details, once this provider is done stumbling
+   * @param prefilled What the cluster said about the task
+   * @return Never anything: this provider is the defect the test is about
    */
   @UserTaskDetailsProvider(taskDefinition = TASK_DEFINITION)
-  public UserTaskDetails retriedApprove(
+  public UserTaskDetails incidentApprove(
       final PrefilledUserTaskDetails prefilled) {
 
-    if (attempts.incrementAndGet() <= FAILURES_BEFORE_THE_PROVIDER_ANSWERS) {
-      throw new IllegalStateException("the details provider of the test is not ready yet");
-    }
-    prefilled.setDetails(Map.of("attempts", String.valueOf(attempts.get())));
-    return prefilled;
+    attempts.incrementAndGet();
+    throw new IllegalStateException("the details provider of the test cannot answer");
 
   }
 

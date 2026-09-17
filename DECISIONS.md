@@ -89,7 +89,7 @@ adapters said held it, and each of those clusters was subscribed to the job type
 They are opened per adapter id and workflow module instead, and what was wired is remembered under
 the same pair. So a worker subscribes to exactly what its own cluster's models carry.
 
-## 7. A line differs in what it costs, not in what it reports
+## 7. A line differs in what it costs, not in what it reports - what a report reads the business id from is narrowed by decision 8
 
 The extension reads two things which arrived with the 8.9 client: the root process instance of a job,
 which is what tells a called process from a business case (decision 3), and the business id of a
@@ -128,3 +128,44 @@ cockpit, which is better than an incident on a workflow which is doing nothing w
 This is the shape every later gap of this kind takes. The per-line source directory carries how a
 line finds something out, never what it then reports. A line which cannot answer at all is what would
 end a line, and a field which arrived one minor later is not that.
+
+## 8. A report is built from the listener job, and the searchable storage answers what is true now
+
+The Business Cockpit builds a report at the moment of the event and lets it travel with its outbox
+entry (decision 26 in the DECISIONS.md of vanillabp/business-cockpit). On Camunda 8 that moment is
+inside the listener job, and this entry says where the values of that report come from.
+
+They come from the job. An activated job carries the assignee, the candidate users and groups, the
+due date and the follow-up date of the task it is about, and it names the version of the deployed
+process. The two BPMN names are not on it, so they are read out of the model while this extension
+wires it and kept with the listener. Nothing is asked of the cluster, and asking would not help: the
+searchable storage is written by an exporter which runs behind the engine, so the event a job is
+about has not reached it while that job waits. `Camunda8EventBeingReported` is how the values reach
+the bridge, which the cockpit asks by identifiers.
+
+What the searchable storage still answers is a question about now. `BusinessCockpitService` reads
+the tasks and the workflows of one case whenever the application asks, and the bridge searches the
+storage for them. A record it holds none of used to mean "ask again in a moment", because a report
+was dispatched moments after its event. There is no entry to hand back on this way, so the answer is
+now an empty result and a line in the log which names both readings of it. `PhaseTwoRetryLater` is
+gone from this repository.
+
+The business id of a workflow is the workflow aggregate's id whenever a report comes from a job.
+VanillaBP starts every workflow without a business id of its own, so that is the right answer for
+every workflow it started, and the reference already carries it. A business id a cluster holds for
+an instance somebody else started reaches a job only from 8.10 on, and reading it there would make
+the 8.10 line report something the 8.9 line cannot. A line differs in what it costs, not in what it
+reports (decision 7). The read path keeps preferring what the cluster holds, which is what decision
+7 wrote and what an operator searching for a foreign case name needs.
+
+A details provider which fails now stops the workflow. It runs inside the listener job, the
+listeners of this extension carry no retries (decision 5), so the cluster raises an incident and the
+transition waits. That is meant. Only reading happens on this way, but what is read has to be right,
+and a defect which repetitions hide is a defect nobody fixes. The way to the cockpit server is the
+other half and stays quiet: it runs over the outbox, and a cockpit server which is down for ten
+minutes costs nobody an incident.
+
+What a user of this adapter sees differently afterwards is two things. A report carries what the
+case said when the event happened rather than what it said when the report went out, which is the
+whole point. And a report which cannot be built never goes out at all, where it used to go out
+late.

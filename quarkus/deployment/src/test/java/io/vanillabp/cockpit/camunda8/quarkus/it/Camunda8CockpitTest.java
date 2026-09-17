@@ -2,7 +2,6 @@ package io.vanillabp.cockpit.camunda8.quarkus.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -34,12 +33,10 @@ import io.quarkus.test.QuarkusExtensionTest;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.test.ClusterUnderTest;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
-import io.vanillabp.cockpit.camunda8.Camunda8CockpitReads;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.cockpit.extension.test.support.CockpitServer;
-import io.vanillabp.integration.spi.PhaseTwoRetryLater;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 import jakarta.inject.Inject;
 import jakarta.transaction.UserTransaction;
@@ -72,7 +69,7 @@ public class Camunda8CockpitTest {
   private static final String MODULE_ID = "c8-cockpit";
 
   /** The BPMN process of the file which no workflow aggregate of this application claims. */
-  private static final String UNCLAIMED_PROCESS_ID = "RetriedDetailsProcess";
+  private static final String UNCLAIMED_PROCESS_ID = "IncidentDetailsProcess";
 
   /**
    * Where the addresses of the cluster are published.
@@ -454,13 +451,13 @@ public class Camunda8CockpitTest {
     // a listener of this extension carries no retries, so a job nobody serves would stop the
     // workflow where it sits, and nobody serves a process this application knows no case of
     assertEquals(List.of(), executionListenerTypesOf(model, scopedProcessId));
-    assertEquals(List.of(), executionListenerTypesOf(model, "RetriedStart"));
+    assertEquals(List.of(), executionListenerTypesOf(model, "IncidentStart"));
     assertFalse(
         Bpmn
             .convertToString(model)
             .contains(
                 Camunda8CockpitListeners
-                    .listenerTypeOf("%s__%s__retriedApprove".formatted(MODULE_ID, UNCLAIMED_PROCESS_ID))),
+                    .listenerTypeOf("%s__%s__incidentApprove".formatted(MODULE_ID, UNCLAIMED_PROCESS_ID))),
         "the unclaimed process carries a task listener of the cockpit");
 
   }
@@ -565,12 +562,13 @@ public class Camunda8CockpitTest {
   }
 
   @Test
-  @DisplayName("A report about something the cluster does not hold asks again instead of failing")
-  public void aReportAboutSomethingTheClusterDoesNotHoldAsksAgain() throws Exception {
+  @DisplayName("A question about something the cluster does not hold is answered with nothing")
+  public void aQuestionAboutSomethingTheClusterDoesNotHoldIsAnsweredWithNothing() throws Exception {
 
-    // see the test of the same name in the Spring Boot module for what this asks and why it asks
-    // it this way: the answer a cluster gives while its exporter is behind is the answer it gives
-    // for a key it never handed out
+    // the reading side of the bridge, the one which serves BusinessCockpitService: it asks the
+    // cluster's searchable storage, and a record that storage holds none of means there is
+    // nothing to show. Asking about a key the cluster never handed out provokes that answer
+    // without waiting for an exporter to fall behind
     final var started = aStartedWorkflow("Dora");
     // the keys of a partition are counted up from one number whatever they are handed out for, so
     // a key a million past a real one is neither a user task nor a workflow of this run
@@ -584,19 +582,12 @@ public class Camunda8CockpitTest {
         ADAPTER_ID, MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, null, String.valueOf(started
             .getId()), unknownKey);
 
-    final var aboutTheUserTask = assertThrows(
-        PhaseTwoRetryLater.class,
-        () -> bridges.getFirst().prefilledUserTaskDetails(unknownUserTask));
-    assertEquals(
-        Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP,
-        aboutTheUserTask.getRetryAfter(),
-        "the report does not come back within the window the extension names");
-
-    final var aboutTheWorkflow = assertThrows(
-        PhaseTwoRetryLater.class,
-        () -> bridges.getFirst().prefilledWorkflowDetails(unknownWorkflow));
-    assertEquals(
-        Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP, aboutTheWorkflow.getRetryAfter());
+    assertTrue(
+        bridges.getFirst().prefilledUserTaskDetails(unknownUserTask).isEmpty(),
+        "a task the cluster does not hold was answered with values");
+    assertTrue(
+        bridges.getFirst().prefilledWorkflowDetails(unknownWorkflow).isEmpty(),
+        "a workflow the cluster does not hold was answered with values");
 
   }
 

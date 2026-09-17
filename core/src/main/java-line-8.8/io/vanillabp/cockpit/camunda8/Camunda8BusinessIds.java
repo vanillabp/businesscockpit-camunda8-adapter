@@ -6,15 +6,21 @@ import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 /**
  * The business key a workflow is shown under. This is the 8.8 variant.
  * <p>
- * An 8.8 process instance carries no business id. The field arrived with 8.9, and the 8.9
- * variant of this class prefers it where the cluster holds one.
+ * It answers where a record of the searchable storage is what the business key is read from,
+ * which is a question about now: {@code BusinessCockpitService.aggregateChanged} reports a case
+ * the application names, and the storage holds that case. The report of a BPMS event is built
+ * from the listener job instead, and it names the workflow aggregate's id on every line, see
+ * {@link Camunda8CockpitJobHandler}.
  * <p>
- * What this line answers is what the newer lines answer for every workflow VanillaBP started:
- * the workflow aggregate's id. That id is the business key of a VanillaBP workflow, and it is
- * how the adapter finds an instance again, by writing it into a variable and searching by it.
- * The reference the cockpit asked about already carries it. So the value is the same on every
- * line without asking the cluster, and reading the variable back would only cost a request to
- * arrive at an id which is already in hand.
+ * An 8.8 process instance carries no business id. The field arrived with 8.9, and the 8.9 and 8.10
+ * variants of this class prefer it where the cluster holds one.
+ * <p>
+ * What this line answers is what the newer lines answer for every workflow VanillaBP started: the
+ * workflow aggregate's id. That id is the business key of a VanillaBP workflow, and it is how the
+ * adapter finds an instance again, by writing it into a variable and searching by it. The
+ * reference the cockpit asked about already carries it. So the value is the same on every line
+ * without asking the cluster, and reading the variable back would only cost a request to arrive at
+ * an id which is already in hand.
  */
 final class Camunda8BusinessIds {
 

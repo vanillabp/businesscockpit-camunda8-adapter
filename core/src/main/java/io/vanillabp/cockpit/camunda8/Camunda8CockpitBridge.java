@@ -3,6 +3,7 @@ package io.vanillabp.cockpit.camunda8;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,11 +24,21 @@ import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 /**
  * What one configured Camunda 8 cluster answers the Business Cockpit.
  * <p>
- * Every question here is answered by the cluster's searchable storage rather than by its
- * engine. The engine takes commands and hands out jobs, and what a user task looks like right
- * now is something only the storage behind it can be asked. That storage runs behind the engine
- * by design, and that is what decides what a missing record means. See
- * {@link Camunda8CockpitReads}.
+ * Two different questions arrive here, and telling them apart is the whole job of the two
+ * <code>prefilled…</code> methods.
+ * <ul>
+ * <li><b>What an event says.</b> A report is built while a listener job of this cluster is being
+ * served, and the values of that event are on the job. The worker read them off it and left them
+ * in {@link Camunda8EventBeingReported}, so they are answered from there. The cluster is not
+ * asked, and it could not answer: its searchable storage is written by an exporter which runs
+ * behind the engine, so the event being reported has not reached it while the job waits.</li>
+ * <li><b>What is true now.</b> <code>BusinessCockpitService.getUserTask</code> and
+ * <code>aggregateChanged</code> ask about a task or a case the application names, at the moment
+ * it asks. Nothing is being reported then, so the answer comes from the searchable storage, and
+ * a record it holds none of means there is nothing to show.</li>
+ * </ul>
+ * The three <code>…OfAggregate</code> methods only ever serve the second kind, so they search the
+ * storage without asking.
  * <p>
  * One bridge serves one adapter id, because during a migration each cluster holds workflows of
  * its own and the cockpit addresses a workflow by the cluster holding it.
@@ -72,28 +83,22 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   public Optional<UserTaskDetailsPrefill> prefilledUserTaskDetails(
       final UserTaskReference userTask) {
 
-    final UserTask task;
-    try {
-      task = cluster
-          .client()
-          .newUserTaskGetRequest(Long.parseLong(userTask.userTaskId()))
-          .send()
-          .join();
-    } catch (final RuntimeException e) {
-      if (Camunda8Errors.notFound(e)) {
-        // A report is dispatched moments after the cluster handed out the listener job it
-        // came from, so a user task the searchable storage has no record of is one it has
-        // not written yet rather than one which is gone. Dropping it here would lose a task
-        // the cockpit is supposed to show
-        throw Camunda8CockpitReads
-            .notExportedYet("the user task '%s'".formatted(userTask.userTaskId()), adapterId());
-      }
-      throw e;
+    final var ofTheEvent = cluster
+        .eventBeingReported()
+        .userTaskValuesOf(userTask.userTaskId());
+    if (ofTheEvent.isPresent()) {
+      return ofTheEvent;
     }
 
-    return Optional
-        .of(
-            UserTaskDetailsPrefill
+    return readFromTheStorage(
+        "the user task '%s'".formatted(userTask.userTaskId()),
+        () -> cluster
+            .client()
+            .newUserTaskGetRequest(Long.parseLong(userTask.userTaskId()))
+            .send()
+            .join())
+        .map(
+            task -> UserTaskDetailsPrefill
                 .builder()
                 .bpmnProcessVersion(processVersionOf(task.getProcessDefinitionVersion()))
                 // the workflow of a task is the business case, which is the instance the
@@ -117,29 +122,65 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   public Optional<WorkflowDetailsPrefill> prefilledWorkflowDetails(
       final WorkflowReference workflow) {
 
-    final ProcessInstance instance;
-    try {
-      instance = cluster
-          .client()
-          .newProcessInstanceGetRequest(Long.parseLong(workflow.workflowId()))
-          .send()
-          .join();
-    } catch (final RuntimeException e) {
-      if (Camunda8Errors.notFound(e)) {
-        throw Camunda8CockpitReads
-            .notExportedYet("the workflow '%s'".formatted(workflow.workflowId()), adapterId());
-      }
-      throw e;
+    final var ofTheEvent = cluster
+        .eventBeingReported()
+        .workflowValuesOf(workflow.workflowId());
+    if (ofTheEvent.isPresent()) {
+      return ofTheEvent;
     }
 
-    return Optional
-        .of(
-            new WorkflowDetailsPrefill(
+    return readFromTheStorage(
+        "the workflow '%s'".formatted(workflow.workflowId()),
+        () -> cluster
+            .client()
+            .newProcessInstanceGetRequest(Long.parseLong(workflow.workflowId()))
+            .send()
+            .join())
+        .map(
+            instance -> new WorkflowDetailsPrefill(
                 processVersionOf(instance.getProcessDefinitionVersion()),
                 // where a business key comes from differs per release line, see
                 // Camunda8BusinessIds in the per-line sources
                 Camunda8BusinessIds.businessIdOf(instance, workflow), instance
                     .getProcessDefinitionName(), null));
+
+  }
+
+  /**
+   * Asks the cluster's searchable storage about one record, for a question about now.
+   * <p>
+   * A record the storage holds none of means there is nothing to show. The application asked
+   * about a task or a case of its own, in its own time, and an empty answer is what it can work
+   * with: the cockpit keeps what it stored before. The reason is said out loud, because the same
+   * answer comes back for a record the exporter has not written yet, and the two cannot be told
+   * apart from here.
+   * <p>
+   * Every other answer travels on unchanged. An outage must not look like an empty result, or a
+   * cockpit would quietly stop showing what is there. WHICH answer means "I do not hold that" is
+   * the adapter's to say ({@code Camunda8Errors#notFound}): the REST gateway says it with HTTP
+   * <code>404</code> and the gRPC gateway with the status <code>NOT_FOUND</code>.
+   *
+   * @param <T> The kind of record
+   * @param what What is being read, for the message
+   * @param read The request to the cluster
+   * @return The record, or empty where the storage holds none
+   */
+  private <T> Optional<T> readFromTheStorage(
+      final String what,
+      final Supplier<T> read) {
+
+    try {
+      return Optional.of(read.get());
+    } catch (final RuntimeException e) {
+      if (!Camunda8Errors.notFound(e)) {
+        throw e;
+      }
+      logger
+          .warn(
+              "Camunda8[{}]: the cluster's searchable storage holds no record of {}. The Business Cockpit is told nothing about it, so it keeps showing what it stored before. There are two readings of this. Either that record is gone. Or the exporter which writes that storage has not caught up with it yet, which is what a workflow or a task born in the very transaction asking here looks like - the start of such a workflow is reported by this extension's listeners anyway.",
+              adapterId(), what, e);
+      return Optional.empty();
+    }
 
   }
 
