@@ -18,9 +18,8 @@ import io.vanillabp.spi.service.BpmnProcess;
 import io.vanillabp.spi.service.WorkflowService;
 
 /**
- * The application under test: a workflow whose user task the cockpit is to show, with a
- * details provider which enriches what the cluster reported and writes into the aggregate
- * while doing so.
+ * The application under test: a workflow whose user task the cockpit is to show, with a details
+ * provider which enriches what the cluster reported.
  */
 @Service
 @WorkflowService(workflowAggregateClass = TestAggregate.class,
@@ -38,9 +37,6 @@ public class TestWorkflowService {
 
   /** The message the second start event of the process waits for. */
   public static final String START_MESSAGE = "StartCockpitProcess";
-
-  /** What the details provider writes into the aggregate, so that a test can see it ran. */
-  public static final String APPROVE_NOTE = "seen by the details provider";
 
   /**
    * The detail both generations of a details provider write, each with its own value: it says
@@ -91,18 +87,12 @@ public class TestWorkflowService {
 
   /**
    * Matched by the external form reference of the user task and by the version of the deployed
-   * process. It enriches what the cluster
-   * reported, and for the one case a test asks for it also writes into the workflow aggregate,
-   * which a details provider is allowed to do and which makes it a second writer of that case.
+   * process. It enriches what the cluster reported, and it writes nothing: a details provider is
+   * asked a question and answers it.
    * <p>
-   * No test reads the note any more. The write is there because
-   * Camunda8CockpitIT#aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives needs a second writer,
-   * and it is asked for per case because a provider writes into whatever transaction ran it. See
-   * {@link DetailsProviderGate#letTheProviderWriteOnto(Long)} for what writing onto every case did
-   * to the tests which only read.
-   * <p>
-   * The gate is what a test closes to hold this call open while it changes the same case, so
-   * that the two writers meet at a fixed point rather than by chance. It is open otherwise.
+   * The gate is what a test closes to hold this call open while it changes the same case, so that
+   * Camunda8CockpitIT#aReportCarriesTheStateOfItsEvent can say which moment a report is built
+   * from. It is open otherwise.
    *
    * @param aggregate The workflow aggregate, loaded by VanillaBP
    * @param prefilled What the cluster knew about the task
@@ -152,9 +142,6 @@ public class TestWorkflowService {
       final String servedBy) {
 
     gate.passOrWait(aggregate.getId());
-    if (gate.mayWriteOnto(aggregate.getId())) {
-      aggregate.setNote(APPROVE_NOTE);
-    }
     prefilled
         .setDetails(
             Map

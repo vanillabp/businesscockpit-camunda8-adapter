@@ -21,9 +21,9 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * The workers this extension keeps open, one per job type of a workflow module and per Camunda
  * 8 cluster the module was deployed to.
  * <p>
- * A worker asks the cluster for exactly one thing besides the job: the variable the workflow
- * aggregate's id is carried in. Everything else a report needs is read while the outbox entry
- * is dispatched, so a listener job which travels less is a user task which appears sooner.
+ * A worker asks the cluster for exactly one variable besides the job: the one the workflow
+ * aggregate's id is carried in. Everything else a report needs travels on the job itself, so a
+ * job which carries fewer variables is a user task which appears sooner.
  * <p>
  * The pipeline starts this extension once per configured Camunda 8 adapter a module was
  * deployed to, and its processing context says which adapter that is. So a start opens the

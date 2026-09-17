@@ -13,11 +13,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * What this extension put into the models of a workflow module, remembered until the workers
  * serving it are opened and for as long as they are.
  * <p>
- * Two things have to survive the wiring. The workers need to know which job types exist and
- * which variable each of them has to ask the cluster for. And every job arriving later has to be
+ * Three things have to survive the wiring. The workers need to know which job types exist and
+ * which variable each of them has to ask the cluster for. Every job arriving later has to be
  * translated back, because it carries the identifiers the CLUSTER knows, while everything the
  * cockpit is told is spelled the way the application wrote it. So is everything the
- * application's own methods are matched by.
+ * application's own methods are matched by. And a report is built from the job alone, so what
+ * the job does not carry has to be read out of the model here: the BPMN names of the process and
+ * of the element the listener sits on.
  * <p>
  * Everything here is per adapter id and workflow module. A module deployed to two Camunda 8
  * clusters is wired twice, once per adapter. The two runs put different identifiers into their
@@ -35,6 +37,12 @@ public class Camunda8CockpitDeployments {
    * @param bpmnProcessId The BPMN process id as the application wrote it
    * @param elementId The BPMN element the listener sits on, which is a user task, a start event
    *          or the process itself
+   * @param elementName The BPMN name of that element, which a report of a user task carries as
+   *          the title the cockpit falls back to. A job says which element it comes from and
+   *          never what that element is called, so the name is taken out of the model while it
+   *          is being wired and kept here
+   * @param bpmnProcessName The BPMN name of the process, the other fallback title. It is taken
+   *          out of the model for the same reason
    * @param aggregateIdName The process variable the workflow aggregate's id is carried in
    */
   public record WiredListener(
@@ -42,6 +50,8 @@ public class Camunda8CockpitDeployments {
                               String scopedBpmnProcessId,
                               String bpmnProcessId,
                               String elementId,
+                              String elementName,
+                              String bpmnProcessName,
                               String aggregateIdName) {
   }
 

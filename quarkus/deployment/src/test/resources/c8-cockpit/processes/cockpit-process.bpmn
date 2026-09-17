@@ -18,22 +18,22 @@
       <bpmn:incoming>ToEnd</bpmn:incoming>
     </bpmn:endEvent>
   </bpmn:process>
-  <bpmn:process id="RetriedDetailsProcess" isExecutable="true">
-    <bpmn:startEvent id="RetriedStart">
-      <bpmn:outgoing>ToRetriedApprove</bpmn:outgoing>
+  <bpmn:process id="IncidentDetailsProcess" isExecutable="true">
+    <bpmn:startEvent id="IncidentStart">
+      <bpmn:outgoing>ToIncidentApprove</bpmn:outgoing>
     </bpmn:startEvent>
-    <bpmn:sequenceFlow id="ToRetriedApprove" sourceRef="RetriedStart" targetRef="RetriedApprove" />
-    <bpmn:userTask id="RetriedApprove" name="Approve although the details provider stumbles">
+    <bpmn:sequenceFlow id="ToIncidentApprove" sourceRef="IncidentStart" targetRef="IncidentApprove" />
+    <bpmn:userTask id="IncidentApprove" name="Approve although the details provider stumbles">
       <bpmn:extensionElements>
         <zeebe:userTask />
-        <zeebe:formDefinition externalReference="retriedApprove" />
+        <zeebe:formDefinition externalReference="incidentApprove" />
       </bpmn:extensionElements>
-      <bpmn:incoming>ToRetriedApprove</bpmn:incoming>
-      <bpmn:outgoing>ToRetriedEnd</bpmn:outgoing>
+      <bpmn:incoming>ToIncidentApprove</bpmn:incoming>
+      <bpmn:outgoing>ToIncidentEnd</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:sequenceFlow id="ToRetriedEnd" sourceRef="RetriedApprove" targetRef="RetriedEnd" />
-    <bpmn:endEvent id="RetriedEnd">
-      <bpmn:incoming>ToRetriedEnd</bpmn:incoming>
+    <bpmn:sequenceFlow id="ToIncidentEnd" sourceRef="IncidentApprove" targetRef="IncidentEnd" />
+    <bpmn:endEvent id="IncidentEnd">
+      <bpmn:incoming>ToIncidentEnd</bpmn:incoming>
     </bpmn:endEvent>
   </bpmn:process>
 </bpmn:definitions>

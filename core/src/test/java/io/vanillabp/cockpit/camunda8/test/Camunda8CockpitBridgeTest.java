@@ -2,6 +2,7 @@ package io.vanillabp.cockpit.camunda8.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 
+import io.camunda.client.api.command.ClientHttpException;
 import io.camunda.client.api.search.filter.ProcessInstanceFilter;
 import io.camunda.client.api.search.response.ProcessInstance;
 import io.camunda.client.api.search.response.UserTask;
@@ -29,6 +31,7 @@ import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
+import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidance;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidanceSupport;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
@@ -212,6 +215,107 @@ public class Camunda8CockpitBridgeTest {
     // the case is the calling workflow, and the instance the task sits in is the step below it
     assertEquals(CALLING_INSTANCE, prefill.workflowId());
     assertEquals(String.valueOf(CALLED_INSTANCE), prefill.subWorkflowId());
+
+  }
+
+  @Test
+  @DisplayName("A workflow read from the storage is named by the workflow aggregate's id")
+  public void aWorkflowIsNamedByItsAggregateId() {
+
+    final var instance = mock(ProcessInstance.class, RETURNS_DEEP_STUBS);
+    when(instance.getProcessDefinitionVersion()).thenReturn(2);
+    when(instance.getProcessDefinitionName()).thenReturn("The cockpit process");
+    when(
+        clientFactories
+            .getFactory("c8")
+            .getClient()
+            .newProcessInstanceGetRequest(Long.parseLong(CALLING_INSTANCE))
+            .send()
+            .join())
+        .thenReturn(instance);
+
+    final var prefill = bridge()
+        .prefilledWorkflowDetails(
+            new WorkflowReference(
+                "c8", MODULE_ID, PROCESS_ID, "2", AGGREGATE_ID, CALLING_INSTANCE))
+        .orElseThrow();
+
+    // to VanillaBP a business key is a business key only where it says what the aggregate's @Id
+    // attribute says. So the report names that id, whatever a cluster holds beside it, and it
+    // names the same one whether it was built from a listener job or read here
+    assertEquals(AGGREGATE_ID, prefill.businessId());
+    assertEquals("2", prefill.bpmnProcessVersion());
+    assertEquals("The cockpit process", prefill.bpmnProcessName());
+
+  }
+
+  @Test
+  @DisplayName("A task the searchable storage holds no record of is answered with nothing")
+  public void aTaskTheStorageDoesNotHoldIsAnsweredWithNothing() {
+
+    // asked outside an event, which is what BusinessCockpitService.getUserTask does. There is
+    // no entry to hand back and nothing to wait for, so an empty answer is what the caller can
+    // work with: the cockpit keeps what it stored before, and the log says why
+    when(
+        clientFactories
+            .getFactory("c8")
+            .getClient()
+            .newUserTaskGetRequest(Long.parseLong(USER_TASK_ID))
+            .send()
+            .join())
+        .thenThrow(new ClientHttpException(404, "Not Found"));
+
+    final var prefill = bridge()
+        .prefilledUserTaskDetails(
+            new UserTaskReference(
+                "c8", MODULE_ID, PROCESS_ID, "1", AGGREGATE_ID, CALLING_INSTANCE, USER_TASK_ID, "handle", "Handle"));
+
+    assertTrue(prefill.isEmpty());
+
+  }
+
+  @Test
+  @DisplayName("A workflow the searchable storage holds no record of is answered with nothing")
+  public void aWorkflowTheStorageDoesNotHoldIsAnsweredWithNothing() {
+
+    when(
+        clientFactories
+            .getFactory("c8")
+            .getClient()
+            .newProcessInstanceGetRequest(Long.parseLong(CALLING_INSTANCE))
+            .send()
+            .join())
+        .thenThrow(new ClientHttpException(404, "Not Found"));
+
+    final var prefill = bridge()
+        .prefilledWorkflowDetails(
+            new WorkflowReference(
+                "c8", MODULE_ID, PROCESS_ID, "1", AGGREGATE_ID, CALLING_INSTANCE));
+
+    assertTrue(prefill.isEmpty());
+
+  }
+
+  @Test
+  @DisplayName("A cluster which is unreachable is not mistaken for a cluster holding nothing")
+  public void anOutageIsNoEmptyResult() {
+
+    when(
+        clientFactories
+            .getFactory("c8")
+            .getClient()
+            .newUserTaskGetRequest(Long.parseLong(USER_TASK_ID))
+            .send()
+            .join())
+        .thenThrow(new ClientHttpException(503, "Service Unavailable"));
+
+    // an outage answered with nothing would make the cockpit quietly stop showing what is there
+    assertThrows(
+        ClientHttpException.class,
+        () -> bridge()
+            .prefilledUserTaskDetails(
+                new UserTaskReference(
+                    "c8", MODULE_ID, PROCESS_ID, "1", AGGREGATE_ID, CALLING_INSTANCE, USER_TASK_ID, "handle", "Handle")));
 
   }
 

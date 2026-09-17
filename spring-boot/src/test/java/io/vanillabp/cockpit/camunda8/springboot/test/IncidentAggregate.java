@@ -6,10 +6,10 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 
 /**
- * The business case of the workflow whose details provider stumbles before it answers.
+ * The business case of the workflow whose details provider always fails.
  */
 @Entity
-public class RetriedAggregate {
+public class IncidentAggregate {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)

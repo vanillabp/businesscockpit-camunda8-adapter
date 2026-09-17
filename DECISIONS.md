@@ -89,7 +89,7 @@ adapters said held it, and each of those clusters was subscribed to the job type
 They are opened per adapter id and workflow module instead, and what was wired is remembered under
 the same pair. So a worker subscribes to exactly what its own cluster's models carry.
 
-## 7. A line differs in what it costs, not in what it reports
+## 7. A line differs in what it costs, not in what it reports - where the business id is read from superseded by decision 8
 
 The extension reads two things which arrived with the 8.9 client: the root process instance of a job,
 which is what tells a called process from a business case (decision 3), and the business id of a
@@ -111,6 +111,8 @@ somebody else started may carry a case name of its own. On 8.8 there is no such 
 aggregate id is the answer. Reading the variable back would cost a request to arrive at an id which
 is already in hand.
 
+That preference is gone. Decision 8 says why, and the rest of this entry stands.
+
 What line 8.8 pays for this is written where it happens. The call hierarchy is served by the
 searchable storage, so it lags behind the transition whose listener is running, and a job of a
 process which just started can be asked about before the cluster knows it. How long the lookup waits
@@ -128,3 +130,52 @@ cockpit, which is better than an incident on a workflow which is doing nothing w
 This is the shape every later gap of this kind takes. The per-line source directory carries how a
 line finds something out, never what it then reports. A line which cannot answer at all is what would
 end a line, and a field which arrived one minor later is not that.
+
+## 8. A report is built from the listener job, and the searchable storage answers what is true now
+
+The Business Cockpit builds a report at the moment of the event and lets it travel with its outbox
+entry (decision 26 in the DECISIONS.md of vanillabp/business-cockpit). On Camunda 8 that moment is
+inside the listener job, and this entry says where the values of that report come from.
+
+They come from the job. An activated job carries the assignee, the candidate users and groups, the
+due date and the follow-up date of the task it is about, and it names the version of the deployed
+process. The two BPMN names are not on it, so they are read out of the model while this extension
+wires it and kept with the listener. Nothing is asked of the cluster, and asking would not help: the
+searchable storage is written by an exporter which runs behind the engine, so the event a job is
+about has not reached it while that job waits. `Camunda8EventBeingReported` is how the values reach
+the bridge, which the cockpit asks by identifiers.
+
+What the searchable storage still answers is a question about now. `BusinessCockpitService` reads
+the tasks and the workflows of one case whenever the application asks, and the bridge searches the
+storage for them. A record it holds none of used to mean "ask again in a moment", because a report
+was dispatched moments after its event. There is no entry to hand back on this way, so the answer is
+now an empty result and a line in the log which names both readings of it. `PhaseTwoRetryLater` is
+gone from this repository.
+
+The business id of a workflow is the workflow aggregate's id, on every way a report is built and on
+every release line. Stephan's rule of 2026-09-17: to VanillaBP a business key is a business key only
+where it says what the `@Id` attribute of the workflow aggregate says. Camunda 7 fills the business
+key with that attribute when VanillaBP starts the process, and Camunda 8.10 is to do the same. So
+what a cluster holds beside that id is not a business key VanillaBP recognises, and the cockpit
+names the aggregate's id instead. The reference already carries it, so nothing is read for it.
+
+This replaces the preference the second half of decision 7 gave to what the cluster holds, which was
+written before the rule was. It also removes the one place where the two ways of building a report
+could have said different things: a report from a listener job and a report read for
+`aggregateChanged` now name the same id. `Camunda8BusinessIds` had nothing left to answer and is
+gone from all three per-line source sets.
+
+What happens where a business key taken over from somewhere else does NOT say what the aggregate's
+`@Id` attribute says belongs to the platform, not to this extension.
+
+A details provider which fails now stops the workflow. It runs inside the listener job, the
+listeners of this extension carry no retries (decision 5), so the cluster raises an incident and the
+transition waits. That is meant. Only reading happens on this way, but what is read has to be right,
+and a defect which repetitions hide is a defect nobody fixes. The way to the cockpit server is the
+other half and stays quiet: it runs over the outbox, and a cockpit server which is down for ten
+minutes costs nobody an incident.
+
+What a user of this adapter sees differently afterwards is two things. A report carries what the
+case said when the event happened rather than what it said when the report went out, which is the
+whole point. And a report which cannot be built never goes out at all, where it used to go out
+late.

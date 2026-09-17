@@ -2,7 +2,6 @@ package io.vanillabp.cockpit.camunda8.springboot.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -20,7 +19,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -43,12 +41,10 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.test.ClusterUnderTest;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
-import io.vanillabp.cockpit.camunda8.Camunda8CockpitReads;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.cockpit.extension.test.support.CockpitServer;
-import io.vanillabp.integration.spi.PhaseTwoRetryLater;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -56,10 +52,10 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * deploys to the request the cockpit server receives.
  * <p>
  * Nothing on that way is faked but the cockpit server itself: the cluster runs the workflow,
- * hands out the listener jobs the extension put into the model, the extension writes an outbox
- * entry and completes the job, the entry is dispatched afterwards, the cluster is read again,
- * the application's details provider runs and changes the workflow aggregate, and what arrives
- * at the server is asserted.
+ * hands out the listener jobs the extension put into the model, the extension reads them, runs
+ * the application's details provider and writes one outbox entry carrying the finished report,
+ * the job is completed, the entry is sent afterwards, and what arrives at the server is
+ * asserted.
  * <p>
  * The workflow module runs under <code>use-prefix</code>, which is the harder of the two
  * name-clash modes: every identifier the cluster knows carries the module's prefix while
@@ -75,13 +71,6 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 public class Camunda8CockpitIT {
 
   private static final String MODULE_ID = "c8-cockpit";
-
-  /**
-   * How often the application repeats a transaction which read a conflict. Two would do for the
-   * one other writer there is; the third is there so that a repetition which itself meets the
-   * next report does not end the test.
-   */
-  private static final int ATTEMPTS_OF_THE_APPLICATION = 3;
 
   /**
    * How long a wait for the cluster's searchable storage keeps hoping. It is the slowest thing
@@ -121,7 +110,7 @@ public class Camunda8CockpitIT {
   private TestAggregateRepository aggregates;
 
   @Autowired
-  private RetriedWorkflowService retriedWorkflowService;
+  private IncidentWorkflowService incidentWorkflowService;
 
   @Autowired
   private CallingWorkflowService callingWorkflowService;
@@ -250,9 +239,6 @@ public class Camunda8CockpitIT {
           aggregate.setCustomer(customer);
           final var started = workflowService.processes().startWorkflow(aggregate);
           gate.holdTheNextCallFor(started.getId());
-          // and it is the one case whose provider writes onto the aggregate, which is what makes
-          // the cockpit the second writer this scenario needs
-          gate.letTheProviderWriteOnto(started.getId());
           return started;
         });
 
@@ -300,43 +286,25 @@ public class Camunda8CockpitIT {
   }
 
   /**
-   * Changes one case and reports the change, the way an application whose workflow aggregate
-   * carries a version attribute has to do it: in a transaction which is repeated where somebody
-   * else wrote the same case in between.
+   * Changes one case in a transaction of its own, the way the application does it.
    * <p>
-   * That somebody is the Business Cockpit itself, wherever a details provider writes onto the case
-   * it was handed. Such a provider reads the case while a report is dispatched and writes it back
-   * when that dispatch commits, so the two transactions overlap whenever an application changes a
-   * case it has just reported. Without the version attribute the later of the two writers wins
-   * silently; with it, one of them reads a conflict and repeats, which is why this loop is here
-   * rather than a single transaction. In this application only the case of
-   * {@link #aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives} has such a provider, which is
-   * the test the loop is needed for.
+   * Nothing of the cockpit writes the case, so nothing collides here. A details provider is asked
+   * a question and answers it. The version attribute of {@link TestAggregate} is what would turn a
+   * second writer into a conflict rather than a silent overwrite.
    *
    * @param aggregateId The case to change
-   * @param changeAndReport Changes the attached case and reports it to the cockpit
+   * @param changeAndReport Changes the attached case, and reports it where a test wants that
    */
   private void changeTheCase(
       final Long aggregateId,
       final Consumer<TestAggregate> changeAndReport) {
 
-    for (var attempt = 1;; attempt++) {
-      try {
-        transactions
-            .executeWithoutResult(status -> {
-              final var attached = aggregates.findById(aggregateId).orElseThrow();
-              changeAndReport.accept(attached);
-              aggregates.save(attached);
-            });
-        return;
-      } catch (final OptimisticLockingFailureException e) {
-        if (attempt >= ATTEMPTS_OF_THE_APPLICATION) {
-          throw new AssertionError(
-              "The application gave up after %d attempts at changing case %s"
-                  .formatted(attempt, aggregateId), e);
-        }
-      }
-    }
+    transactions
+        .executeWithoutResult(status -> {
+          final var attached = aggregates.findById(aggregateId).orElseThrow();
+          changeAndReport.accept(attached);
+          aggregates.save(attached);
+        });
 
   }
 
@@ -370,11 +338,23 @@ public class Camunda8CockpitIT {
   private String workflowIdOf(
       final TestAggregate aggregate) {
 
-    return workflowIdOf(aggregate.getId());
+    return workflowIdOf(TestWorkflowService.BPMN_PROCESS_ID, aggregate.getId());
 
   }
 
+  /**
+   * The process instance of one case.
+   * <p>
+   * The process is named as well, and it has to be. Every workflow aggregate of this application
+   * counts its ids for itself, so a case of this workflow and a case of another one share the id
+   * 1, and a search by the variable alone finds whichever of them the cluster lists first.
+   *
+   * @param bpmnProcessId The process as the application wrote it
+   * @param aggregateId The case
+   * @return The instance key
+   */
   private String workflowIdOf(
+      final String bpmnProcessId,
       final Long aggregateId) {
 
     return awaitValue(
@@ -382,6 +362,7 @@ public class Camunda8CockpitIT {
             .newProcessInstanceSearchRequest()
             .filter(
                 filter -> filter
+                    .processDefinitionId("%s__%s".formatted(MODULE_ID, bpmnProcessId))
                     .variables(Map.of("id", "\"%s\"".formatted(aggregateId))))
             .send()
             .join()
@@ -390,7 +371,7 @@ public class Camunda8CockpitIT {
             .findFirst()
             .map(instance -> String.valueOf(instance.getProcessInstanceKey()))
             .orElse(null),
-        "the workflow of aggregate %s".formatted(aggregateId));
+        "the workflow of aggregate %s of '%s'".formatted(aggregateId, bpmnProcessId));
 
   }
 
@@ -600,11 +581,8 @@ public class Camunda8CockpitIT {
     assertTrue(userTask.body().contains("Approve the order"), userTask.body());
 
     // The customer in that body is what the details provider read off the case, so the report
-    // shows that the provider ran on the real aggregate. It wrote nothing onto it: a provider
-    // which writes makes the cockpit a second writer of the case, and only
-    // aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives asks for that. The reason it is asked
-    // for per case is that a write in a provider lands in whatever transaction ran the provider -
-    // the dispatch of a report here, and the caller of getUserTask in the tests which read.
+    // shows that the provider ran on the real aggregate. It wrote nothing onto it, which is what
+    // a details provider is: a question somebody answers.
 
   }
 
@@ -808,38 +786,27 @@ public class Camunda8CockpitIT {
   }
 
   @Test
-  @DisplayName("A change made while a details provider holds the case is not written over")
-  public void aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives() {
+  @DisplayName("A report carries the state its case had at the moment of the event")
+  public void aReportCarriesTheStateOfItsEvent() {
 
     final var aggregate = aStartedWorkflowWhoseDetailsProviderIsHeld("Nora");
-    final var userTaskId = userTaskIdOf(aggregate);
-    // the details provider of the user task now waits inside the dispatch of the CREATED
-    // report: it has read the case and has not written it back yet
+    // the details provider of the user task now waits inside the listener job of that task: it
+    // holds the case as the event left it, and the transition waits with it
     gate.awaitTheHeldCall();
     CockpitServer.forgetRequests();
 
-    changeTheCase(
-        aggregate.getId(),
-        attached -> {
-          attached.setCustomer("Nora the second");
-          workflowService.businessCockpit().aggregateChanged(attached, userTaskId);
-        });
+    // the application changes the very same case while the event is being reported, and commits
+    changeTheCase(aggregate.getId(), attached -> attached.setCustomer("Nora the second"));
 
     gate.letTheHeldCallFinish();
 
-    // the held dispatch now writes the case back with the reading it took before the change, and
-    // the version attribute turns that into a conflict, so the write is refused. Without it the
-    // dispatch would win, the case would read "Nora" again and the report of the change would
-    // read it too, which is the failure this test is here to catch
-    awaitReportCarrying(
-        "/usertask/%s/updated".formatted(userTaskId), "Nora the second", aggregate);
+    // the report is the report of its own event, so it says what the case said when the task was
+    // created. Built at the dispatch, as it used to be, it would say "Nora the second" - a state
+    // the task never had while it was coming into being
+    final var created = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Nora");
+    assertTrue(created.body().contains("\"customer\":\"Nora\""), created.body());
+    // and the change of the application is still there: nothing of the report wrote the case back
     assertEquals("Nora the second", storedCustomerOf(aggregate));
-
-    // What happens to the report of the held dispatch is not asserted: it was sent before its
-    // transaction tried to commit, so it carries the older reading either way, and whether the
-    // outbox sends it a second time is the outbox's business. The note that provider wrote is
-    // not asserted either. A write made in a details provider lives and dies with the
-    // transaction of the dispatch it ran in.
 
   }
 
@@ -896,35 +863,48 @@ public class Camunda8CockpitIT {
   }
 
   @Test
-  @DisplayName("A details provider which fails costs a repetition of the report and no incident")
-  public void aFailingDetailsProviderIsRetriedRatherThanRaisingAnIncident() {
+  @DisplayName("A details provider which fails raises an incident, and the transition waits")
+  public void aFailingDetailsProviderRaisesAnIncident() {
 
     final var aggregate = transactions
         .execute(status -> {
-          final var fresh = new RetriedAggregate();
+          final var fresh = new IncidentAggregate();
           fresh.setCustomer("Jonas");
-          return retriedWorkflowService.processes().startWorkflow(fresh);
+          return incidentWorkflowService.processes().startWorkflow(fresh);
         });
 
-    // the report arrives although the provider threw on its first attempts: the entry is
-    // dispatched again, and the workflow never noticed
-    final var userTask = CockpitServer
-        .awaitRequest("/usertask/created", RetriedWorkflowService.TASK_DEFINITION);
-    assertTrue(
-        retriedWorkflowService.attempts() > RetriedWorkflowService.FAILURES_BEFORE_THE_PROVIDER_ANSWERS,
-        "the details provider was not called again after it failed");
-
-    // and the cluster is untouched by it: the listener job was completed when the report was
-    // written, long before the provider ran
-    final var workflowId = workflowIdOf(aggregate.getId());
-    assertEquals(
-        Boolean.FALSE,
-        client()
+    // the report is built inside the listener job of the user task, so a details provider which
+    // throws fails that job. The listeners of this extension carry no retries, so the cluster
+    // raises the incident at once instead of repeating quietly. Only reading happens on this way,
+    // but what is read has to be right. See decision 8 in the repository's DECISIONS.md
+    final var workflowId = workflowIdOf(
+        IncidentWorkflowService.BPMN_PROCESS_ID, aggregate.getId());
+    awaitValue(
+        () -> client()
             .newProcessInstanceGetRequest(Long.parseLong(workflowId))
             .send()
             .join()
-            .getHasIncident(),
-        "the workflow carries an incident although only a report failed");
+            .getHasIncident()
+                ? Boolean.TRUE
+                : null,
+        "an incident on workflow %s, which its details provider was supposed to cause"
+            .formatted(workflowId));
+
+    // and nothing about that task reached the cockpit: the entry is written when the report is
+    // complete, and this one never was
+    CockpitServer.awaitQuiet();
+    assertEquals(
+        List.of(),
+        CockpitServer
+            .matching("/usertask/created")
+            .stream()
+            .filter(
+                request -> request.body().contains(IncidentWorkflowService.TASK_DEFINITION))
+            .toList(),
+        "a task whose details provider failed was reported anyway");
+    assertTrue(
+        incidentWorkflowService.attempts() > 0,
+        "the details provider was never called");
 
   }
 
@@ -946,16 +926,15 @@ public class Camunda8CockpitIT {
   }
 
   @Test
-  @DisplayName("A report about something the cluster does not hold asks again instead of failing")
-  public void aReportAboutSomethingTheClusterDoesNotHoldAsksAgain() {
+  @DisplayName("A question about something the cluster does not hold is answered with nothing")
+  public void aQuestionAboutSomethingTheClusterDoesNotHoldIsAnsweredWithNothing() {
 
-    // What the searchable storage of a cluster answers while its exporter is behind is the same
-    // answer it gives for a key it never handed out, and neither the bridge nor anything above it
-    // can tell the two apart. That is what makes this the ordinary case rather than an exotic one:
-    // a report of something which just happened arrives before the record it reads, and it has to
-    // come back instead of being dropped. Asking about a key the cluster does not hold is how that
-    // is asked without waiting for an exporter to be late. Waiting would leave the test, and the
-    // coverage of these two branches, to the speed of the machine it runs on.
+    // This is the reading side of the bridge, the one which serves BusinessCockpitService. It
+    // asks the cluster's searchable storage, and a record that storage holds none of means there
+    // is nothing to show. Asking about a key the cluster never handed out is how that answer is
+    // provoked without waiting for an exporter to fall behind. The reporting side does not come
+    // here at all: it is answered out of the listener job, which is what
+    // aReportCarriesTheStateOfItsEvent shows.
     final var aggregate = aStartedWorkflow("Dora");
     final var unknownWorkflowId = aKeyTheClusterDoesNotHold(workflowIdOf(aggregate));
     final var unknownUserTaskId = aKeyTheClusterDoesNotHold(userTaskIdOf(aggregate));
@@ -969,19 +948,12 @@ public class Camunda8CockpitIT {
         "c8", MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, null, String
             .valueOf(aggregate.getId()), unknownWorkflowId);
 
-    final var aboutTheUserTask = assertThrows(
-        PhaseTwoRetryLater.class,
-        () -> bridge.prefilledUserTaskDetails(unknownUserTask));
-    assertEquals(
-        Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP,
-        aboutTheUserTask.getRetryAfter(),
-        "the report does not come back within the window the extension names");
-
-    final var aboutTheWorkflow = assertThrows(
-        PhaseTwoRetryLater.class,
-        () -> bridge.prefilledWorkflowDetails(unknownWorkflow));
-    assertEquals(
-        Camunda8CockpitReads.WHILE_THE_EXPORTER_CATCHES_UP, aboutTheWorkflow.getRetryAfter());
+    assertTrue(
+        bridge.prefilledUserTaskDetails(unknownUserTask).isEmpty(),
+        "a task the cluster does not hold was answered with values");
+    assertTrue(
+        bridge.prefilledWorkflowDetails(unknownWorkflow).isEmpty(),
+        "a workflow the cluster does not hold was answered with values");
 
   }
 

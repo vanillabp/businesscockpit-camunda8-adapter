@@ -26,6 +26,15 @@ vanillabp:
       adapters:
         c8:
           resources-location: classpath*:c8-cockpit/processes
+      workflows:
+        CockpitProcess:
+          allow-full-sync-with-bpms: true
+        CallingProcess:
+          allow-full-sync-with-bpms: true
+        CalledProcess:
+          allow-full-sync-with-bpms: true
+        IncidentDetailsProcess:
+          allow-full-sync-with-bpms: true
       cockpit:
         workflow-module-uri: http://localhost:8081/c8-cockpit
         ui-uri-type: WEBPACK_MF_REACT

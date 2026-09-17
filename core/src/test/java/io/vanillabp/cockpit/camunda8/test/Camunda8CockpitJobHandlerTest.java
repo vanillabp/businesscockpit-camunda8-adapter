@@ -1,6 +1,7 @@
 package io.vanillabp.cockpit.camunda8.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,17 +27,21 @@ import io.camunda.client.api.response.ActivatedJob;
 import io.camunda.client.api.response.UserTaskProperties;
 import io.camunda.client.api.search.enums.JobKind;
 import io.camunda.client.api.search.enums.ListenerEventType;
+import io.camunda.client.api.search.response.UserTask;
 import io.camunda.client.api.worker.JobClient;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.client.Camunda8Drain;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
+import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitJobHandler;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
 import io.vanillabp.cockpit.extension.spi.EventTransaction;
 import io.vanillabp.cockpit.extension.spi.UserTaskEventKind;
+import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowEventKind;
+import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -63,6 +69,25 @@ public class Camunda8CockpitJobHandlerTest {
 
   private static final String FORM_REFERENCE = "approve";
 
+  /**
+   * The BPMN names the model carries. A job never says them, so they are read out of the model
+   * while the process is wired and travel in the wired listener.
+   */
+  private static final String PROCESS_NAME = "The order process";
+
+  private static final String TASK_NAME = "Approve the order";
+
+  private static final String ASSIGNEE = "bertha";
+
+  /** What only the cluster's searchable storage would answer, and never a listener job. */
+  private static final String WHAT_THE_STORAGE_SAYS = "The task as the storage holds it";
+
+  private static final OffsetDateTime DUE_DATE = OffsetDateTime
+      .parse("2026-09-17T12:00:00+02:00");
+
+  private static final OffsetDateTime FOLLOW_UP_DATE = OffsetDateTime
+      .parse("2026-09-16T08:00:00+02:00");
+
   private static final String ADAPTER_ID = "c8";
 
   /** The version of the model the jobs of this test come from, as a cluster counts it. */
@@ -83,6 +108,9 @@ public class Camunda8CockpitJobHandlerTest {
   private final Camunda8ClientFactoryRegistry clientFactories = mock(
       Camunda8ClientFactoryRegistry.class, RETURNS_DEEP_STUBS);
 
+  /** What a bridge asks for the name of the aggregate id variable, which no test here reads. */
+  private final WorkflowTaskWiring workflowTaskWiring = mock(WorkflowTaskWiring.class);
+
   private Camunda8CockpitJobHandler handler;
 
   @BeforeEach
@@ -94,21 +122,24 @@ public class Camunda8CockpitJobHandlerTest {
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
-                    .listenerTypeOf(PROCESS_ID), PROCESS_ID, PROCESS_ID, "Started", AGGREGATE_ID_NAME));
+                    .listenerTypeOf(
+                        PROCESS_ID), PROCESS_ID, PROCESS_ID, "Started", "The order arrived", PROCESS_NAME, AGGREGATE_ID_NAME));
     deployments
         .register(
             ADAPTER_ID,
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
-                    .listenerTypeOf(PROCESS_ID), PROCESS_ID, PROCESS_ID, PROCESS_ID, AGGREGATE_ID_NAME));
+                    .listenerTypeOf(
+                        PROCESS_ID), PROCESS_ID, PROCESS_ID, PROCESS_ID, PROCESS_NAME, PROCESS_NAME, AGGREGATE_ID_NAME));
     deployments
         .register(
             ADAPTER_ID,
             MODULE_ID,
             new WiredListener(
                 Camunda8CockpitListeners
-                    .listenerTypeOf(FORM_REFERENCE), PROCESS_ID, PROCESS_ID, "Approve", AGGREGATE_ID_NAME));
+                    .listenerTypeOf(
+                        FORM_REFERENCE), PROCESS_ID, PROCESS_ID, "Approve", TASK_NAME, PROCESS_NAME, AGGREGATE_ID_NAME));
     when(clientFactories.getFactory(ADAPTER_ID).drainOf(MODULE_ID)).thenReturn(drain);
     handler = new Camunda8CockpitJobHandler(
         new Camunda8Clients(clientFactories, null).of(ADAPTER_ID), MODULE_ID, deployments, () -> publisher);
@@ -151,8 +182,33 @@ public class Camunda8CockpitJobHandlerTest {
         "Approve");
     final var userTask = mock(UserTaskProperties.class);
     when(userTask.getUserTaskKey()).thenReturn(999L);
+    // what the cluster hands out with a task listener's job, which is what a report is built
+    // from
+    when(userTask.getAssignee()).thenReturn(ASSIGNEE);
+    when(userTask.getCandidateUsers()).thenReturn(List.of("carla"));
+    when(userTask.getCandidateGroups()).thenReturn(List.of("approvers"));
+    when(userTask.getDueDate()).thenReturn(DUE_DATE);
+    when(userTask.getFollowUpDate()).thenReturn(FOLLOW_UP_DATE);
     when(job.getUserTask()).thenReturn(userTask);
     return job;
+
+  }
+
+  /**
+   * A handler whose reports are answered by a real bridge of the same cluster, which is how the
+   * cockpit puts a report together: it is told about the event and asks the BPMS half what the
+   * event says, on the thread the job runs on.
+   *
+   * @return What the publisher recorded, bridge answers included
+   */
+  private RecordingPublisher aHandlerAskingItsBridge() {
+
+    final var clients = new Camunda8Clients(clientFactories, null);
+    final var asked = new RecordingPublisher(
+        new Camunda8CockpitBridge(clients.of(ADAPTER_ID), workflowTaskWiring));
+    handler = new Camunda8CockpitJobHandler(
+        clients.of(ADAPTER_ID), MODULE_ID, deployments, () -> asked);
+    return asked;
 
   }
 
@@ -192,6 +248,116 @@ public class Camunda8CockpitJobHandlerTest {
     assertEquals(String.valueOf(DEPLOYED_VERSION), reported.userTask().processVersion());
     assertEquals("88", reported.bpmsEventId());
     assertEquals(EventTransaction.NEW, reported.transaction());
+
+  }
+
+  @Test
+  @DisplayName("The report of a user task carries what its own job said, and the cluster is not asked")
+  public void aUserTaskIsReportedWithTheValuesOfItsEvent() {
+
+    final var asked = aHandlerAskingItsBridge();
+
+    handler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
+
+    final var values = asked.userTaskEvents().getFirst().values().orElseThrow();
+    assertEquals(ASSIGNEE, values.assignee());
+    assertEquals(List.of("carla"), values.candidateUsers());
+    assertEquals(List.of("approvers"), values.candidateGroups());
+    assertEquals(DUE_DATE, values.dueDate());
+    assertEquals(FOLLOW_UP_DATE, values.followUpDate());
+    // the two BPMN names are not on a job. They were read out of the model while the process
+    // was wired, and they are the title the cockpit falls back to
+    assertEquals(TASK_NAME, values.bpmnTaskName());
+    assertEquals(PROCESS_NAME, values.bpmnProcessName());
+    assertEquals(String.valueOf(DEPLOYED_VERSION), values.bpmnProcessVersion());
+    // the case, and no step below it: this task sits in the workflow it is reported under
+    assertEquals("12345", values.workflowId());
+    assertNull(values.subWorkflowId());
+
+    // nothing of this came from the cluster's searchable storage, which could not answer it: the
+    // exporter writes that storage after the transition this job gates
+    verify(
+        clientFactories.getFactory(ADAPTER_ID).getClient(), never())
+        .newUserTaskGetRequest(anyLong());
+
+  }
+
+  @Test
+  @DisplayName("The report of a workflow carries what its own job said, and the cluster is not asked")
+  public void aWorkflowIsReportedWithTheValuesOfItsEvent() {
+
+    final var asked = aHandlerAskingItsBridge();
+
+    handler
+        .handle(
+            client,
+            aJob(
+                JobKind.EXECUTION_LISTENER, ListenerEventType.END,
+                Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID), "Started"));
+
+    final var values = asked.workflowEvents().getFirst().values().orElseThrow();
+    assertEquals(PROCESS_NAME, values.bpmnProcessName());
+    assertEquals(String.valueOf(DEPLOYED_VERSION), values.bpmnProcessVersion());
+    // the business key of a VanillaBP workflow is the workflow aggregate's id, on every release
+    // line. See decision 8 in the repository's DECISIONS.md
+    assertEquals(AGGREGATE_ID, values.businessId());
+
+    verify(
+        clientFactories.getFactory(ADAPTER_ID).getClient(), never())
+        .newProcessInstanceGetRequest(anyLong());
+
+  }
+
+  @Test
+  @DisplayName("A task of a called process is reported under the case, with the called process as the step")
+  public void aTaskOfACalledProcessNamesTheCaseAndTheStep() {
+
+    final var asked = aHandlerAskingItsBridge();
+    final var job = aUserTaskJob(ListenerEventType.CREATING);
+    JobsInAHierarchy.isCalledBy(clientFactories, ADAPTER_ID, job, 777L, 12345L);
+
+    handler.handle(client, job);
+
+    final var values = asked.userTaskEvents().getFirst().values().orElseThrow();
+    assertEquals("12345", values.workflowId());
+    assertEquals("777", values.subWorkflowId());
+
+  }
+
+  @Test
+  @DisplayName("Once a job is done its values are gone, so the next job on that thread reads none of them")
+  public void theValuesOfAnEventDoNotOutliveTheirJob() {
+
+    final var clients = new Camunda8Clients(clientFactories, null);
+    final var bridge = new Camunda8CockpitBridge(clients.of(ADAPTER_ID), workflowTaskWiring);
+    handler = new Camunda8CockpitJobHandler(
+        clients.of(ADAPTER_ID), MODULE_ID, deployments, () -> publisher);
+
+    handler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
+
+    // what the cluster would answer if it were asked, which is what this test is about
+    final var record = mock(UserTask.class, RETURNS_DEEP_STUBS);
+    when(record.getName()).thenReturn(WHAT_THE_STORAGE_SAYS);
+    when(record.getCandidateUsers()).thenReturn(List.of());
+    when(record.getCandidateGroups()).thenReturn(List.of());
+    when(
+        clientFactories
+            .getFactory(ADAPTER_ID)
+            .getClient()
+            .newUserTaskGetRequest(999L)
+            .send()
+            .join())
+        .thenReturn(record);
+
+    // the same thread asks about the very task it just reported, and is answered by the cluster
+    // rather than out of an event which is over
+    final var afterwards = bridge
+        .prefilledUserTaskDetails(
+            new UserTaskReference(
+                ADAPTER_ID, MODULE_ID, PROCESS_ID, "1", AGGREGATE_ID, "12345", "999", FORM_REFERENCE, "Approve"))
+        .orElseThrow();
+
+    assertEquals(WHAT_THE_STORAGE_SAYS, afterwards.bpmnTaskName());
 
   }
 
@@ -284,10 +450,10 @@ public class Camunda8CockpitJobHandlerTest {
   }
 
   @Test
-  @DisplayName("A report collapsing into one already waiting completes the job like any other")
-  public void aCollapsedReportIsNoFailure() {
+  @DisplayName("A report which produced no entry completes the job like any other")
+  public void aReportWithoutAnEntryIsNoFailure() {
 
-    publisher.collapsesReports(true);
+    publisher.writesNothing(true);
 
     handler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
 
