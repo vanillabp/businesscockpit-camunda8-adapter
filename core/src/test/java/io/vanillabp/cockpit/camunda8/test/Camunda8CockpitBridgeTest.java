@@ -219,6 +219,37 @@ public class Camunda8CockpitBridgeTest {
   }
 
   @Test
+  @DisplayName("A workflow read from the storage is named by the workflow aggregate's id")
+  public void aWorkflowIsNamedByItsAggregateId() {
+
+    final var instance = mock(ProcessInstance.class, RETURNS_DEEP_STUBS);
+    when(instance.getProcessDefinitionVersion()).thenReturn(2);
+    when(instance.getProcessDefinitionName()).thenReturn("The cockpit process");
+    when(
+        clientFactories
+            .getFactory("c8")
+            .getClient()
+            .newProcessInstanceGetRequest(Long.parseLong(CALLING_INSTANCE))
+            .send()
+            .join())
+        .thenReturn(instance);
+
+    final var prefill = bridge()
+        .prefilledWorkflowDetails(
+            new WorkflowReference(
+                "c8", MODULE_ID, PROCESS_ID, "2", AGGREGATE_ID, CALLING_INSTANCE))
+        .orElseThrow();
+
+    // to VanillaBP a business key is a business key only where it says what the aggregate's @Id
+    // attribute says. So the report names that id, whatever a cluster holds beside it, and it
+    // names the same one whether it was built from a listener job or read here
+    assertEquals(AGGREGATE_ID, prefill.businessId());
+    assertEquals("2", prefill.bpmnProcessVersion());
+    assertEquals("The cockpit process", prefill.bpmnProcessName());
+
+  }
+
+  @Test
   @DisplayName("A task the searchable storage holds no record of is answered with nothing")
   public void aTaskTheStorageDoesNotHoldIsAnsweredWithNothing() {
 

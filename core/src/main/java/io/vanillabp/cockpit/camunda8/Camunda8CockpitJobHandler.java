@@ -357,12 +357,11 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   /**
    * What the cluster says about the workflow this job is about, read off the job.
    * <p>
-   * The business id is the workflow aggregate's id, which the reference already carries. That is
-   * the answer for every workflow VanillaBP started, because the adapter creates instances
-   * without a business id of their own, and it is the same answer on every release line. What a
-   * cluster holds as the business id of an instance somebody else started is not on a job before
-   * 8.10, and a line is allowed to differ in what it costs rather than in what it reports. See
-   * decision 7 and decision 8 in the repository's DECISIONS.md.
+   * The business id is the workflow aggregate's id, which the reference already carries. To
+   * VanillaBP a business key is a business key only where it says what the aggregate's
+   * <code>&#64;Id</code> attribute says, so the cockpit names that id and never what the cluster
+   * holds beside it. The answer is therefore the same on every release line and on every way a
+   * report is built. See decision 8 in the repository's DECISIONS.md.
    * <p>
    * Nobody is named as the initiator. Camunda 8 records who started an instance nowhere this
    * extension can read it.

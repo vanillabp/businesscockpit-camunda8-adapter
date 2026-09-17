@@ -89,7 +89,7 @@ adapters said held it, and each of those clusters was subscribed to the job type
 They are opened per adapter id and workflow module instead, and what was wired is remembered under
 the same pair. So a worker subscribes to exactly what its own cluster's models carry.
 
-## 7. A line differs in what it costs, not in what it reports - what a report reads the business id from is narrowed by decision 8
+## 7. A line differs in what it costs, not in what it reports - where the business id is read from superseded by decision 8
 
 The extension reads two things which arrived with the 8.9 client: the root process instance of a job,
 which is what tells a called process from a business case (decision 3), and the business id of a
@@ -110,6 +110,8 @@ carries it already. On 8.9 and above a business id the cluster holds wins, becau
 somebody else started may carry a case name of its own. On 8.8 there is no such field, so the
 aggregate id is the answer. Reading the variable back would cost a request to arrive at an id which
 is already in hand.
+
+That preference is gone. Decision 8 says why, and the rest of this entry stands.
 
 What line 8.8 pays for this is written where it happens. The call hierarchy is served by the
 searchable storage, so it lags behind the transition whose listener is running, and a job of a
@@ -150,13 +152,21 @@ was dispatched moments after its event. There is no entry to hand back on this w
 now an empty result and a line in the log which names both readings of it. `PhaseTwoRetryLater` is
 gone from this repository.
 
-The business id of a workflow is the workflow aggregate's id whenever a report comes from a job.
-VanillaBP starts every workflow without a business id of its own, so that is the right answer for
-every workflow it started, and the reference already carries it. A business id a cluster holds for
-an instance somebody else started reaches a job only from 8.10 on, and reading it there would make
-the 8.10 line report something the 8.9 line cannot. A line differs in what it costs, not in what it
-reports (decision 7). The read path keeps preferring what the cluster holds, which is what decision
-7 wrote and what an operator searching for a foreign case name needs.
+The business id of a workflow is the workflow aggregate's id, on every way a report is built and on
+every release line. Stephan's rule of 2026-09-17: to VanillaBP a business key is a business key only
+where it says what the `@Id` attribute of the workflow aggregate says. Camunda 7 fills the business
+key with that attribute when VanillaBP starts the process, and Camunda 8.10 is to do the same. So
+what a cluster holds beside that id is not a business key VanillaBP recognises, and the cockpit
+names the aggregate's id instead. The reference already carries it, so nothing is read for it.
+
+This replaces the preference the second half of decision 7 gave to what the cluster holds, which was
+written before the rule was. It also removes the one place where the two ways of building a report
+could have said different things: a report from a listener job and a report read for
+`aggregateChanged` now name the same id. `Camunda8BusinessIds` had nothing left to answer and is
+gone from all three per-line source sets.
+
+What happens where a business key taken over from somewhere else does NOT say what the aggregate's
+`@Id` attribute says belongs to the platform, not to this extension.
 
 A details provider which fails now stops the workflow. It runs inside the listener job, the
 listeners of this extension carry no retries (decision 5), so the cluster raises an incident and the

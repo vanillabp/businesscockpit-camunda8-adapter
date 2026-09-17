@@ -139,10 +139,11 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
         .map(
             instance -> new WorkflowDetailsPrefill(
                 processVersionOf(instance.getProcessDefinitionVersion()),
-                // where a business key comes from differs per release line, see
-                // Camunda8BusinessIds in the per-line sources
-                Camunda8BusinessIds.businessIdOf(instance, workflow), instance
-                    .getProcessDefinitionName(), null));
+                // the workflow aggregate's id, which the reference already carries. A business
+                // key is only a business key to VanillaBP where it says what the aggregate's
+                // @Id attribute says, so what the cluster holds is not read here. See decision 8
+                // in the repository's DECISIONS.md
+                workflow.workflowAggregateId(), instance.getProcessDefinitionName(), null));
 
   }
 
