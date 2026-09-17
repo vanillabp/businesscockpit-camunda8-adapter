@@ -65,6 +65,9 @@ public class Camunda8CockpitJobHandlerTest {
 
   private static final String ADAPTER_ID = "c8";
 
+  /** The version of the model the jobs of this test come from, as a cluster counts it. */
+  private static final int DEPLOYED_VERSION = 3;
+
   private final Camunda8CockpitDeployments deployments = new Camunda8CockpitDeployments();
 
   private final RecordingPublisher publisher = new RecordingPublisher();
@@ -125,6 +128,9 @@ public class Camunda8CockpitJobHandlerTest {
     when(job.getType()).thenReturn(jobType);
     when(job.getElementId()).thenReturn(elementId);
     when(job.getBpmnProcessId()).thenReturn(PROCESS_ID);
+    // every job names the version of the model it comes from, and that is what picks between
+    // details providers serving different versions of it
+    when(job.getProcessDefinitionVersion()).thenReturn(DEPLOYED_VERSION);
     // a workflow nobody called. Where a line reads that from differs, see JobsInAHierarchy in
     // the per-line test sources
     JobsInAHierarchy.isItsOwnRoot(clientFactories, ADAPTER_ID, job, 12345L);
@@ -183,6 +189,7 @@ public class Camunda8CockpitJobHandlerTest {
     assertEquals("999", reported.userTask().userTaskId());
     assertEquals(FORM_REFERENCE, reported.userTask().taskDefinition());
     assertEquals("Approve", reported.userTask().bpmnTaskId());
+    assertEquals(String.valueOf(DEPLOYED_VERSION), reported.userTask().processVersion());
     assertEquals("88", reported.bpmsEventId());
     assertEquals(EventTransaction.NEW, reported.transaction());
 
@@ -209,6 +216,9 @@ public class Camunda8CockpitJobHandlerTest {
         List.of(WorkflowEventKind.CREATED, WorkflowEventKind.COMPLETED),
         publisher.workflowEvents().stream().map(RecordingPublisher.WorkflowEvent::kind).toList());
     assertEquals("12345", publisher.workflowEvents().getFirst().workflow().workflowId());
+    assertEquals(
+        String.valueOf(DEPLOYED_VERSION),
+        publisher.workflowEvents().getFirst().workflow().processVersion());
 
   }
 
