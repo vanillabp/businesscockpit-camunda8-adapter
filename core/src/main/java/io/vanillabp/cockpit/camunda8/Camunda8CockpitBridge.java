@@ -95,7 +95,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
         .of(
             UserTaskDetailsPrefill
                 .builder()
-                .bpmnProcessVersion(String.valueOf(task.getProcessDefinitionVersion()))
+                .bpmnProcessVersion(processVersionOf(task.getProcessDefinitionVersion()))
                 // the workflow of a task is the business case, which is the instance the
                 // reference carries. For a task of a called process the cluster's own
                 // processInstanceKey is the step below that case, and the next line reports it
@@ -135,7 +135,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
     return Optional
         .of(
             new WorkflowDetailsPrefill(
-                String.valueOf(instance.getProcessDefinitionVersion()),
+                processVersionOf(instance.getProcessDefinitionVersion()),
                 // where a business key comes from differs per release line, see
                 // Camunda8BusinessIds in the per-line sources
                 Camunda8BusinessIds.businessIdOf(instance, workflow), instance
@@ -157,8 +157,9 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
         .stream()
         .map(
             instance -> new WorkflowReference(
-                adapterId(), workflowModuleId, bpmnProcessId, workflowAggregateId, String
-                    .valueOf(instance.getProcessInstanceKey())))
+                adapterId(), workflowModuleId, bpmnProcessId, processVersionOf(
+                    instance.getProcessDefinitionVersion()), workflowAggregateId, String
+                        .valueOf(instance.getProcessInstanceKey())))
         .toList();
 
   }
@@ -308,11 +309,36 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       final UserTask task) {
 
     return new UserTaskReference(
-        adapterId(), workflowModuleId, bpmnProcessId, workflowAggregateId, String
-            .valueOf(task.getProcessInstanceKey()), String.valueOf(task.getUserTaskKey()), cluster
-                .scope()
-                .plainTaskDefinitionOf(workflowModuleId, bpmnProcessId,
-                    task.getExternalFormReference()), task.getElementId());
+        adapterId(), workflowModuleId, bpmnProcessId, processVersionOf(
+            task.getProcessDefinitionVersion()), workflowAggregateId, String
+                .valueOf(task.getProcessInstanceKey()), String.valueOf(task.getUserTaskKey()), cluster
+                    .scope()
+                    .plainTaskDefinitionOf(workflowModuleId, bpmnProcessId,
+                        task.getExternalFormReference()), task.getElementId());
+
+  }
+
+  /**
+   * The version of the deployed BPMN process, spelled the way Camunda 8 counts it: the number
+   * the cluster raises by one every time a model is deployed under a process id it already
+   * holds.
+   * <p>
+   * The searchable storage answers no version at all for a record whose process definition it
+   * has not written yet, and that is why this is not a plain conversion. Such a record carries
+   * no version, and the reference says so by carrying none: the platform then serves the report
+   * with a details provider which names no version, and passes over every provider which names
+   * one. The text <code>"null"</code> would lose against every version range just the same, but
+   * it would read like a version somebody deployed, in a message and on a screen alike.
+   *
+   * @param version What the cluster answered
+   * @return The version as a string, or <code>null</code> where the cluster named none
+   */
+  private static String processVersionOf(
+      final Integer version) {
+
+    return version == null
+        ? null
+        : String.valueOf(version);
 
   }
 

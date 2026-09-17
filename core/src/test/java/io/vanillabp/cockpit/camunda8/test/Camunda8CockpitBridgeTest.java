@@ -1,6 +1,7 @@
 package io.vanillabp.cockpit.camunda8.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 
 import io.camunda.client.api.search.filter.ProcessInstanceFilter;
+import io.camunda.client.api.search.response.ProcessInstance;
 import io.camunda.client.api.search.response.UserTask;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
@@ -90,6 +92,19 @@ public class Camunda8CockpitBridgeTest {
    */
   private Camunda8CockpitBridge bridgeOfAScopedModule() {
 
+    return bridgeOfAScopedModule(List.of());
+
+  }
+
+  /**
+   * A bridge of a cluster which prefixes what it is told.
+   *
+   * @param found What the cluster answers the workflow search with
+   * @return The bridge
+   */
+  private Camunda8CockpitBridge bridgeOfAScopedModule(
+      final List<ProcessInstance> found) {
+
     when(scoping.scopedProcessId(MODULE_ID, PROCESS_ID, "c8")).thenReturn(SCOPED_PROCESS_ID);
     when(workflowTaskWiring.resolveWorkflowAggregateIdName(MODULE_ID, PROCESS_ID))
         .thenReturn(AGGREGATE_ID_NAME);
@@ -97,12 +112,36 @@ public class Camunda8CockpitBridgeTest {
         .getFactory("c8")
         .getClient()
         .newProcessInstanceSearchRequest();
-    when(search.filter(any(Consumer.class)).send().join().items()).thenReturn(List.of());
+    // a search request answers itself, so what the cluster answers is stubbed once instead of
+    // through the deep stub of one particular call of 'filter' - a deep stub of a call with
+    // another argument is another mock, and that one answers an empty list
+    when(search.filter(any(Consumer.class))).thenReturn(search);
+    when(search.send().join().items()).thenReturn(found);
     // the stubbing above called 'filter' itself. What the test asserts is the one call the
     // bridge makes, because a second call would replace the first rather than add to it
     clearInvocations(search);
     final var clients = new Camunda8Clients(clientFactories, scoping);
     return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring);
+
+  }
+
+  /**
+   * One workflow the cluster's searchable storage holds.
+   *
+   * @param version The version of the model it runs on, or <code>null</code> where the storage
+   *          names none
+   * @return The record
+   */
+  private static ProcessInstance aWorkflowOnVersion(
+      final Integer version) {
+
+    final var instance = mock(ProcessInstance.class);
+    when(instance.getProcessInstanceKey()).thenReturn(Long.parseLong(CALLING_INSTANCE));
+    when(instance.getProcessDefinitionVersion()).thenReturn(version);
+    // nobody called this workflow, which is how a business case looks. An unstubbed answer
+    // would be zero rather than nothing, and zero reads as a workflow which was called
+    when(instance.getParentProcessInstanceKey()).thenReturn(null);
+    return instance;
 
   }
 
@@ -167,7 +206,7 @@ public class Camunda8CockpitBridgeTest {
     final var prefill = bridge()
         .prefilledUserTaskDetails(
             new UserTaskReference(
-                "c8", MODULE_ID, PROCESS_ID, AGGREGATE_ID, CALLING_INSTANCE, USER_TASK_ID, "handle", "Handle"))
+                "c8", MODULE_ID, PROCESS_ID, "1", AGGREGATE_ID, CALLING_INSTANCE, USER_TASK_ID, "handle", "Handle"))
         .orElseThrow();
 
     // the case is the calling workflow, and the instance the task sits in is the step below it
@@ -190,6 +229,32 @@ public class Camunda8CockpitBridgeTest {
     // 'use-prefix' puts no workflow module into a tenant, and a tenant nobody uses would
     // narrow the search to workflows which do not exist
     verify(filter, never()).tenantId(anyString());
+
+  }
+
+  @Test
+  @DisplayName("The reference of a workflow names the version of the model it runs on")
+  public void aWorkflowReferenceCarriesItsProcessVersion() {
+
+    final var found = bridgeOfAScopedModule(List.of(aWorkflowOnVersion(3)))
+        .workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
+
+    // the number the cluster counted up when the model was deployed, which is what picks
+    // between details providers serving different versions of it
+    assertEquals("3", found.getFirst().processVersion());
+
+  }
+
+  @Test
+  @DisplayName("A workflow the cluster names no version for is referenced without one")
+  public void aWorkflowWithoutAVersionIsReferencedWithoutOne() {
+
+    final var found = bridgeOfAScopedModule(List.of(aWorkflowOnVersion(null)))
+        .workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
+
+    // no version, rather than the text 'null'. Both lose against every version range, and only
+    // one of them reads like a version somebody deployed
+    assertNull(found.getFirst().processVersion());
 
   }
 

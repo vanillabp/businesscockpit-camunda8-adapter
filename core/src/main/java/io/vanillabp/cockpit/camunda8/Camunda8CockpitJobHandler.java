@@ -211,8 +211,9 @@ public class Camunda8CockpitJobHandler implements JobHandler {
         .get()
         .publishUserTaskEvent(
             new UserTaskReference(
-                adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(
-                    job), userTaskKey, taskDefinition, job.getElementId()),
+                adapterId(), workflowModuleId, listener.bpmnProcessId(), processVersionOf(
+                    job), workflowAggregateId, workflowIdOf(
+                        job), userTaskKey, taskDefinition, job.getElementId()),
             // the worker's clock, because a listener job carries no time of its own. It is
             // handed out while the transition it gates waits, and what the cluster records
             // about that transition is written by the exporter afterwards
@@ -252,7 +253,8 @@ public class Camunda8CockpitJobHandler implements JobHandler {
         .get()
         .publishWorkflowEvent(
             new WorkflowReference(
-                adapterId(), workflowModuleId, listener.bpmnProcessId(), workflowAggregateId, workflowIdOf(job)),
+                adapterId(), workflowModuleId, listener.bpmnProcessId(), processVersionOf(
+                    job), workflowAggregateId, workflowIdOf(job)),
             // the worker's clock, for the reason given where a user task is reported
             kind, String.valueOf(job.getKey()), OffsetDateTime.now(), EventTransaction.NEW);
     if (!written) {
@@ -308,6 +310,25 @@ public class Camunda8CockpitJobHandler implements JobHandler {
     return listener.scopedBpmnProcessId().equals(job.getElementId())
         ? WorkflowEventKind.COMPLETED
         : WorkflowEventKind.CREATED;
+
+  }
+
+  /**
+   * The version of the deployed BPMN process this job comes from, which is what picks between
+   * details providers serving different versions of one model.
+   * <p>
+   * A job always names it, and it is the version of the job's OWN process. For a task of a
+   * called process that is the called model, which is also the model the reference names - the
+   * workflow the report is filed under is the case above it (see decision 3 in the repository's
+   * DECISIONS.md), but the process id and the version belong together.
+   *
+   * @param job The listener job
+   * @return The version, as the cluster counts it
+   */
+  private static String processVersionOf(
+      final ActivatedJob job) {
+
+    return String.valueOf(job.getProcessDefinitionVersion());
 
   }
 

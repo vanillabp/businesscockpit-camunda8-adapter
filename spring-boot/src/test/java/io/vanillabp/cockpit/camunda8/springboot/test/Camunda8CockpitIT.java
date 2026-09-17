@@ -34,6 +34,7 @@ import io.camunda.client.api.search.enums.UserTaskState;
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
 import io.camunda.zeebe.model.bpmn.instance.BaseElement;
+import io.camunda.zeebe.model.bpmn.instance.Process;
 import io.camunda.zeebe.model.bpmn.instance.UserTask;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
@@ -465,21 +466,33 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Test
-  @DisplayName("The deployed model carries the cockpit's listeners, under the identifiers the cluster knows")
-  public void theDeployedModelCarriesTheListeners() {
+  /**
+   * The BPMN process of the test as the cluster spells it. The workflow module runs under
+   * <code>use-prefix</code>, so every identifier the cluster knows carries the module's prefix.
+   */
+  private static String scopedProcessId() {
+
+    return "%s__%s".formatted(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID);
+
+  }
+
+  /**
+   * The model of the test as the cluster holds it, listeners and all.
+   *
+   * @return The newest deployed version of it
+   */
+  private BpmnModelInstance theDeployedModel() {
 
     final var definitionKey = awaitValue(
         () -> client()
             .newProcessDefinitionSearchRequest()
-            .filter(filter -> filter
-                .processDefinitionId("%s__%s".formatted(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID)))
+            .filter(filter -> filter.processDefinitionId(scopedProcessId()))
             .send()
             .join()
             .items()
             .stream()
-            .findFirst()
             .map(definition -> definition.getProcessDefinitionKey())
+            .max(Long::compare)
             .orElse(null),
         "the deployed process definition");
 
@@ -487,11 +500,47 @@ public class Camunda8CockpitIT {
         .newProcessDefinitionGetXmlRequest(definitionKey)
         .send()
         .join();
-    final var model = Bpmn
-        .readModelFromStream(
-            new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+    return Bpmn
+        .readModelFromStream(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
 
-    final var scopedProcessId = "%s__%s".formatted(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID);
+  }
+
+  /**
+   * Deploys the model the cluster already holds a second time, with one attribute changed.
+   * <p>
+   * This is how a second version of one BPMN process gets into a test which has only one
+   * application: the application deploys version 1 while it starts, and it deploys nothing
+   * afterwards. Deploying the same bytes again would leave the cluster on version 1, because a
+   * cluster counts a version per set of bytes. So the process gets another name, which is a
+   * change no test reads and no listener depends on. Everything else stays what the extension
+   * wrote into version 1, so the jobs of version 2 carry the very job types this workflow module
+   * wired.
+   *
+   * @return The version the cluster assigned
+   */
+  private int aSecondVersionOfTheDeployedModel() {
+
+    final var model = theDeployedModel();
+    ((Process) model.getModelElementById(scopedProcessId()))
+        .setName("The cockpit process, deployed a second time");
+    return client()
+        .newDeployResourceCommand()
+        .addProcessModel(model, "%s.bpmn".formatted(TestWorkflowService.BPMN_PROCESS_ID))
+        .send()
+        .join()
+        .getProcesses()
+        .getFirst()
+        .getVersion();
+
+  }
+
+  @Test
+  @DisplayName("The deployed model carries the cockpit's listeners, under the identifiers the cluster knows")
+  public void theDeployedModelCarriesTheListeners() {
+
+    final var model = theDeployedModel();
+
+    final var scopedProcessId = scopedProcessId();
     final var scopedTaskDefinition = "%s__%s__%s"
         .formatted(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, TestWorkflowService.TASK_DEFINITION);
 
@@ -556,6 +605,59 @@ public class Camunda8CockpitIT {
     // aChangeMadeWhileADetailsProviderHoldsTheCaseSurvives asks for that. The reason it is asked
     // for per case is that a write in a provider lands in whatever transaction ran the provider -
     // the dispatch of a report here, and the caller of getUserTask in the tests which read.
+
+  }
+
+  @Test
+  @DisplayName("A details provider is picked by the version of the deployed process")
+  public void aDetailsProviderIsPickedByTheDeployedVersion() {
+
+    // version 1 is what this application deployed while it started, and nothing else in this
+    // class deploys anything
+    final var onVersionOne = aStartedWorkflow("Vera");
+    final var firstTask = awaitReportCarrying("/usertask/created", "\"customer\":\"Vera\"", onVersionOne);
+    assertTrue(
+        firstTask
+            .body()
+            .contains(servedBy(TestWorkflowService.SERVED_BY_VERSION_ONE)),
+        firstTask.body());
+    // and the version the cluster reported travelled all the way into the report
+    assertTrue(firstTask.body().contains("\"bpmnProcessVersion\":\"1\""), firstTask.body());
+
+    assertEquals(2, aSecondVersionOfTheDeployedModel(), "the cluster counted no second version");
+
+    // a workflow started now runs on the version the cluster deployed last, so the method
+    // serving '>1' is the one which has to run, and the method serving '1' is the one which
+    // must not
+    final var onVersionTwo = aStartedWorkflow("Viktor");
+    final var secondTask = awaitReportCarrying(
+        "/usertask/created", "\"customer\":\"Viktor\"", onVersionTwo);
+    assertTrue(
+        secondTask
+            .body()
+            .contains(servedBy(TestWorkflowService.SERVED_BY_LATER_VERSIONS)),
+        secondTask.body());
+    assertTrue(secondTask.body().contains("\"bpmnProcessVersion\":\"2\""), secondTask.body());
+
+    // the workflow of that case is chosen the same way, by its own pair of methods
+    final var secondWorkflow = awaitReportCarrying(
+        "/workflow/created", "\"customer\":\"Viktor\"", onVersionTwo);
+    assertTrue(
+        secondWorkflow
+            .body()
+            .contains(servedBy(TestWorkflowService.SERVED_BY_LATER_VERSIONS)),
+        secondWorkflow.body());
+
+  }
+
+  /**
+   * @param servedBy What a details provider of the test application writes about itself
+   * @return How a report carries it
+   */
+  private static String servedBy(
+      final String servedBy) {
+
+    return "\"%s\":\"%s\"".formatted(TestWorkflowService.SERVED_BY, servedBy);
 
   }
 
@@ -857,12 +959,15 @@ public class Camunda8CockpitIT {
     final var aggregate = aStartedWorkflow("Dora");
     final var unknownWorkflowId = aKeyTheClusterDoesNotHold(workflowIdOf(aggregate));
     final var unknownUserTaskId = aKeyTheClusterDoesNotHold(userTaskIdOf(aggregate));
+    // no process version: these references are about records the cluster does not hold, and a
+    // version is something only such a record would name
     final var unknownUserTask = new UserTaskReference(
-        "c8", MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, String
+        "c8", MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, null, String
             .valueOf(aggregate
                 .getId()), unknownWorkflowId, unknownUserTaskId, TestWorkflowService.TASK_DEFINITION, TestWorkflowService.BPMN_TASK_ID);
     final var unknownWorkflow = new WorkflowReference(
-        "c8", MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, String.valueOf(aggregate.getId()), unknownWorkflowId);
+        "c8", MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, null, String
+            .valueOf(aggregate.getId()), unknownWorkflowId);
 
     final var aboutTheUserTask = assertThrows(
         PhaseTwoRetryLater.class,
