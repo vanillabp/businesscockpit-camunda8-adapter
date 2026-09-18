@@ -4,6 +4,9 @@
 
 [![Apache License V.2](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 
+Spring Boot [![Coverage](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fvanillabp.github.io%2Fbusinesscockpit-camunda8-adapter%2Fspring-boot-report%2Findex.html&search=Total.*%3F.([0-9]%2B)[^0-9]*%3F%25&replace=%241%25&flags=m&label=Coverage&color=green&cacheSeconds=60)](https://vanillabp.github.io/businesscockpit-camunda8-adapter/spring-boot-report)<br>
+Quarkus [![Coverage](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fvanillabp.github.io%2Fbusinesscockpit-camunda8-adapter%2Fquarkus-report%2Findex.html&search=Total.*%3F.([0-9]%2B)[^0-9]*%3F%25&replace=%241%25&flags=m&label=Coverage&color=green&cacheSeconds=60)](https://vanillabp.github.io/businesscockpit-camunda8-adapter/quarkus-report)
+
 This repository holds the [VanillaBP Business Cockpit](https://github.com/vanillabp/business-cockpit)
 integration for [Camunda 8](https://camunda.com/platform/), built as an extension of
 [VanillaBP](https://www.vanillabp.io) Version 2. The cockpit shows user tasks and business cases to
@@ -262,6 +265,11 @@ already running is never cancelled, because two runs publishing at the same time
 each other. `release.yaml` is started by hand, reads the live lines out of the `line-*` profiles so
 it cannot fall behind the build, and publishes each of them to Maven Central from the same commit.
 It deploys no snapshot, so it can run beside a publish.
+
+`deploy-to-github-packages.yaml` also publishes the two coverage reports to GitHub Pages, which is
+what the badges at the top of this page link to. The number is the current GA line and nothing
+else: the publish names no `line-*` profile, and a build without one is line 8.9. The nightly
+matrix builds and tests the other lines, but it writes no report.
 
 ## Noteworthy & Contributors
 

@@ -20,6 +20,13 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: read
+  # what 'actions/deploy-pages' in the 'deploy-coverage-report' job needs: 'pages: write'
+  # to publish the page, and 'id-token: write' for the token it exchanges with the Pages
+  # service. That job names no permissions of its own, so it gets these. The 'publish'
+  # job does name its own, which replace these for it - it only uploads the reports as an
+  # artifact, and that needs neither.
+  pages: write
+  id-token: write
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -40,6 +47,21 @@ jobs:
           USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
           USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      # The reports are already there: the step above runs the whole lifecycle up to
+      # 'deploy', and JaCoCo writes both of them in 'verify'. So this step only copies them
+      # under the names they get on the web. A name is the last part of the address the
+      # badge in README.md reads, and it follows the sibling repositories, which measure
+      # each platform on its own and call the two reports 'spring-boot-report' and
+      # 'quarkus-report'.
+      - name: Merge coverage reports
+        run: |
+          mkdir -p coverage
+          cp -r test-coverage-report/spring-boot/report coverage/spring-boot-report
+          cp -r test-coverage-report/quarkus/report coverage/quarkus-report
+      - name: Upload coverage report files as artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: coverage
       - name: Upload the test reports of a failed build
         if: failure()
         uses: actions/upload-artifact@v7
@@ -51,3 +73,20 @@ jobs:
             **/target/*application*.log
           retention-days: 7
           if-no-files-found: ignore
+  # A job of its own, because the deployment runs in the environment 'github-pages' and
+  # the job which builds the artifact must not. It waits for 'publish' and takes the
+  # artifact that job uploaded.
+  deploy-coverage-report:
+    # This workflow starts on a push to main only, so the condition is true for every run
+    # it has today. It is here for the day somebody adds a trigger: a page built from
+    # another branch would overwrite the report of main.
+    if: "${{ github.ref_name == github.event.repository.default_branch }}"
+    environment:
+      name: github-pages
+      url: "${{ steps.deployment.outputs.page_url }}"
+    runs-on: ubuntu-latest
+    needs: publish
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
