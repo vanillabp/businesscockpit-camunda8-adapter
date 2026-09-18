@@ -179,3 +179,42 @@ What a user of this adapter sees differently afterwards is two things. A report 
 case said when the event happened rather than what it said when the report went out, which is the
 whole point. And a report which cannot be built never goes out at all, where it used to go out
 late.
+
+## 9. An old line holds up a release, not a pull request
+
+A pull request builds the current GA line and tests it against that line's cluster. Every other
+line waits for the nightly matrix. Only a pull request which moves a pin runs the matrix itself,
+because a pin of line 8.8 is not compiled by a build of line 8.9.
+
+Stephan's rule of 2026-09-18. The waiting is right, because nothing between two releases is
+released. Every artifact `main` produces is a SNAPSHOT, so a line which goes red in the night has
+broken nothing anybody depends on, and the morning is early enough to hear about it. That is what
+the matrix is for: it finds a change of the main line which does not work on another one. Running
+it on every pull request would buy hours of integration tests to learn the same thing earlier than
+anybody needs it.
+
+Two rules make that safe, and they are what this entry is for.
+
+The first is the release. A release runs only while every current line is green in the full matrix,
+tests and cluster included. The gate is that matrix itself, called from `release.yaml` before
+anything is built for publication, and not a look at what the matrix said last night. Last night's
+result is about last night's SNAPSHOTs of the VanillaBP Camunda 8 adapter and of the cockpit's
+`extensions-commons`, which every build resolves afresh, so the commit is the smaller half of what
+"the same thing" means. There is no input which switches the gate off, because a defect published
+to Maven Central cannot be taken back.
+
+A line which is not current yet is not asked. Line 8.10 is an alpha, it is published as a preview,
+and the nightly matrix already leaves it out because a user-task listener job never reaches its
+worker on that alpha. The list in `line-matrix.yaml` is the one place which says which lines are
+proven, and the release reads it by running that workflow rather than keeping a list of its own.
+The preview line is still released. Its version says alpha, and nothing claims it was proven.
+
+The second is the issue. A line which breaks in the night gets a GitHub issue, so that the break is
+seen and fixed rather than scrolled past. `release-lines-issue.yaml` opens it, one per line, and
+writes the line, the commit, what the log said and a link to the run. A line which is still red the
+next night gets a comment on the issue it already has, which is found again by the label
+`release-lines` and a title naming only the line. A line which is green again gets a comment saying
+so, and the issue stays open. A green night is not a fix: the 8.8 defect of September 2026 lost a
+workflow in about one run out of four, so three nights out of four it was green. Closing the issue
+would also mean the next red night opens a second one, and one break would end up spread over
+several. The person who merged the fix is the one who closes it.
