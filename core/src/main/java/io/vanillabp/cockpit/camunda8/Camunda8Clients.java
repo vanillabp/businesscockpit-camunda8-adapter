@@ -30,10 +30,13 @@ public class Camunda8Clients {
 
     private final Camunda8EventBeingReported eventBeingReported = new Camunda8EventBeingReported();
 
+    private final Camunda8CallHierarchy callHierarchy;
+
     private Cluster(
         final Camunda8Scope scope) {
 
       this.scope = scope;
+      this.callHierarchy = new Camunda8CallHierarchy(this);
 
     }
 
@@ -57,6 +60,23 @@ public class Camunda8Clients {
     public Camunda8EventBeingReported eventBeingReported() {
 
       return eventBeingReported;
+
+    }
+
+    /**
+     * Which workflow a job of this cluster belongs to, which is not the job's own process
+     * instance when that instance was called by another one. How it is found differs per release
+     * line, see {@link Camunda8CallHierarchy} in the per-line sources.
+     * <p>
+     * It belongs to the cluster and not to a worker, because what it answers is a property of a
+     * process instance. Every worker of a workflow asks about the same instances, so a lookup per
+     * worker would buy the same answer several times on the line which has to pay for it.
+     *
+     * @return The lookup of this cluster
+     */
+    Camunda8CallHierarchy callHierarchy() {
+
+      return callHierarchy;
 
     }
 

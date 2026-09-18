@@ -2,6 +2,7 @@ package io.vanillabp.cockpit.camunda8;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import io.camunda.client.CamundaClient;
+import io.camunda.client.api.command.ClientHttpException;
 import io.camunda.client.api.response.ActivatedJob;
 import io.camunda.client.api.search.response.ProcessInstanceCallHierarchyEntryResponse;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
@@ -77,12 +79,41 @@ public class Camunda8CallHierarchyTest {
   }
 
   @Test
+  @DisplayName("A workflow which stands in no hierarchy is answered at once, without waiting")
+  public void anEmptyHierarchyIsAnsweredAtOnce() {
+
+    final var asked = new AtomicInteger();
+    when(client().newProcessInstanceGetCallHierarchyRequest(12345L).send().join())
+        .thenAnswer(request -> {
+          asked.incrementAndGet();
+          return List.of();
+        });
+
+    assertNull(hierarchy.rootProcessInstanceKeyOf(aJobOf(12345L)));
+
+    // an 8.8 cluster answers a workflow nobody called with no entries at all, which is nearly
+    // every workflow there is. Reading that as a storage which has not caught up would hold the
+    // transition of every listener job open for the whole window
+    assertEquals(1, asked.get());
+
+  }
+
+  @Test
   @DisplayName("A hierarchy the searchable storage does not hold yet ends as a workflow of its own")
   public void anUnknownHierarchyIsARootWorkflow() {
 
-    clusterAnswers(12345L, List.of());
+    final var asked = new AtomicInteger();
+    when(client().newProcessInstanceGetCallHierarchyRequest(12345L).send().join())
+        .thenAnswer(request -> {
+          asked.incrementAndGet();
+          // the cluster holds no instance of that key: the exporter has not written it yet
+          throw new ClientHttpException(404, "Not Found");
+        });
 
     assertNull(hierarchy.rootProcessInstanceKeyOf(aJobOf(12345L)));
+
+    // this is the answer worth asking again for, so the lookup used its window on it
+    assertTrue(asked.get() > 1, "the lookup gave up after one attempt");
 
   }
 
@@ -100,7 +131,7 @@ public class Camunda8CallHierarchyTest {
     when(client().newProcessInstanceGetCallHierarchyRequest(12345L).send().join())
         .thenAnswer(request -> {
           asked.incrementAndGet();
-          return List.of();
+          throw new ClientHttpException(404, "Not Found");
         });
 
     assertNull(hierarchy.rootProcessInstanceKeyOf(aJobOf(12345L)));

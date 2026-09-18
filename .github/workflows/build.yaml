@@ -86,6 +86,45 @@ jobs:
             --update-snapshots
         run: bin/api-identity.sh
 
+  # The unit tests of every line, which need no cluster either.
+  #
+  # The build job above tests the current GA line alone, and the integration tests of the other
+  # lines wait for the nightly matrix. Their UNIT tests do not have to wait. A line carries source
+  # directories of its own, src/main/java-line-<n> and src/test/java-line-<n>, and what stands
+  # there is exactly what a build of another line never runs. So a defect which lives in one of
+  # them is invisible to every check of a pull request, and the first thing that sees it is the
+  # matrix, in the night, after the merge. That happened on the 18th of September 2026 with the
+  # call-hierarchy lookup of line 8.8.
+  #
+  # No cluster and no adapter checkout: this builds against the published snapshot of the Camunda
+  # 8 adapter, as the API check does. What a line's cluster really answers is still the matrix's
+  # business.
+  line-unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          java-version: 21.0.12+101.0.LTS
+          distribution: temurin
+          cache: maven
+      - name: The unit tests of every line
+        # 'clean' per line, because classes compiled against another client are binary compatible
+        # with nothing, and the per-line source directory of the line before is still in target/
+        run: |
+          mapfile -t lines < <(sed -n 's|.*<id>line-\([0-9][^<]*\)</id>.*|\1|p' pom.xml)
+          for line in "${lines[@]}"; do
+            echo "== unit tests of line ${line}"
+            mvn -s "$GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml" \
+              --batch-mode --no-transfer-progress --update-snapshots \
+              "-Pline-${line}" "-Drevision=0.0.0-${line}-unit-tests" \
+              -pl core -am \
+              clean test
+          done
+
   # The Renovate configuration is not read, it is run: the validator on the repository
   # configuration and on the shareable preset, and the gating check which proves that a
   # consumer of one line is never offered another one.
