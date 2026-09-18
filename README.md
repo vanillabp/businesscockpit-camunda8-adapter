@@ -105,6 +105,17 @@ column only once a build of that line has been proven against it. The integratio
 cluster of the client their line pins, so a line's tests meet the oldest cluster its artifacts
 accept.
 
+A client downgrade inside a line is not supported. Camunda adds enum literals and interface
+methods in patch releases and does not count that as breaking, so a build compiled against
+`8.9.19` can call a method `8.9.11` never had. Going back therefore fails at runtime and nowhere
+near the downgrade. Move the pin forward instead, or move to the line whose pin you want.
+
+The same habit is why a moved pin is read rather than trusted. Every pull request which raises one
+gets a comment naming the enum literals and the interface methods the new version added, and on a
+GA line it also gets a red check. That check is `client-api-changes.yaml` of
+`vanillabp/camunda8-adapter`, called from `.github/workflows/client-api-changes.yaml` here, so both
+repositories answer the same way.
+
 The preview line is compiled but not run. A user-task listener job never reaches its worker on
 `camunda/camunda:8.10.0-alpha4`. The REST gateway throws a `NullPointerException` while converting
 it and drops the whole activate-jobs batch, which starves the execution listeners beside it

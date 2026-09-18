@@ -1,0 +1,20 @@
+name: Client API changes
+# What a Camunda 8 client bump added to the classes, said on the pull request which raises
+# the pin.
+#
+# Camunda does not count a new enum literal or a new interface method as breaking, so
+# neither is documented, not even between two patches of one line. Both break this
+# extension the same way they break the adapter, and the pins here are raised by hand, so
+# there is no release note to read and nobody to ask.
+#
+# The check itself lives in vanillabp/camunda8-adapter, next to the pins it was written
+# for. Written once, called here, so the two repositories cannot answer differently.
+"on":
+  pull_request:
+    types: [opened, synchronize, labeled]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  client-api-changes:
+    uses: vanillabp/camunda8-adapter/.github/workflows/client-api-changes.yaml@main
