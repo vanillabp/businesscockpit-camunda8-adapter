@@ -96,14 +96,26 @@ means there:
 |   Channel   |        Version        | Camunda 8 adapter line |   Client pin    | Tested against |
 |-------------|-----------------------|------------------------|-----------------|----------------|
 | previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.37`        | `8.8.37`       |
-| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.18`        | `8.9.18`       |
-| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha4` | not yet        |
+| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.19`        | `8.9.19`       |
+| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha5` | not yet        |
 
 The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
 Camunda offers, and they move when that repository moves. A cluster version appears in the last
-column only once a build of that line has been proven against it. The integration tests start the
-cluster of the client their line pins, so a line's tests meet the oldest cluster its artifacts
-accept.
+column only once a build of that line has been proven against it.
+
+The integration tests do not start the cluster this POM pins. The image comes from
+`camunda8-adapter-test-support`: the Camunda 8 adapter filters its own pin into
+`camunda8-cluster.properties` while building that artifact, and `ClusterUnderTest` reads the image
+from there. So a pin here says what the code is compiled against, and the adapter says what it is
+run against. Both say the same thing for as long as the two pins are equal, which is the whole
+reason the pins here are raised whenever that repository raises one, see
+[decision 10](./DECISIONS.md).
+
+While they are not equal, a line runs a client older than the cluster answering it. Nothing fails
+over that. The literals the newer cluster gained arrive as `UNKNOWN_ENUM_VALUE`, and a fallback
+nobody chose reads like one somebody did. So the nightly matrix is what says it: every line it
+builds prints the image the adapter named beside its own pin, and the line is red while the two
+differ. A line the night leaves out is not covered, which today is the preview line.
 
 A client downgrade inside a line is not supported. Camunda adds enum literals and interface
 methods in patch releases and does not count that as breaking, so a build compiled against
@@ -116,13 +128,14 @@ GA line it also gets a red check. That check is `client-api-changes.yaml` of
 `vanillabp/camunda8-adapter`, called from `.github/workflows/client-api-changes.yaml` here, so both
 repositories answer the same way.
 
-The preview line is compiled but not run. A user-task listener job never reaches its worker on
-`camunda/camunda:8.10.0-alpha4`. The REST gateway throws a `NullPointerException` while converting
-it and drops the whole activate-jobs batch, which starves the execution listeners beside it
-(`camunda/camunda#58193`, open). Ten of the fifteen integration tests then sit in their deadline.
-So the nightly matrix leaves this line out and says so, while the API check still compiles it on
-every pull request. The VanillaBP Camunda 8 adapter keeps the same alpha out of its pull-request
-checks for the same bug.
+The preview line is compiled but not run. A user-task listener job never reached its worker on
+`camunda/camunda:8.10.0-alpha4`, the alpha this line pinned when that was measured. The REST
+gateway throws a `NullPointerException` while converting the job and drops the whole activate-jobs
+batch, which starves the execution listeners beside it (`camunda/camunda#58193`, open). Ten of the
+fifteen integration tests then sit in their deadline. The line pins `8.10.0-alpha5` today and that
+issue is still open, so the nightly matrix keeps leaving the line out and says so, while the API
+check still compiles it on every pull request. The VanillaBP Camunda 8 adapter keeps the same alpha
+out of its pull-request checks for the same bug.
 
 Snapshots have no suffix. Until the first release they are `0.9.0-SNAPSHOT` of the current GA line,
 which is what a build without a profile produces, and every line still reads the same
@@ -178,7 +191,10 @@ proven by the adapter's own matrix. Once the adapter publishes a snapshot per li
 
 The cluster a line meets is the adapter's word rather than ours. Its `test-support` artifact carries
 the image and the secondary storage of its line, and the tests here start what that artifact names,
-which is why line 8.8 runs with an Elasticsearch beside the cluster and the newer lines do not.
+which is why line 8.8 runs with an Elasticsearch beside the cluster and the newer lines do not. The
+last step of a line reads that image back and holds it against the client this POM pins for the
+same line, so a pin which fell behind the adapter's turns the line red instead of staying
+invisible.
 
 What no cluster can answer is whether the lines offer the same thing. `bin/api-identity.sh` builds
 every line and compares the public API of every JAR with `javap`, and the job `api-identity` runs it
