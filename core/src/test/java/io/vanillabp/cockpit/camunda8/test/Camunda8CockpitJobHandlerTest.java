@@ -220,12 +220,17 @@ public class Camunda8CockpitJobHandlerTest {
     handler.handle(client, aUserTaskJob(ListenerEventType.CANCELING));
     handler.handle(client, aUserTaskJob(ListenerEventType.COMPLETING));
     handler.handle(client, aUserTaskJob(ListenerEventType.ASSIGNING));
+    // Camunda adds listener events inside a release line without calling it breaking, and
+    // a client older than the cluster answers UNKNOWN_ENUM_VALUE for one it has no literal
+    // for. That is a change of the task and nothing more specific, like every other event
+    // this extension did not ask for
+    handler.handle(client, aUserTaskJob(ListenerEventType.UNKNOWN_ENUM_VALUE));
 
     assertEquals(
         List
             .of(
                 UserTaskEventKind.CREATED, UserTaskEventKind.CANCELED, UserTaskEventKind.COMPLETED,
-                UserTaskEventKind.UPDATED),
+                UserTaskEventKind.UPDATED, UserTaskEventKind.UPDATED),
         publisher.userTaskEvents().stream().map(RecordingPublisher.UserTaskEvent::kind).toList());
 
   }
