@@ -174,6 +174,15 @@ every line and compares the public API of every JAR with `javap`, and the job `a
 on every pull request. A line may differ in what it does, never in what it offers. A user must never
 read the version suffix to find out which methods exist.
 
+An old line therefore holds up a release and not a pull request, and two rules pay for that. A
+release runs only while every current line is green in the full matrix: `release.yaml` calls
+`line-matrix.yaml` as its first job and publishes nothing until it is green. The preview line is
+left out of that gate the same way the night leaves it out, and it is released all the same,
+because its version says alpha. And a line which breaks in the night opens a GitHub issue, written
+by `release-lines-issue.yaml` and labelled `release-lines`, with the line, the commit and what the
+log said. A line which is still red the next night gets a comment on that issue rather than a
+second issue. See [decision 9](./DECISIONS.md).
+
 ### Version ordering, and why Renovate does not use maven versioning
 
 Maven orders the suffix as an addition rather than as a pre-release, and that is what makes the

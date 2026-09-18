@@ -32,9 +32,38 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  # No release while a CURRENT line is red. A line which is not current yet is not asked:
+  # 8.10 is an alpha, it is published as a preview, and the matrix leaves it out because a
+  # user-task listener job never reaches its worker on that alpha. Which lines those are is
+  # the matrix's own word, not a second list kept here.
+  #
+  # The gate is the nightly matrix itself, called here, and not a look at what the matrix
+  # said last night. Reading last night's result would be cheaper, and it would prove less
+  # than it looks. This repository compiles against SNAPSHOTs of the VanillaBP Camunda 8
+  # adapter and of the cockpit's extensions-commons, and every build resolves them with
+  # --update-snapshots at the moment it runs. So a green run of last night says that the
+  # code of that commit worked with the artifacts of that night, and the release publishes
+  # today's. The commit is the smaller half of the question. Running the matrix inside the
+  # release builds the commit which is released against the artifacts it is released
+  # against, and it needs no rule about what "the same commit" means after a merge.
+  #
+  # It costs the release about forty minutes. A release is dispatched by hand and happens a
+  # few times a year, so that is cheap, and there is no way past it: a line published with a
+  # defect which was already known cannot be taken back off Maven Central.
+  #
+  # See decision 9 in the repository's DECISIONS.md.
+  lines:
+    uses: ./.github/workflows/line-matrix.yaml
+    secrets: inherit
+
   # The live lines are not maintained here: they are the line-* profiles of the POM, which
   # also carry the pins. So the release cannot fall behind the build.
+  #
+  # Every line is released, the preview line included. Only the gate above leaves the
+  # preview out, because nothing has proven it and nothing claims it is proven: its version
+  # says alpha.
   discover:
+    needs: lines
     runs-on: ubuntu-latest
     outputs:
       lines: "${{ steps.list.outputs.lines }}"
