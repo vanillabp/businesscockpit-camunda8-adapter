@@ -21,13 +21,24 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * of the hierarchy its job sits in.
  * <p>
  * Since 8.9 the job carries that root, and the 8.9 variant of this class reads it off the job.
- * The 8.8 job does not carry it, so the cluster is asked. Its call-hierarchy request answers
- * with the chain from the root down to the instance, and the first entry is the root. Where that
- * answer comes from is what makes this class the expensive one, in two ways.
+ * The 8.8 job does not carry it, so the cluster is asked. Where that answer comes from is what
+ * makes this class the expensive one.
  * <p>
- * It is served by the searchable storage, so it lags behind the transition whose listener is
- * running. A job of a process which was started a moment ago can get an answer which does not
- * exist yet, and the lookup therefore waits for it. How long is the adapter's word.
+ * An 8.8 cluster gives three answers, and telling them apart is the whole job of
+ * {@link #askOnce(Long)}.
+ * <ul>
+ * <li>A chain of entries, running from the root down to the instance which was asked about. The
+ * first entry is the root.</li>
+ * <li>No entries at all. That is an answer and not a gap: the cluster holds the instance, and the
+ * instance stands in no call hierarchy. So it is its own root. A workflow nobody called is
+ * answered this way, which is nearly every workflow there is.</li>
+ * <li>Nothing about that instance, which the cluster says with an HTTP <code>404</code>. Only
+ * this one means the searchable storage has not caught up yet.</li>
+ * </ul>
+ * <p>
+ * Only the third answer is waited for. It is served by the searchable storage, which lags behind
+ * the transition whose listener is running, so a job of a process which started a moment ago can
+ * be asked about before the cluster holds it. How long the lookup waits is the adapter's word.
  * <code>vanillabp.adapters.&lt;id&gt;.workflow-visibility-timeout</code> is what the Camunda 8
  * adapter waits out for the same storage when it knows a workflow is there, ten seconds by
  * default, and zero switches the waiting off here as it does there. A cluster whose exporter is
@@ -39,14 +50,21 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * else a report needs is read from that storage: it is built from the job. See
  * {@link Camunda8CockpitJobHandler}.
  * <p>
+ * That is why the empty answer may not be read as a gap. Every ordinary workflow would pay the
+ * whole window for it, with its transition standing still and an execution slot of the adapter
+ * spent on the waiting. And the log would fill up with warnings about a cluster which is not
+ * behind at all.
+ * <p>
  * If the window runs out, the job is treated as the root of its own hierarchy and the reason is
  * logged. That is the lesser of two wrong answers. A called process reported as a case adds a
  * case the cockpit should not show. Failing the job, which is the other option, raises an
  * incident on a workflow which is doing nothing wrong (see decision 5).
  * <p>
- * It also costs a request per job, so what a hierarchy answered is remembered per process
- * instance. The relation cannot change, because an instance's root is settled when it is
- * created.
+ * Every answer costs a request, so what the cluster said is remembered per process instance. The
+ * relation cannot change, because an instance's root is settled when it is created. And one of
+ * these belongs to one cluster rather than to one worker, so the workers of a workflow share what
+ * any of them asked. A workflow is served by several of them - one for its start event and one
+ * per task definition - and they all ask about the same instance.
  */
 final class Camunda8CallHierarchy {
 
@@ -161,7 +179,7 @@ final class Camunda8CallHierarchy {
    *
    * @param processInstanceKey The instance to ask about
    * @return The root's key, or <code>null</code> where the searchable storage does not hold the
-   *         instance yet
+   *         instance yet, which is the only answer worth asking again for
    */
   private Long askOnce(
       final Long processInstanceKey) {
@@ -174,13 +192,18 @@ final class Camunda8CallHierarchy {
           .send()
           .join();
     } catch (final RuntimeException e) {
+      // the cluster holds no such instance. Asking again is what this is for: the exporter
+      // writes the instance a moment after the engine created it
       if (Camunda8Errors.notFound(e)) {
         return null;
       }
       throw e;
     }
+    // the cluster answered, so this is settled. An answer with no entries says the instance
+    // stands in no call hierarchy, which makes it its own root. Waiting for entries to turn up
+    // would wait for something the cluster already said there is none of
     if ((hierarchy == null) || hierarchy.isEmpty()) {
-      return null;
+      return processInstanceKey;
     }
     // the chain runs from the root down to the instance which was asked about
     return hierarchy.get(0).getProcessInstanceKey();
