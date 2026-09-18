@@ -63,14 +63,20 @@
          Camunda 8 adapter uses, and it has to be, because this extension compiles against
          that adapter's core and against the Camunda client that adapter pins: the client a
          build was compiled against IS the lowest cluster version the build accepts. The
-         properties below are what the line-* profiles select and what Renovate maintains,
-         one per line. Their values follow the pins of vanillabp/camunda8-adapter; a line
-         here is only as good as the adapter line it was built against. -->
+         properties below are what the line-* profiles select, one per line. Renovate
+         leaves them alone (see renovate.json): they are raised by hand, and they follow
+         the pins of vanillabp/camunda8-adapter, because the cluster the integration tests
+         start is filtered out of the adapter's pin and not out of these. A pin left behind
+         here does not break anything, which is what makes it worth a sentence: the tests
+         then run an older client against a newer cluster, every literal that cluster
+         gained arrives as UNKNOWN_ENUM_VALUE, and a fallback nobody chose reads like one
+         somebody did. The night is what notices, see decision 10 in the repository's
+         DECISIONS.md. -->
     <camunda8.line>8.9</camunda8.line>
     <camunda8.version>${camunda8.version.line-8.9}</camunda8.version>
     <camunda8.version.line-8.8>8.8.37</camunda8.version.line-8.8>
-    <camunda8.version.line-8.9>8.9.18</camunda8.version.line-8.9>
-    <camunda8.version.line-8.10>8.10.0-alpha4</camunda8.version.line-8.10>
+    <camunda8.version.line-8.9>8.9.19</camunda8.version.line-8.9>
+    <camunda8.version.line-8.10>8.10.0-alpha5</camunda8.version.line-8.10>
     <!-- The VanillaBP Camunda 8 adapter this extension plugs into: it names the processing
          context the extension is wired with, and it brings the Camunda client. It is one
          version per line as soon as that adapter is released; until then every line reads the

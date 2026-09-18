@@ -46,11 +46,12 @@ jobs:
         # reason rather than a profile which quietly disappears: the line still exists, it is
         # still released, and its code is still compiled on every pull request by the API check.
         #
-        # 8.10: a user-task LISTENER job never reaches its worker on camunda/camunda:8.10.0-alpha4.
-        # The REST gateway throws a NullPointerException while converting the job and drops the
-        # whole activate-jobs batch (camunda/camunda#58193, open), which starves the execution
-        # listeners beside it. Ten of fifteen integration tests then sit in their deadline, and
-        # the run of the 15th of September 2026 took 44 minutes to say so. The VanillaBP Camunda 8
+        # 8.10: a user-task LISTENER job never reached its worker on camunda/camunda:8.10.0-alpha4,
+        # the alpha that line pinned when this was measured. The REST gateway throws a
+        # NullPointerException while converting the job and drops the whole activate-jobs batch
+        # (camunda/camunda#58193, still open on alpha5), which starves the execution listeners
+        # beside it. Ten of fifteen integration tests then sit in their deadline, and the run of
+        # the 15th of September 2026 took 44 minutes to say so. The VanillaBP Camunda 8
         # adapter keeps the same alpha out of its pull-request checks for the same bug. Take the
         # line out of this list once Camunda ships the fix.
         run: |
@@ -135,11 +136,30 @@ jobs:
           if-no-files-found: ignore
       - name: The cluster and the client this line was tested against
         # the cluster is the adapter's word, not ours: its test-support carries the image
-        # and the secondary storage of its line, and the tests here start what it names
+        # and the secondary storage of its line, and the tests here start what it names.
+        #
+        # Which is why this step ends by holding that image against the pin of this
+        # repository. A pin here that stayed behind the adapter's breaks nothing and is
+        # therefore invisible: the tests run an older client against a newer cluster, the
+        # literals that cluster gained arrive as UNKNOWN_ENUM_VALUE, and the line looks as
+        # green as the day before while it proves less than the README says it does. It
+        # stayed unseen on two lines at once, which is why the step does not stop at the
+        # 'cat' it used to be. See decision 10 in the repository's DECISIONS.md.
         if: always()
         run: |
-          cat camunda8-adapter/test-support/target/classes/camunda8-cluster.properties
+          set -euo pipefail
+          properties=camunda8-adapter/test-support/target/classes/camunda8-cluster.properties
+          cat "$properties"
           cat camunda8-adapter/core/target/classes/META-INF/vanillabp/adapter-camunda8.properties
+          image="$(sed -n 's|^cluster\.image=||p' "$properties")"
+          pinned="$(sed -n 's|.*<camunda8\.version\.line-${{ matrix.line }}>\([^<]*\)</.*|\1|p' pom.xml)"
+          # the tag rather than the whole name, so a renamed image is still compared
+          if [ "${image##*:}" != "${pinned}" ]; then
+            echo "Line ${{ matrix.line }} ran ${image} against the client ${pinned}." >&2
+            echo "The cluster follows the pin of vanillabp/camunda8-adapter, so raise" >&2
+            echo "camunda8.version.line-${{ matrix.line }} in pom.xml to what that image names." >&2
+            exit 1
+          fi
 
   # One name that never changes, so branch protection, the pull-request checks and the
   # release gate have something to require while the matrix grows and shrinks with the

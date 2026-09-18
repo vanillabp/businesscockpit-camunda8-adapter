@@ -218,3 +218,26 @@ so, and the issue stays open. A green night is not a fix: the 8.8 defect of Sept
 workflow in about one run out of four, so three nights out of four it was green. Closing the issue
 would also mean the next red night opens a second one, and one break would end up spread over
 several. The person who merged the fix is the one who closes it.
+
+## 10. The client pin of a line is the adapter's pin, raised by hand
+
+The Camunda client this repository pins per line is the one `vanillabp/camunda8-adapter` pins for
+the same line. The value is copied into `pom.xml` in a commit of its own. Nothing reads the other
+repository while building.
+
+By hand and not by build, because the pin is what the client API check of a pull request works on.
+That check names the enum literals and the interface methods a new client added, and what calls it
+onto a pull request is the changed property. A pin resolved during the build would move without a commit, so the one
+change nobody documents would also be the one nobody reads. Raising it by hand also keeps the two
+repositories apart in time: the adapter can move on a day this one is mid-story.
+
+What pays for the delay is the night. The cluster the integration tests start is the adapter's
+word, taken from `camunda8-adapter-test-support`, so a pin left behind here means an older client
+answering a newer cluster. Nothing fails over it. The literals the cluster gained arrive as
+`UNKNOWN_ENUM_VALUE`, which reads like a fallback somebody wanted. So every line of the matrix ends
+by holding the image it ran against the pin it was built with, and the line is red while the two
+name different versions. The issue of decision 9 is then what asks for the pin.
+
+It had already happened on two lines at once when this was written. Line 8.9 pinned `8.9.18` while
+its tests ran a cluster `8.9.19`, and line 8.10 pinned `8.10.0-alpha4` against `8.10.0-alpha5`. A
+line the night does not build is not covered, which today is the preview line.
