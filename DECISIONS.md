@@ -333,3 +333,65 @@ answered it the same way, which is its decision 39. The entry here is ours becau
 the pins and the test are ours.
 
 See [What an application pins itself](./README.md#what-an-application-pins-itself).
+
+## 13. The cockpit's workers lease what the adapter leases
+
+Camunda 8.10 gave a job activation a lease. A worker which asks for one gets a token with every
+job, and the cluster takes an answer to that job only from whoever holds the newest token.
+
+This extension asks for it. Its workers hold a listener job from the activation until the answer,
+because the report is built while the job waits, and that is the case the lease was made for. The
+case is not a rare one. A details provider which needs longer than the lock loses the job, the
+cluster hands it out again, the second run writes its entry and completes the job, and the first
+run then completes a job somebody else holds. Without a lease the cluster took that late answer
+and said nothing about it.
+
+It is asked for through `Camunda8Workers.leaseTheActivations` of the VanillaBP Camunda 8 adapter,
+the same entry point the worker options come from. That method decides, and this extension does
+not: it knows whether the client of its release line has a lease at all, and it reads
+`vanillabp.adapters.<id>.job-lease` of that adapter id. A copy of either rule here would be a
+second opinion about the same job type.
+
+There is no key of the cockpit's own, and there must not be one. A lease is a property of a job
+type on a cluster, not of a component. Two subscribers of one type with different answers starve
+each other: once a job went to a worker with a lease, a worker without one never sees that job
+again, and no command takes the lease off it. The job types of this extension are built from the
+identifiers the cluster knows and carry no adapter id, so a second application which deployed the
+same models under the same prefix and the same tenant subscribes to exactly these types. One
+value per cluster is the only answer which cannot starve anybody. See decision 36 in the
+DECISIONS.md of vanillabp/camunda8-adapter.
+
+A refused answer is not an incident. `Camunda8ListenerJobs.completeOrFail` of the adapter carries
+the token and recognises the refusal, drops the answer with one line, and lets the handler return
+as if the cluster had accepted it. So the job stays with the run holding it, no retry is counted
+down, and decision 5 keeps its meaning: an incident is what a report which could not be BUILT
+costs, and nothing else.
+
+The cockpit is told the same thing twice, never two different things. Both runs build the report
+of the same event and plan an outbox entry for it under the same idempotency key. Where the first
+entry is still waiting, the second takes its place and one report goes out. Where the first was
+already dispatched, both are sent, and the cockpit server keeps the newer one by the timestamp of
+the event. That is the ordinary case here: a lock runs out in seconds and an outbox dispatches in
+a fraction of one. Either way a person sees one created case. See decision 26 in the DECISIONS.md
+of vanillabp/business-cockpit.
+
+Line 8.8 and line 8.9 have no lease, in their clusters and in their clients. There the older
+answer wins, as it always did. The build of those lines accepts the key and ignores it, which is
+what lets one configuration serve an application that moves between lines.
+
+Measured rather than read. `Camunda8CockpitIT` holds the details provider of a started case
+inside its listener job until the lock runs out, and then activates that job once more with a
+lease, the way a second pod would. The held run is released afterwards, so its answer arrives
+last. On `camunda/camunda:8.10.0-alpha5` the cluster refuses it, the log says another activation
+holds the job, the job is not failed, the case reaches the cockpit as created, and the instance
+carries no incident once the newer activation completes.
+
+The second activation is the test's own and not a redelivery, the same way the adapter's lease
+test does it. Two reasons. A redelivery cannot be timed, and what is under test is the ORDER of
+the two answers. And the redelivery did not come: on that alpha the worker of this extension kept
+polling for four minutes without being offered the job again, while an explicit activation got it
+as soon as the lock was over. A test which waits for the cluster to do it would measure that alpha
+rather than this extension.
+
+The test skips itself where the build does not lease, and the nightly matrix leaves the 8.10 line
+out today (gap 4 in `GAPS.md`), so this evidence comes from a run by hand.

@@ -1,11 +1,13 @@
 package io.vanillabp.cockpit.camunda8;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,6 +26,7 @@ import io.camunda.client.api.worker.JobWorker;
 import io.camunda.client.api.worker.JobWorkerBuilderStep1.JobWorkerBuilderStep3;
 import io.camunda.client.api.worker.JobWorkerMetrics;
 import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration;
+import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration.JobLease;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.observability.Camunda8Metrics;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
@@ -36,6 +39,10 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * the client has no equivalent for, and the job counters, which exist per worker because they
  * carry the job type. An operator therefore reads these workers next to the adapter's own
  * instead of finding a gap where they should be.
+ * <p>
+ * It carries a third thing where the adapter's configuration asks for it: a lease on every
+ * activation. That is one call to the same adapter, so the tests here say that the extension
+ * asked and let the adapter answer whether the release line has a lease at all.
  * <p>
  * It carries nothing else. Whether jobs are streamed, how often a worker polls and how long a
  * request may take are set on the client, where an environment variable can still overrule them,
@@ -137,6 +144,53 @@ public class Camunda8CockpitWorkerOptionsTest {
     verify(builder).metrics(countersOfThisWorker);
     assertEquals(List.of("c8 / %s".formatted(LISTENER_TYPE)), countersAskedFor);
     whatBelongsToTheClientStayedThere();
+
+  }
+
+  @Test
+  @DisplayName("A worker leases its activations where the adapter's configuration asks for it")
+  public void theWorkerLeasesWhatTheAdapterLeases() {
+
+    configuration.setJobLease(JobLease.USE);
+
+    workers.open(ADAPTER_ID, MODULE_ID);
+
+    // the adapter answers whether that ends in a lease, because only a client of line 8.10 and
+    // newer has one. So the expected answer is its own, and this test says that the extension
+    // asked rather than what the answer was
+    assertEquals(
+        configuration.leasesItsJobs(),
+        theWorkerAskedForALease(),
+        "the worker asked for a lease where the adapter says its line and its configuration have one");
+
+  }
+
+  @Test
+  @DisplayName("A worker asks for no lease where the adapter's configuration says not to")
+  public void theWorkerLeasesNothingWhereTheAdapterDoesNot() {
+
+    configuration.setJobLease(JobLease.DO_NOT_USE);
+
+    workers.open(ADAPTER_ID, MODULE_ID);
+
+    assertFalse(theWorkerAskedForALease(), "the worker asked for a lease nobody configured");
+
+  }
+
+  /**
+   * Whether the builder was asked for a lease, read off the recorded calls rather than with a
+   * <code>verify</code>.
+   * <p>
+   * The method exists on the client of line 8.10 and on no earlier one, so naming it here would
+   * not compile on the lines which have to run this test too. What every line does have is the
+   * name the call carries.
+   */
+  private boolean theWorkerAskedForALease() {
+
+    return mockingDetails(builder)
+        .getInvocations()
+        .stream()
+        .anyMatch(call -> "withLease".equals(call.getMethod().getName()));
 
   }
 

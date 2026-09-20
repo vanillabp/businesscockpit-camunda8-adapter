@@ -102,3 +102,30 @@ out of the nightly matrix until the fix ships.
 
 **What would close it** is the cluster fix. The tests are written and they say the same thing on every
 line, so the line comes back into the matrix and proves it there.
+
+## 5. A late answer overwrites the newer one before 8.10
+
+**The cockpit needs** the answer of the run which finished LAST to be the one the cluster keeps. A
+report is built inside the listener job it belongs to, and a details provider which needs longer than
+the lock loses that job to a second run. Both runs then answer, and the cockpit is only in the clear
+when the cluster keeps the newer one.
+
+**Camunda 8 offers** the lease of an activation from 8.10 on. A leased job carries a token, the cluster
+takes an answer only from the token it handed out last, and it refuses the older one instead of
+overwriting silently. Line 8.8 and line 8.9 have no such thing, in their clusters and in their clients:
+the word `lease` appears nowhere in the client API of either.
+
+**Where it can be read:** the
+[job workers](https://docs.camunda.io/docs/next/components/concepts/job-workers/#job-leasing) page of
+the Camunda documentation, and decision 36 in the DECISIONS.md of vanillabp/camunda8-adapter, which
+holds what was measured on `camunda/camunda:8.10.0-alpha5`.
+
+**What it costs** a user of line 8.8 or 8.9: the cluster takes whichever answer arrives first, which is
+the answer of the run whose lock had expired. Nothing anywhere says that it happened. What the cockpit
+shows is right either way, because both runs build the same report of the same event, so the cost is
+the workflow rather than the cockpit: the transition the listener gates continues with the values of
+the older run.
+
+**What would close it** for those lines is nothing this repository can build. The construct is not
+there. The way out is the release line, the same as for gap 1: an application which needs the newer
+answer to win runs the 8.10 build and sets `job-lease` to `use`. See decision 13 in `DECISIONS.md`.
