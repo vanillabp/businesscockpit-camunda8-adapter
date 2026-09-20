@@ -561,15 +561,25 @@ public class Camunda8CockpitIT {
                     .equals(listener.getType())),
         "the start event carries no listener of the cockpit");
 
-    final var processListeners = executionListenersOf(model, scopedProcessId);
-    assertTrue(
-        processListeners
+    final var cockpitListenersAtTheProcess = executionListenersOf(model, scopedProcessId)
+        .stream()
+        .filter(
+            listener -> Camunda8CockpitListeners
+                .listenerTypeOf(scopedProcessId)
+                .equals(listener.getType()))
+        .toList();
+
+    // Which of them the process carries is a question of the release line: the 'end' listener
+    // reports a completed instance everywhere, and from 8.10 on a 'cancel' listener beside it
+    // reports a terminated one. The event type which says 'cancel' has no name on the older
+    // clients, so the helper of the line says which types the model has to carry.
+    assertEquals(
+        ProcessListenersOfTheLine.theEventTypesTheCockpitWrites(),
+        cockpitListenersAtTheProcess
             .stream()
-            .anyMatch(
-                listener -> Camunda8CockpitListeners
-                    .listenerTypeOf(scopedProcessId)
-                    .equals(listener.getType())),
-        "the process carries no listener of the cockpit");
+            .map(ZeebeExecutionListener::getEventType)
+            .toList(),
+        "the process carries other listeners of the cockpit than this release line writes");
 
   }
 
