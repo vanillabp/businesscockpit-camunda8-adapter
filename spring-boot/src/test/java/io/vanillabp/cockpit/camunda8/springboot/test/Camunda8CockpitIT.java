@@ -708,7 +708,7 @@ public class Camunda8CockpitIT {
     final var aggregate = aStartedWorkflow("Bert");
     final var userTaskId = userTaskIdOf(aggregate);
     final var workflowId = workflowIdOf(aggregate);
-    CockpitServer.awaitRequest("/usertask/created");
+    CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Bert\"");
 
     transactions
         .executeWithoutResult(
@@ -728,7 +728,7 @@ public class Camunda8CockpitIT {
     final var aggregate = aStartedWorkflow("Cleo");
     final var userTaskId = userTaskIdOf(aggregate);
     final var workflowId = workflowIdOf(aggregate);
-    CockpitServer.awaitRequest("/usertask/created");
+    CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Cleo\"");
 
     // nothing of VanillaBP is involved here: this is what an operator does, and the cockpit
     // has to hear about it
@@ -1063,7 +1063,7 @@ public class Camunda8CockpitIT {
 
     final var aggregate = aStartedWorkflow("Emil");
     final var workflowId = workflowIdOf(aggregate);
-    CockpitServer.awaitRequest("/workflow/created");
+    CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Emil\"");
     CockpitServer.forgetRequests();
 
     changeTheCase(
@@ -1088,7 +1088,7 @@ public class Camunda8CockpitIT {
 
     final var aggregate = aStartedWorkflow("Frida");
     final var userTaskId = userTaskIdOf(aggregate);
-    CockpitServer.awaitRequest("/usertask/created");
+    CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Frida\"");
     CockpitServer.forgetRequests();
 
     changeTheCase(
@@ -1163,7 +1163,7 @@ public class Camunda8CockpitIT {
 
     final var aggregate = aStartedWorkflow("Ida");
     final var userTaskId = userTaskIdOf(aggregate);
-    CockpitServer.awaitRequest("/usertask/created");
+    CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Ida\"");
     CockpitServer.forgetRequests();
 
     transactions
