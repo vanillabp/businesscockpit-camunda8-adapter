@@ -85,6 +85,22 @@
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <!-- What the active line profile chose, handed to Camunda8PublishedPomTest. That
+              test holds it against the POM this module publishes, and the two used to differ:
+              a property is not resolved for a reader of the published POM. Read here from the
+              build rather than from the adapter on the classpath, because every line still
+              compiles against the same adapter snapshot, so the adapter's own line descriptor
+              would answer for whichever line it was last built for. -->
+            <camunda8.line>${camunda8.line}</camunda8.line>
+            <camunda8.client>${camunda8.version}</camunda8.client>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-source-plugin</artifactId>
       </plugin>
     </plugins>

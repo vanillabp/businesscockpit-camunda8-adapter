@@ -169,8 +169,27 @@ stale `target/` fails at runtime with a `NoClassDefFoundError` rather than at co
 Building the same line again is fine.
 
 The version is `${revision}`, resolved into the published POMs by `flatten-maven-plugin`, so the
-same commit produces every line and a fix exists on every line the moment it is committed. Code
-that cannot be shared goes into a per-line source directory added by `build-helper-maven-plugin`,
+same commit produces every line and a fix exists on every line the moment it is committed.
+
+The same plugin writes the POM an application reads, and that POM has to stand on its own. It is
+flattened in the `oss` mode: every version resolved, no parent, no `dependencyManagement`, no
+properties, no profiles. A property would be no help in it. An application activates none of our
+profiles, so a published POM still naming `${camunda8.version}` reads the default of the file,
+which is the current GA line, on every line. That is what every line did until 2026-09-20. Nobody
+had looked, because the source POM reads right and a build of a line uses the source POM. The
+installed POM of `0.9.0-8.8-SNAPSHOT` named `io.camunda:camunda-client-java` with no version at
+all and kept its parent, and that parent said `${camunda8.version.line-8.9}`. An application on
+the 8.8 line would have been handed the 8.9 client, and the client a build was compiled against
+is the lowest cluster version it accepts, so the line promised a cluster and then took it away.
+No line is released yet, so no user ever read such a POM. `Camunda8PublishedPomTest` reads the
+published POM on every line since and holds the client in it against the client the build was
+compiled against.
+
+Nothing else of ours reaches an application either, and that is why the parent is dropped rather
+than corrected. What this repository pins for its own build is chosen for the newest line, and a
+user of the oldest line has no reason to be handed it. See [decision 12](./DECISIONS.md).
+
+Code that cannot be shared goes into a per-line source directory added by `build-helper-maven-plugin`,
 `src/main/java-line-<id>` and `src/test/java-line-<id>`. Only two kinds of code belong there: code
 that cannot compile against every supported client, and code that uses something only a newer
 cluster has.
@@ -181,6 +200,37 @@ into the job: which workflow a job belongs to when its process was called by ano
 What a report says is the same on every line. What it costs is not. How long line 8.8 waits for the
 cluster's answer is the adapter's `vanillabp.adapters.<id>.workflow-visibility-timeout`, the same key
 the adapter waits out for the same storage. See [decision 7](./DECISIONS.md).
+
+### What an application pins itself
+
+The published POMs carry no `dependencyManagement`, so what this repository pins for its own
+build reaches nobody. An application resolves each dependency from its own platform BOM, or from
+the Camunda client when nothing of its own manages it. There is one case where that is not
+enough.
+
+Protobuf refuses a runtime older than the generated code linked against it, and the Camunda
+client brings generated code. These are the numbers involved, read on 2026-09-20 from the client
+POM of each line and from the two platform BOMs this repository builds against:
+
+| Line |   Client pin    | Its gencode | Spring Boot 4.1.1 manages | Quarkus 3.39.3 manages |
+|------|-----------------|-------------|---------------------------|------------------------|
+| 8.8  | `8.8.37`        | `4.31.1`    | `4.35.1`                  | `4.35.0`               |
+| 8.9  | `8.9.19`        | `4.33.6`    | `4.35.1`                  | `4.35.0`               |
+| 8.10 | `8.10.0-alpha5` | `4.36.0`    | `4.35.1`                  | `4.35.0`               |
+
+An imported BOM beats a transitive version. So on both GA lines the application runs a protobuf
+newer than its client asks for, which is what protobuf allows. On the preview line both platforms
+hand it an older one, and the first command that touches the protocol ends in an
+`ExceptionInInitializerError` naming the two versions.
+
+An application on the preview line therefore pins `protobuf-java` itself, to the gencode of that
+line's client, in its own `dependencyManagement` and above the platform BOM. Nothing published
+here can do it for the application: its own BOM wins over anything arriving through us. The GA
+lines need no pin. Read the number of a client rather than guess it:
+
+```bash
+mvn -Pline-8.10 -pl spring-boot dependency:tree -Dincludes=com.google.protobuf
+```
 
 ### What proves a line
 
