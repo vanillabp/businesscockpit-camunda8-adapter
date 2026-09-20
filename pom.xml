@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" child.project.url.inherit.append.path="false" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <!-- the same release parent the Business Cockpit itself uses, because these artifacts are
@@ -17,6 +17,14 @@
   <packaging>pom</packaging>
   <name>VanillaBP Business Cockpit adapter for Camunda 8</name>
   <description>Business Cockpit integration for Camunda 8, built as a VanillaBP 2 extension and released once per Camunda 8 minor.</description>
+  <!-- Every artifact of this repository names this one address, the root of the repository.
+       Maven would otherwise append the module path to what a child inherits, here and in all
+       three scm elements, and point each published POM at a page which does not exist. That
+       is what the four 'child.*.inherit.append.path' attributes switch off, one on the project
+       element above and three on the scm element below. A link into a module directory would
+       also break as soon as a module moves, and a reader who wants the module finds it from
+       the root in one click. Guarded by Camunda8PublishedPomTest, see decision 12 in the
+       repository's DECISIONS.md. -->
   <url>https://github.com/vanillabp/businesscockpit-camunda8-adapter</url>
 
   <modules>
@@ -27,12 +35,15 @@
     <module>test-coverage-report</module>
   </modules>
 
-  <scm>
+  <scm child.scm.connection.inherit.append.path="false" child.scm.developerConnection.inherit.append.path="false" child.scm.url.inherit.append.path="false">
     <connection>scm:git:https://github.com/vanillabp/businesscockpit-camunda8-adapter.git</connection>
     <developerConnection>scm:git:https://github.com/vanillabp/businesscockpit-camunda8-adapter.git</developerConnection>
     <url>https://github.com/vanillabp/businesscockpit-camunda8-adapter/tree/main</url>
   </scm>
 
+  <!-- Where we deploy. It stays here because the build needs it, and it is taken out of the
+       published POM by the flatten plugin below: it says nothing a consumer can use, and on an
+       artifact which later sits on Maven Central it would point a reader at GitHub Packages. -->
   <distributionManagement>
     <snapshotRepository>
       <id>github</id>
@@ -320,6 +331,13 @@
         <configuration>
           <updatePomFile>true</updatePomFile>
           <flattenMode>oss</flattenMode>
+          <!-- The 'oss' mode keeps distributionManagement, and a consumer has no use for it.
+               Removing it here and not from the source keeps the deployment working: this
+               plugin rewrites the file which is installed and deployed, while the deploy
+               plugin reads the repository from the model of the running build. -->
+          <pomElements>
+            <distributionManagement>remove</distributionManagement>
+          </pomElements>
         </configuration>
         <executions>
           <execution>

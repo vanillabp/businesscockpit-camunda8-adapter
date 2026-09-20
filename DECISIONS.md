@@ -316,6 +316,19 @@ module which names the client, and fails when the version in it is not the clien
 compiled against or when a parent or a `dependencyManagement` is back. The flatten mode is set
 once for every module, so the guard covers every module from there.
 
+That file also says what this repository is, and two of those statements were wrong as soon as
+every module carried its own copy. Maven appends the module path to the `url` and to all three
+`scm` elements a child inherits, so each artifact named a page which does not exist, for example
+`https://github.com/vanillabp/businesscockpit-camunda8-adapter/businesscockpit-camunda8-adapter`.
+Four `child.*.inherit.append.path` attributes in the parent switch that off. Every artifact now
+names the root of the repository, the same address for all of them, and a link into a module
+directory is not what we want anyway: it breaks as soon as a module moves, and a reader finds the
+module from the root in one click. The other wrong statement was `distributionManagement`: every
+published POM named our snapshot repository. Where we deploy is nothing a consumer can use, and
+on an artifact which later sits on Maven Central it would point a reader at GitHub Packages. The
+flatten plugin takes it out of the published POM and the source keeps it, because the deploy reads
+it from the model of the running build. The same test guards both.
+
 What one line needs is no business of another line's users. That rule is wider than the client,
 and it is why the parent is dropped rather than only corrected. What this repository pins for its
 own build is chosen for the newest line: the protobuf runtime, Testcontainers, Lombok, and the

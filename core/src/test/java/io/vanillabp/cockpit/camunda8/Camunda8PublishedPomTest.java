@@ -2,6 +2,8 @@ package io.vanillabp.cockpit.camunda8;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
@@ -14,7 +16,8 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
  * The POM this line publishes asks for this line's Camunda client, and for nothing an
- * application of another line would have to take.
+ * application of another line would have to take. It also says the truth about itself: the
+ * addresses in it open, and it keeps quiet about where we deploy.
  * <p>
  * A release line is a promise about the cluster an application may run: the client a build was
  * compiled against is the lowest cluster version that build accepts. The promise is kept by the
@@ -38,6 +41,9 @@ public class Camunda8PublishedPomTest {
 
   /** The POM which is installed and deployed for this module, written by the flatten plugin. */
   private static final Path PUBLISHED_POM = Path.of(".flattened-pom.xml");
+
+  /** The repository every artifact of this build comes from, and the address all of them name. */
+  private static final String REPOSITORY = "https://github.com/vanillabp/businesscockpit-camunda8-adapter";
 
   @Test
   @DisplayName("the published POM asks for the client of this release line")
@@ -83,6 +89,61 @@ public class Camunda8PublishedPomTest {
             + "newest line, the protobuf pin of the parent pom.xml above all. What one line "
             + "needs is no business of another line's users, see decision 12 in the "
             + "repository's DECISIONS.md.");
+
+  }
+
+  @Test
+  @DisplayName("every address in the published POM is one which opens")
+  public void thePublishedPomNamesTheRepositoryAndNoModulePath() throws Exception {
+
+    final var published = read();
+    final var scm = childOf(published, "scm");
+    final var wrongAddresses = new ArrayList<String>();
+    checkAddress(wrongAddresses, "url", childText(published, "url"), REPOSITORY);
+    checkAddress(wrongAddresses, "scm/connection", childText(scm, "connection"), "scm:git:"
+        + REPOSITORY
+        + ".git");
+    checkAddress(
+        wrongAddresses,
+        "scm/developerConnection",
+        childText(scm, "developerConnection"),
+        "scm:git:"
+            + REPOSITORY
+            + ".git");
+    checkAddress(wrongAddresses, "scm/url", childText(scm, "url"), REPOSITORY
+        + "/tree/main");
+
+    if (wrongAddresses.isEmpty()) {
+      return;
+    }
+    throw new AssertionError(
+        ("The POM published for module %s of release line %s names an address nobody can open: "
+            + "%s. Maven appends the module path to the url and to all three scm elements a "
+            + "child inherits, which turns every one of them into a page which does not exist. "
+            + "The four 'child.*.inherit.append.path' attributes in the parent pom.xml switch "
+            + "that off, so every artifact of this repository names the repository root.")
+            .formatted(moduleOf(published), lineOfThisBuild(), String.join("; ", wrongAddresses)));
+
+  }
+
+  @Test
+  @DisplayName("the published POM says nothing about where we deploy")
+  public void thePublishedPomHasNoDistributionManagement() throws Exception {
+
+    final var published = read();
+    if (published
+        .getElementsByTagName("distributionManagement")
+        .getLength() == 0) {
+      return;
+    }
+    throw new AssertionError(
+        ("The POM published for module %s of release line %s carries a distributionManagement. "
+            + "It names where we deploy, which is nothing a consumer can use, and on an artifact "
+            + "which later sits on Maven Central it points a reader at GitHub Packages. The "
+            + "source POM keeps it, because the deployment reads it from there; the published "
+            + "one loses it through the <pomElements> configuration of the flatten plugin in "
+            + "the parent pom.xml.")
+            .formatted(moduleOf(published), lineOfThisBuild()));
 
   }
 
@@ -135,16 +196,68 @@ public class Camunda8PublishedPomTest {
   private static String moduleOf(
       final Element project) {
 
-    final var children = project.getChildNodes();
+    final var artifactId = childText(project, "artifactId");
+    return artifactId == null
+        ? "unknown"
+        : artifactId;
+
+  }
+
+  /**
+   * Notes an address which is not the one we wrote, so that one run reports all of them instead
+   * of one per run.
+   */
+  private static void checkAddress(
+      final List<String> wrongAddresses,
+      final String element,
+      final String found,
+      final String expected) {
+
+    if (expected.equals(found)) {
+      return;
+    }
+    wrongAddresses.add(
+        "%s says '%s' instead of '%s'".formatted(
+            element,
+            found == null
+                ? "nothing at all"
+                : found,
+            expected));
+
+  }
+
+  /**
+   * One element of the project, read as a direct child. The whole document would answer with a
+   * license url or a plugin url as well.
+   */
+  private static Element childOf(
+      final Element parent,
+      final String tagName) {
+
+    if (parent == null) {
+      return null;
+    }
+    final var children = parent.getChildNodes();
     for (var i = 0; i < children.getLength(); i++) {
-      final var child = children.item(i);
-      if ((child instanceof Element element) && "artifactId".equals(element.getTagName())) {
-        return element
-            .getTextContent()
-            .trim();
+      if ((children.item(i) instanceof Element element) && tagName.equals(element.getTagName())) {
+        return element;
       }
     }
-    return "unknown";
+    return null;
+
+  }
+
+  /** The text of a direct child element, or {@code null} where the POM has none. */
+  private static String childText(
+      final Element parent,
+      final String tagName) {
+
+    final var child = childOf(parent, tagName);
+    return child == null
+        ? null
+        : child
+            .getTextContent()
+            .trim();
 
   }
 
