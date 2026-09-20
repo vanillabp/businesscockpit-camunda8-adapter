@@ -174,16 +174,21 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * extension's business: VanillaBP delivers it like any other task.
    * <p>
    * Which user tasks those are, and what each of them is called, is not decided here. The
-   * adapter's own deployment path decides it, and this is that very method. A task the adapter
-   * wired is a task the cockpit reports, under the same task definition. That definition is the
-   * external form reference, which is what a <code>&#64;UserTaskDetailsProvider</code> method is
-   * matched by and what Version 1 named its listeners after. Reading the model with the method
-   * meant for models a cluster already holds would take a Version 1 formKey as a task definition
-   * and produce a listener type Version 1 never wrote.
+   * adapter's own deployment path decides it, and
+   * {@link Camunda8TaskWiring#readUserTasksOf} is the reading half of that path. A task the
+   * adapter wired is a task the cockpit reports, under the same task definition. That definition
+   * is the external form reference, which is what a <code>&#64;UserTaskDetailsProvider</code>
+   * method is matched by and what Version 1 named its listeners after.
    * <p>
-   * Calling it a second time adds nothing. The adapter ran before this extension, so its
-   * listeners are already in the model, and that method checks for them before it inserts
-   * anything. A user task it would refuse has already ended the deployment by then.
+   * The reading half is the one an extension asks. The other half writes the adapter's own
+   * listeners into the model, and that is the adapter's work rather than the cockpit's. The
+   * adapter has done it by the time this runs, because the pipeline calls the adapter first.
+   * Both halves return the same list and refuse the same user task, so reading loses nothing.
+   * A user task without an external form reference has ended the deployment already.
+   * <p>
+   * There is a third method, for a model the cluster already holds. It is wrong here. It reads
+   * a Version 1 formKey as a task definition, and that would produce a listener type Version 1
+   * never wrote.
    *
    * @param adapterId The configured adapter id whose models are being wired
    * @param workflowModuleId The workflow module
@@ -204,7 +209,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
 
     final var scopedBpmnProcessId = process.getId();
     Camunda8TaskWiring
-        .userTasksOf(model, scopedBpmnProcessId, workflowModuleId, filename)
+        .readUserTasksOf(model, scopedBpmnProcessId, workflowModuleId, filename)
         .forEach(userTask -> {
           final var listenerType = Camunda8CockpitListeners
               .listenerTypeOf(userTask.externalFormReference());
