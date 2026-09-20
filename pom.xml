@@ -8,7 +8,7 @@
   <parent>
     <groupId>io.vanillabp</groupId>
     <artifactId>release-parent</artifactId>
-    <version>1.1.1</version>
+    <version>1.2.0</version>
   </parent>
 
   <groupId>io.vanillabp.businesscockpit</groupId>
@@ -266,13 +266,6 @@
           <version>3.16.0</version>
           <configuration>
             <release>${version.java}</release>
-            <compilerArgs>
-              <!-- a javadoc which names a method is checked like any other claim: a link
-                   the compiler cannot resolve is an error, a parameter documented twice a
-                   warning. Only the reference group is on, so wording and missing comments
-                   stay a matter of review. -->
-              <arg>-Xdoclint:reference</arg>
-            </compilerArgs>
             <annotationProcessorPaths>
               <path>
                 <groupId>org.projectlombok</groupId>
