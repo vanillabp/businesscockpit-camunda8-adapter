@@ -11,6 +11,7 @@ vanillabp:
   adapters:
     c8:
       type: camunda8
+      job-lease: use
       job-timeout: PT30S
       auth:
         method: BASIC
