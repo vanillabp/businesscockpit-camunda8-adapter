@@ -90,7 +90,7 @@
          carries the image and the secondary storage of its line as a filtered resource, and
          ClusterUnderTest reads them from it. A property here would only look like it decides
          something, which is what the one that stood here did. -->
-    <protobuf.version>4.35.1</protobuf.version>
+    <protobuf.version>4.36.0</protobuf.version>
     <spring-boot.version>4.1.1</spring-boot.version>
 
     <testcontainers.version>2.0.5</testcontainers.version>
@@ -108,10 +108,21 @@
       <!-- Protobuf refuses a runtime older than the generated code linked against it, and the
            Camunda client brings generated code, while the Spring Boot BOM manages an older one
            and would win, because an imported BOM beats a transitive version. This entry stands
-           BEFORE that import so every line gets it. It carries the gencode version of the
-           pinned clients of vanillabp/camunda8-adapter and moves when one of those pins moves.
-           A mismatch is an ExceptionInInitializerError on the first command using the
-           protocol. -->
+           BEFORE that import so every line gets it.
+           The number is the protobuf version of the NEWEST client pinned above. A runtime may
+           be newer than the generated code and never older, so that one number serves every
+           line. When it was last set, the clients asked for 4.31.1 on line 8.8, 4.33.6 on
+           line 8.9 and 4.36.0 on line 8.10.
+           So raise it whenever a camunda8.version.line-* pin moves, and read the new number
+           rather than guess it:
+             mvn -Pline-<id> -pl spring-boot dependency:tree -Dincludes=com.google.protobuf
+           prints this pin and, as "version managed from", the version the client of that line
+           was generated against. Raising it by hand is the rule the client pins follow as
+           well, see decision 10 in the repository's DECISIONS.md.
+           A pin left behind is easy to miss. The older lines stay green, and only the newest
+           line breaks: its first deployment fails with a ProtobufRuntimeVersionException
+           naming both versions. No test run of this repository uses the preview line, neither
+           the pull request nor the night, so whoever runs that line by hand sees it first. -->
       <dependency>
         <groupId>com.google.protobuf</groupId>
         <artifactId>protobuf-java</artifactId>
