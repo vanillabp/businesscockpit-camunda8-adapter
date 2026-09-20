@@ -920,8 +920,18 @@ public class Camunda8CockpitIT {
     // listeners of this extension carry no retries, so a failure IS the incident, and it would
     // be an incident about a report which was written and is fine. See decision 13 in the
     // repository's DECISIONS.md
+    //
+    // The line has to name THIS job. What a test is handed is everything the class printed
+    // since it started, not only what its own test printed, and
+    // aFailingCancelListenerLeavesAnIncident writes the same sentence about a job of its own a
+    // few tests earlier. Both tests run on this release line alone, so the two never met until
+    // the line came back into the nightly matrix, and then the sentence of the older test failed
+    // this one.
+    final var thisJob = "job '%d'".formatted(takenOver.getKey());
     assertFalse(
-        logOf(output).contains("failing the job"),
+        logOf(output)
+            .lines()
+            .anyMatch(line -> line.contains("failing the job") && line.contains(thisJob)),
         "the refused answer was reported to the cluster as a failure of the job");
 
     // and the report itself went out. It was written before the answer was sent, so the case
