@@ -75,3 +75,30 @@ from its own `@WorkflowDetailsProvider`.
 
 **What would close it** is the engine recording the authenticated user of a process-instance creation
 and handing it out with the instance.
+
+## 4. A user task says nothing at all on 8.10.0-alpha5
+
+**The cockpit needs** to hear what happened to each user task: that it was created, that somebody
+finished it, and that the cluster took it away again. The last of the three is what closes a piece of
+work nobody has to do any more.
+
+**Camunda 8 offers** all three on every release line, and it offers them in the same way. The task
+listeners `creating`, `canceling` and `completing` are the same construct on 8.8, on 8.9 and on 8.10,
+and the job of each of them names its event type with the same literal. So what the cockpit hears about
+a user task does not depend on the line. What does depend on it is the cluster the 8.10 line pins. Its
+REST gateway fails while it converts a listener job and drops the whole batch. So the `creating`
+listener of a user task never reaches a worker, and the task is never finished being created.
+
+**Where it can be read:** [camunda/camunda#58193](https://github.com/camunda/camunda/issues/58193),
+open on `camunda/camunda:8.10.0-alpha5`. Gap 2 is the same defect seen from the case: an instance
+holding such a task cannot be cancelled either.
+
+**What it costs** an application which runs the 8.10 build against that alpha: no user task of it
+reaches the cockpit, neither as created nor as cancelled. VanillaBP itself never learns of the task,
+because its own `creating` listener is dropped in the same batch. Nothing is lost on a GA cluster,
+because no GA cluster carries the defect. What is lost here is proof. The integration tests which show
+a task reported as created, as cancelled and as completed run on 8.8 and 8.9, and the 8.10 line stays
+out of the nightly matrix until the fix ships.
+
+**What would close it** is the cluster fix. The tests are written and they say the same thing on every
+line, so the line comes back into the matrix and proves it there.

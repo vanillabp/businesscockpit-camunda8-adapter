@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="InterruptedDefinitions" targetNamespace="http://vanillabp.io/businesscockpit/camunda8">
+  <!--
+    A workflow whose user task is taken away from the person holding it, while the case itself
+    runs on. The interrupting boundary event is what cancels the task, and the case then reaches
+    an end event of its own.
+
+    This is the one way a Camunda 8 cluster cancels a user task without cancelling the case it
+    belongs to, so it is what says whether the cockpit hears a cancelled task on its own.
+
+    The message carries no correlation key here. VanillaBP writes one into every message this
+    process catches, naming the variable the workflow aggregate's id is in, so correlating by
+    the aggregate is what 'correlateMessage' does.
+  -->
+  <bpmn:message id="InterruptMessage" name="InterruptTheReview" />
+  <bpmn:process id="InterruptedProcess" isExecutable="true">
+    <bpmn:startEvent id="InterruptedStart">
+      <bpmn:outgoing>ToReview</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToReview" sourceRef="InterruptedStart" targetRef="Review" />
+    <bpmn:userTask id="Review" name="Review the order">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="review" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToReview</bpmn:incoming>
+      <bpmn:outgoing>ToReviewed</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="ToReviewed" sourceRef="Review" targetRef="Reviewed" />
+    <bpmn:endEvent id="Reviewed">
+      <bpmn:incoming>ToReviewed</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:boundaryEvent id="ReviewInterrupted" attachedToRef="Review" cancelActivity="true">
+      <bpmn:outgoing>ToInterruptedEnd</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="InterruptDefinition" messageRef="InterruptMessage" />
+    </bpmn:boundaryEvent>
+    <bpmn:sequenceFlow id="ToInterruptedEnd" sourceRef="ReviewInterrupted" targetRef="InterruptedEnd" />
+    <bpmn:endEvent id="InterruptedEnd">
+      <bpmn:incoming>ToInterruptedEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

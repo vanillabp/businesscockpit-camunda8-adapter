@@ -121,6 +121,12 @@ public class Camunda8CockpitIT {
   private WaitingWorkflowService waitingWorkflowService;
 
   @Autowired
+  private InterruptedWorkflowService interruptedWorkflowService;
+
+  @Autowired
+  private InterruptedAggregateRepository interruptedAggregates;
+
+  @Autowired
   private TransactionTemplate transactions;
 
   @Autowired
@@ -732,6 +738,51 @@ public class Camunda8CockpitIT {
     client().newCancelInstanceCommand(Long.parseLong(workflowId)).send().join();
 
     assertTheCaseWasReportedAsCancelledWhereTheLineSaysIt(workflowId);
+
+  }
+
+  @Test
+  @DisplayName("A user task taken away by an interrupting event is reported as cancelled while its case runs on")
+  public void anInterruptedUserTaskIsReportedAsCancelled() {
+
+    final var aggregate = aStartedInterruptedWorkflow("Ines");
+    final var created = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Ines\"");
+    final var userTaskId = idOf(created, "userTaskId");
+    final var workflowId = idOf(created, "workflowId");
+
+    // nothing about the CASE ends here. The message fires the interrupting boundary event of
+    // the task, so the cluster cancels the task and the workflow walks on to an end event of
+    // its own
+    transactions
+        .executeWithoutResult(
+            status -> interruptedWorkflowService
+                .processes()
+                .correlateMessage(
+                    interruptedAggregates.findById(aggregate.getId()).orElseThrow(),
+                    InterruptedWorkflowService.INTERRUPT_MESSAGE));
+
+    // the 'canceling' task listener runs on every release line, and this is the one way a
+    // cluster cancels a user task without cancelling the case it belongs to
+    assertNotNull(CockpitServer.awaitRequest("/usertask/%s/cancelled".formatted(userTaskId)));
+    assertNotNull(CockpitServer.awaitRequest("/workflow/%s/completed".formatted(workflowId)));
+
+    // the task went away rather than being done, so nobody may read it as done
+    assertEquals(
+        List.of(),
+        CockpitServer.matching("/usertask/%s/completed".formatted(userTaskId)),
+        "the interrupted user task was reported as completed");
+
+  }
+
+  private InterruptedAggregate aStartedInterruptedWorkflow(
+      final String customer) {
+
+    return transactions
+        .execute(status -> {
+          final var fresh = new InterruptedAggregate();
+          fresh.setCustomer(customer);
+          return interruptedWorkflowService.processes().startWorkflow(fresh);
+        });
 
   }
 
