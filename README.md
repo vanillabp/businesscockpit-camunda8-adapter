@@ -162,6 +162,12 @@ mvn -Pline-8.8 -Drevision=0.9.0-8.8 clean install    # a release of the previous
 mvn -Pline-8.10 -Drevision=0.9.0-8.10-alpha1 clean install
 ```
 
+Every line reads the same snapshot of the Camunda 8 adapter, so a local repository holds one
+adapter for all of them and the last install into it wins. A line built against an adapter
+someone installed by hand therefore takes `-Padapter-built-locally`, which asks for
+`2.0.0-<line>-SNAPSHOT`, the version the nightly matrix builds that adapter under.
+[`AGENTS.md`](./AGENTS.md) says what it costs to forget it.
+
 Switching a line always needs `clean`, and the CI does it that way. Classes compiled against one
 Camunda client are binary compatible with no other one. A method the newer model library inherits
 from a type the older one does not have at all is called through the owner the compiler saw. So a
@@ -304,6 +310,9 @@ mvn install
 That runs everything, the integration tests included. Those start a Camunda 8 cluster and an
 Elasticsearch beside it through Testcontainers, so a build needs Docker and takes a few minutes.
 Without Docker the integration tests skip themselves and the unit tests still run.
+
+Leaving the integration tests out takes `-DskipITs`. `-DskipTests` on its own skips the unit
+tests and starts them, because Failsafe 3.6.0 no longer reads that property.
 
 Snapshots are published to GitHub Packages by the pipeline described below, and releases go to
 Maven Central under the groupId `io.vanillabp.businesscockpit`, like the rest of the Business
