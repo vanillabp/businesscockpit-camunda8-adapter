@@ -3,6 +3,7 @@ package io.vanillabp.cockpit.camunda8.springboot.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -40,6 +41,7 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.test.ClusterUnderTest;
+import io.vanillabp.camunda8.wiring.Camunda8CancelListeners;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
@@ -114,6 +116,9 @@ public class Camunda8CockpitIT {
 
   @Autowired
   private CallingWorkflowService callingWorkflowService;
+
+  @Autowired
+  private WaitingWorkflowService waitingWorkflowService;
 
   @Autowired
   private TransactionTemplate transactions;
@@ -691,7 +696,7 @@ public class Camunda8CockpitIT {
   }
 
   @Test
-  @DisplayName("Cancelling the workflow reports its user task as cancelled and the workflow not at all")
+  @DisplayName("Cancelling a workflow which holds a user task reports that task, and the case as far as the line says it")
   public void cancellingTheWorkflowIsReportedAsFarAsCamundaSaysIt() {
 
     final var aggregate = aStartedWorkflow("Cleo");
@@ -703,16 +708,110 @@ public class Camunda8CockpitIT {
     // has to hear about it
     client().newCancelInstanceCommand(Long.parseLong(workflowId)).send().join();
 
+    // the task listener of the task runs on every line, so this half is the same everywhere
     assertNotNull(CockpitServer.awaitRequest("/usertask/%s/cancelled".formatted(userTaskId)));
+    assertTheCaseWasReportedAsCancelledWhereTheLineSaysIt(workflowId);
 
-    // and what the cockpit does NOT hear about is the workflow. The 'end' listener of a
-    // process does not run when the instance is cancelled, and Camunda 8 has no listener for
-    // a cancellation before 8.10. See decision 3 in the repository's DECISIONS.md
-    CockpitServer.awaitQuiet();
+    // never as completed, on any line. The 'end' listener of a process does not run when the
+    // instance is cancelled
     assertEquals(
         List.of(),
         CockpitServer.matching("/workflow/%s/completed".formatted(workflowId)),
         "the cancelled workflow was reported as completed");
+
+  }
+
+  @Test
+  @DisplayName("Cancelling a workflow which holds no user task reports the case as far as the line says it")
+  public void cancellingAWaitingWorkflowIsReportedAsFarAsCamundaSaysIt() {
+
+    final var aggregate = aStartedWaitingWorkflow("Cornelius");
+    CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Cornelius\"");
+    final var workflowId = workflowIdOf(WaitingWorkflowService.BPMN_PROCESS_ID, aggregate.getId());
+
+    client().newCancelInstanceCommand(Long.parseLong(workflowId)).send().join();
+
+    assertTheCaseWasReportedAsCancelledWhereTheLineSaysIt(workflowId);
+
+  }
+
+  @Test
+  @DisplayName("A cancel listener which cannot answer leaves the cancellation with an incident")
+  public void aFailingCancelListenerLeavesAnIncident() {
+
+    assumeTrue(
+        Camunda8CancelListeners.theProcessCanReportItsCancellation(),
+        "a cluster of this release line hands out no job when an instance is cancelled");
+
+    final var aggregate = aStartedWaitingWorkflow("Cassandra");
+    CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Cassandra\"");
+    final var workflowId = workflowIdOf(WaitingWorkflowService.BPMN_PROCESS_ID, aggregate.getId());
+
+    // what a cancel listener with no retries costs the instance it runs in is nowhere in
+    // Camunda's documentation, so it is measured here. See decision 11 in the repository's
+    // DECISIONS.md
+    waitingWorkflowService.theDetailsProviderFails(true);
+    try {
+      client().newCancelInstanceCommand(Long.parseLong(workflowId)).send().join();
+
+      awaitValue(
+          () -> client()
+              .newProcessInstanceGetRequest(Long.parseLong(workflowId))
+              .send()
+              .join()
+              .getHasIncident()
+                  ? Boolean.TRUE
+                  : null,
+          "an incident on workflow %s, which its failing cancel listener was supposed to cause"
+              .formatted(workflowId));
+    } finally {
+      waitingWorkflowService.theDetailsProviderFails(false);
+    }
+
+    // and nothing about the case reached the cockpit: the entry is written when the report is
+    // complete, and this one never was
+    CockpitServer.awaitQuiet();
+    assertEquals(
+        List.of(),
+        CockpitServer.matching("/workflow/%s/cancelled".formatted(workflowId)),
+        "a case whose cancel listener failed was reported anyway");
+
+  }
+
+  private WaitingAggregate aStartedWaitingWorkflow(
+      final String customer) {
+
+    return transactions
+        .execute(status -> {
+          final var fresh = new WaitingAggregate();
+          fresh.setCustomer(customer);
+          return waitingWorkflowService.processes().startWorkflow(fresh);
+        });
+
+  }
+
+  /**
+   * What a cancelled case reaches the cockpit as, which is a question of the release line.
+   * <p>
+   * From 8.10 on the process carries a <code>cancel</code> execution listener, so the case is
+   * closed. Before that the cluster hands out no job when an instance is terminated, so nothing
+   * about the case arrives at all and the cockpit keeps showing it as it last heard about it.
+   * See decision 11 in the repository's DECISIONS.md.
+   *
+   * @param workflowId The instance which was cancelled
+   */
+  private static void assertTheCaseWasReportedAsCancelledWhereTheLineSaysIt(
+      final String workflowId) {
+
+    if (Camunda8CancelListeners.theProcessCanReportItsCancellation()) {
+      assertNotNull(CockpitServer.awaitRequest("/workflow/%s/cancelled".formatted(workflowId)));
+      return;
+    }
+    CockpitServer.awaitQuiet();
+    assertEquals(
+        List.of(),
+        CockpitServer.matching("/workflow/%s/cancelled".formatted(workflowId)),
+        "this release line reported a cancelled workflow, which no cluster of it can say");
 
   }
 

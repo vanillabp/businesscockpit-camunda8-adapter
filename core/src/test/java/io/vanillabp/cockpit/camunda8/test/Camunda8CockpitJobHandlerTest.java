@@ -3,6 +3,7 @@ package io.vanillabp.cockpit.camunda8.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
@@ -390,6 +391,53 @@ public class Camunda8CockpitJobHandlerTest {
     assertEquals(
         String.valueOf(DEPLOYED_VERSION),
         publisher.workflowEvents().getFirst().workflow().processVersion());
+
+  }
+
+  @Test
+  @DisplayName("The cancel listener of a process closes the case rather than refreshing it")
+  public void aCancelledWorkflowIsReportedAsCancelled() {
+
+    assumeTrue(
+        JobsOfACancellation.thisLineReportsThem(),
+        "a cluster of this release line hands out no job for a cancelled instance");
+
+    final var job = aJob(
+        JobKind.EXECUTION_LISTENER, null, Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID),
+        PROCESS_ID);
+    JobsOfACancellation.reportsACancellation(job);
+
+    handler.handle(client, job);
+
+    // and not UPDATED, which is what every listener event but 'end' used to be read as. An
+    // update refreshes a case the cockpit goes on showing as open
+    assertEquals(
+        List.of(WorkflowEventKind.CANCELLED),
+        publisher.workflowEvents().stream().map(RecordingPublisher.WorkflowEvent::kind).toList());
+    assertEquals("12345", publisher.workflowEvents().getFirst().workflow().workflowId());
+
+  }
+
+  @Test
+  @DisplayName("A cancelled called process reports nothing either: it is a step, not a case")
+  public void aCancelledCalledProcessIsNoCaseOfItsOwn() {
+
+    assumeTrue(
+        JobsOfACancellation.thisLineReportsThem(),
+        "a cluster of this release line hands out no job for a cancelled instance");
+
+    final var job = aJob(
+        JobKind.EXECUTION_LISTENER, null, Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID),
+        PROCESS_ID);
+    JobsOfACancellation.reportsACancellation(job);
+    // a cancelled hierarchy gives every instance in it a cancel job of its own, and each of
+    // them names its own process instance. Only the one nobody called is the business case
+    JobsInAHierarchy.isCalledBy(clientFactories, ADAPTER_ID, job, 777L, 12345L);
+
+    handler.handle(client, job);
+
+    assertTrue(publisher.workflowEvents().isEmpty());
+    verify(client.newCompleteCommand(anyLong()).send(), atLeastOnce()).join();
 
   }
 

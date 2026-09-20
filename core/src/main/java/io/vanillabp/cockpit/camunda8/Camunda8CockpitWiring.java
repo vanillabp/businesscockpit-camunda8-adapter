@@ -118,8 +118,9 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
   }
 
   /**
-   * Adds what makes the cluster say that a workflow of this process began and that it ended: an
-   * <code>end</code> listener on every start event, and one at the process itself.
+   * Adds what makes the cluster say that a workflow of this process began, that it ended and
+   * that somebody cancelled it: an <code>end</code> listener on every start event, one at the
+   * process itself, and on 8.10 and above a <code>cancel</code> listener at the process.
    *
    * @param adapterId The configured adapter id whose models are being wired
    * @param workflowModuleId The workflow module
@@ -154,6 +155,10 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
         });
 
     Camunda8CockpitListeners.addProcessListener(process, listenerType);
+    // and what makes it say that a workflow was cancelled, which only 8.10 and above can say.
+    // It carries the same job type, so the worker of the end listener beside it receives that
+    // job too and nothing is registered a second time
+    Camunda8CockpitListeners.addProcessCancelListener(process, listenerType);
     deployments
         .register(
             adapterId,
