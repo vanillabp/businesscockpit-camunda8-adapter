@@ -185,6 +185,12 @@ No line is released yet, so no user ever read such a POM. `Camunda8PublishedPomT
 published POM on every line since and holds the client in it against the client the build was
 compiled against.
 
+The same POM also names the repository, and it names the root of it in every artifact. Maven
+would append the module path to that address and to all three `scm` elements, which points at a
+page nobody can open; four `child.*.inherit.append.path` attributes in the parent switch it off.
+Where we deploy is left out of the published POM, because it is nothing a consumer can use. Both
+are part of what the test reads.
+
 Nothing else of ours reaches an application either, and that is why the parent is dropped rather
 than corrected. What this repository pins for its own build is chosen for the newest line, and a
 user of the oldest line has no reason to be handed it. See [decision 12](./DECISIONS.md).
