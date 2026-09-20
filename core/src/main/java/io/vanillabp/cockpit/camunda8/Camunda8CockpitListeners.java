@@ -17,6 +17,7 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListenerEventType;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
+import io.vanillabp.camunda8.wiring.Camunda8CancelListeners;
 
 /**
  * The listeners the Business Cockpit puts into a Camunda 8 model, and the one place which
@@ -33,7 +34,9 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
  * application whose model is deployed again by Version 2 must produce the same bytes. Otherwise
  * the cluster stores a new process version and every running workflow keeps the old one. See
  * decision 4 in the repository's DECISIONS.md. The execution listeners are NOT the Version 1
- * ones, and decision 1 in the repository's DECISIONS.md says why.
+ * ones, and decision 1 in the repository's DECISIONS.md says why. On 8.10 the process carries a
+ * second execution listener, which changes those bytes once more; decision 11 in the
+ * repository's DECISIONS.md says what that costs.
  * <p>
  * Every method here is idempotent. The deployment pipeline hands the same model instance to
  * every executable process of a file, and re-wiring an element which already carries this
@@ -214,6 +217,55 @@ public final class Camunda8CockpitListeners {
       final String listenerType) {
 
     return addExecutionListener(process, listenerType);
+
+  }
+
+  /**
+   * Adds the listener which reports that a workflow was cancelled, where the release line has
+   * one at all.
+   * <p>
+   * Camunda 8 gained the <code>cancel</code> execution listener with 8.10, and the cluster takes
+   * it on the PROCESS element and nowhere else. It runs when an instance is terminated, after
+   * every child element has terminated and before the instance reaches its final state, which is
+   * the one moment the <code>end</code> listener beside it does not run. On 8.8 and 8.9 nothing
+   * reports a cancelled workflow at all. See decision 11 in the repository's DECISIONS.md.
+   * <p>
+   * Which line this build is on is the adapter's answer, not a second rule of this extension.
+   * {@link Camunda8CancelListeners} says whether the line knows the construct, and it writes the
+   * listener. Asking it first matters: a cluster of 8.8 or 8.9 refuses a model which carries the
+   * listener, and that would fail the deployment of the whole workflow module.
+   * <p>
+   * The listener carries the job type of the <code>end</code> listener at the same process, so
+   * the worker which is open for that type receives it too.
+   *
+   * @param process The BPMN process element
+   * @param listenerType The listener's type
+   * @return Whether it was added, <code>false</code> where this line has no such listener or
+   *         where this process already carries it
+   */
+  public static boolean addProcessCancelListener(
+      final Process process,
+      final String listenerType) {
+
+    if (!Camunda8CancelListeners.theProcessCanReportItsCancellation()) {
+      return false;
+    }
+
+    final var listeners = executionListenersOf(process);
+    // "a listener of ours which is not the end listener": the event type this one carries has
+    // no name on the older clients, and this class is compiled for all of them. A process
+    // carries at most these two listeners of this extension
+    final var alreadyWired = listeners
+        .getExecutionListeners()
+        .stream()
+        .filter(listener -> listenerType.equals(listener.getType()))
+        .anyMatch(listener -> listener.getEventType() != ZeebeExecutionListenerEventType.end);
+    if (alreadyWired) {
+      return false;
+    }
+
+    Camunda8CancelListeners.addProcessCancelListener(listeners, listenerType, RETRIES);
+    return true;
 
   }
 

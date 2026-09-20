@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="WaitingDefinitions" targetNamespace="http://vanillabp.io/businesscockpit/camunda8">
+  <!--
+    A workflow which waits for a timer nobody intends to let expire, so that a test can cancel a
+    running instance.
+
+    It holds no Camunda user task on purpose. An instance which holds one cannot be cancelled on
+    camunda/camunda:8.10.0-alpha5 at all: the 'creating' listener job of that task never reaches
+    a worker (camunda/camunda#58193), so the task stays half created, the instance stays active,
+    and the cancel listener of the process never runs because the cluster runs it only after
+    every child element ended. A timer is a child element which terminates by itself, which
+    leaves the cancellation to be about the process.
+  -->
+  <bpmn:process id="WaitingProcess" isExecutable="true">
+    <bpmn:startEvent id="WaitingStart">
+      <bpmn:outgoing>ToWait</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToWait" sourceRef="WaitingStart" targetRef="Wait" />
+    <bpmn:intermediateCatchEvent id="Wait" name="Wait for something which never comes">
+      <bpmn:incoming>ToWait</bpmn:incoming>
+      <bpmn:outgoing>ToWaitingEnd</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="WaitTimer">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT1H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="ToWaitingEnd" sourceRef="Wait" targetRef="WaitingEnd" />
+    <bpmn:endEvent id="WaitingEnd">
+      <bpmn:incoming>ToWaitingEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

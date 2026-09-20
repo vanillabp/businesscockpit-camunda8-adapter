@@ -24,6 +24,7 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListenerEventType;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
+import io.vanillabp.camunda8.wiring.Camunda8CancelListeners;
 import io.vanillabp.camunda8.wiring.Camunda8TaskWiring;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
@@ -318,6 +319,46 @@ public class Camunda8CockpitListenersTest {
   }
 
   @Test
+  @DisplayName("The process gets a cancel listener where the release line has one, and nothing else does")
+  public void theProcessReportsItsCancellationWhereTheLineCan() {
+
+    final var bpmn = aModelVanillaBpWired("""
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="%s" />""".formatted(FORM_REFERENCE));
+    final var process = Camunda8CockpitListeners.processOf(bpmn, PROCESS_ID).orElseThrow();
+    final var workflowType = Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID);
+    final var startEvent = Camunda8CockpitListeners.startEventsOf(process).getFirst();
+
+    Camunda8CockpitListeners.addStartEventListener(startEvent, workflowType);
+    Camunda8CockpitListeners.addProcessListener(process, workflowType);
+
+    final var theLineHasTheListener = Camunda8CancelListeners
+        .theProcessCanReportItsCancellation();
+    assertEquals(
+        theLineHasTheListener,
+        Camunda8CockpitListeners.addProcessCancelListener(process, workflowType));
+
+    // the event type is asserted on the XML rather than on the model API, because the literal
+    // it carries has no name on the 8.8 and 8.9 clients this test also compiles against
+    final var atTheProcess = executionListenersOf(bpmn, PROCESS_ID);
+    assertEquals(theLineHasTheListener ? 2 : 1, atTheProcess.size());
+    assertEquals(
+        theLineHasTheListener,
+        Bpmn.convertToString(bpmn).contains("eventType=\"cancel\""),
+        Bpmn.convertToString(bpmn));
+    atTheProcess.forEach(listener -> assertEquals(workflowType, listener.getType()));
+    // a cancel listener is an incident like every other report which cannot be written
+    atTheProcess.forEach(listener -> assertEquals("0", listener.getRetries()));
+
+    // a start event never gets one: the cluster takes the construct on the process element and
+    // refuses it anywhere else
+    final var atTheStartEvent = executionListenersOf(bpmn, "Started");
+    assertEquals(1, atTheStartEvent.size());
+    assertEquals(ZeebeExecutionListenerEventType.end, atTheStartEvent.getFirst().getEventType());
+
+  }
+
+  @Test
   @DisplayName("Only the process' own start events are wired, not the ones inside a subprocess")
   public void onlyTheProcessOwnStartEventsAreWired() {
 
@@ -358,6 +399,7 @@ public class Camunda8CockpitListenersTest {
     addCockpitTaskListeners(bpmn);
     Camunda8CockpitListeners.addStartEventListener(startEvent, workflowType);
     Camunda8CockpitListeners.addProcessListener(process, workflowType);
+    Camunda8CockpitListeners.addProcessCancelListener(process, workflowType);
     final var afterTheFirstWiring = Bpmn.convertToString(bpmn);
 
     assertFalse(
@@ -367,6 +409,7 @@ public class Camunda8CockpitListenersTest {
                 Camunda8CockpitListeners.listenerTypeOf(FORM_REFERENCE)));
     assertFalse(Camunda8CockpitListeners.addStartEventListener(startEvent, workflowType));
     assertFalse(Camunda8CockpitListeners.addProcessListener(process, workflowType));
+    assertFalse(Camunda8CockpitListeners.addProcessCancelListener(process, workflowType));
 
     assertEquals(afterTheFirstWiring, Bpmn.convertToString(bpmn));
 

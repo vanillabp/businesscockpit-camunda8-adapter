@@ -12,6 +12,7 @@ import io.camunda.client.api.search.enums.JobKind;
 import io.camunda.client.api.search.enums.ListenerEventType;
 import io.camunda.client.api.worker.JobClient;
 import io.camunda.client.api.worker.JobHandler;
+import io.vanillabp.camunda8.wiring.Camunda8CancelListeners;
 import io.vanillabp.camunda8.wiring.Camunda8ListenerJobs;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
@@ -411,18 +412,27 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   }
 
   /**
-   * What happened to the workflow. Both of this extension's execution listeners are
-   * <code>end</code> listeners, and what they sit on tells them apart: the process itself ends
-   * the workflow, a start event begins it.
+   * What happened to the workflow.
    * <p>
-   * A workflow which was terminated rather than finished is not reported as such, because
-   * Camunda 8 has no listener for it before 8.10. See decision 3 in the repository's
-   * DECISIONS.md.
+   * A cancelled workflow says so with the job of the <code>cancel</code> listener at its
+   * process, which 8.10 brought and which the adapter recognises for us. It is asked first,
+   * because the case has to be closed rather than refreshed, and because the literal its event
+   * type carries has no name on the older clients.
+   * <p>
+   * The other two listeners of this extension are <code>end</code> listeners, and what they sit
+   * on tells them apart: the process itself ends the workflow, a start event begins it.
+   * <p>
+   * On 8.8 and 8.9 a cancelled workflow is reported as nothing at all. The cluster hands out no
+   * job for it, and the <code>end</code> listener of a process does not run when the instance is
+   * terminated. See decision 3 and decision 11 in the repository's DECISIONS.md.
    */
   private static WorkflowEventKind workflowKindOf(
       final ActivatedJob job,
       final WiredListener listener) {
 
+    if (Camunda8CancelListeners.isCancellationOfTheProcess(job)) {
+      return WorkflowEventKind.CANCELLED;
+    }
     if (job.getListenerEventType() != ListenerEventType.END) {
       return WorkflowEventKind.UPDATED;
     }

@@ -40,6 +40,10 @@ Four published modules and the machinery around them:
 | `quarkus/runtime`    | `businesscockpit-camunda8-adapter-quarkus`     | the same beans as CDI producers                                                                                     |
 | `quarkus/deployment` | `…-quarkus-deployment`                         | the build steps of that extension, and the test booting it against a cluster                                        |
 
+[`GAPS.md`](./GAPS.md) holds the questions the cockpit asks a workflow engine which Camunda 8 has no
+answer for on at least one of the release lines built here. What this extension decided to do about
+such a gap is in [`DECISIONS.md`](./DECISIONS.md), and each entry names the decision it belongs to.
+
 Beside them stands the machinery. `test-coverage-report` measures each platform separately, and its
 `coverage-gate` breaks the build below 85 %. Then there are the four GitHub Actions workflows, the
 release-line machinery both of the sections below describe, the formatting rules every VanillaBP
@@ -51,10 +55,12 @@ Camunda 8 adapter per release line, so the tests of a line meet the cluster that
 The cockpit server they report to is `extensions-commons-test-support`, published by the Business
 Cockpit and shared with its other extension repositories.
 
-Deliberately absent, and not as an empty placeholder:
+Absent before 8.10, and not as an empty placeholder:
 
-- A `canceled` execution listener. Camunda 8 gains it with 8.10, and until then a terminated
-  workflow is not reported as such - see [decision 3](./DECISIONS.md).
+- The `cancel` execution listener at the process. Camunda 8 gained it with 8.10, so a build of that
+  line writes it and a cancelled case reaches the cockpit as cancelled. A build of line 8.8 or 8.9
+  has nothing to write it with, and a cancelled case stays open in the cockpit with its task list
+  emptied - see [decision 11](./DECISIONS.md) and [GAPS.md](./GAPS.md).
 
 ## How it is put together
 

@@ -34,7 +34,7 @@ modules they had opened and opened its workers per module across all of them. To
 spelling of a BPMN process a model carried, it tried what every configured adapter would call it.
 Decision 6 says what that cost and what replaced it.
 
-## 3. A called process is a step, not a case
+## 3. A called process is a step, not a case - what a cancelled workflow reports superseded by decision 11
 
 The cockpit shows business cases. A process started by a call activity is part of the case above it.
 It carries the same workflow aggregate, so reporting its start and its end would show a second case
@@ -42,10 +42,11 @@ which nobody opened. An execution-listener job therefore reports nothing when it
 has a root instance above it, and a user task of such a process is reported as a task of the
 workflow that root instance is.
 
-A workflow which was terminated rather than finished is not reported at all before Camunda 8.10. The
-cluster has no listener for it, and the `end` listener of a process does not run when the instance is
-cancelled. The cockpit keeps showing such a case as it last heard about it, until the `canceled`
-execution listener of 8.10 can be wired.
+A workflow which was terminated rather than finished was not reported at all when this was written.
+Decision 11 replaces that half: 8.10 brought the listener, a build of that line writes it, and a
+cancelled case is now reported as cancelled. On 8.8 and 8.9 the paragraph still holds, and the
+sentence about a called process holds on every line - a cancelled called process is a step which
+ended, not a case which closed.
 
 ## 4. The task listeners are the ones Version 1 wrote
 
@@ -241,3 +242,53 @@ name different versions. The issue of decision 9 is then what asks for the pin.
 It had already happened on two lines at once when this was written. Line 8.9 pinned `8.9.18` while
 its tests ran a cluster `8.9.19`, and line 8.10 pinned `8.10.0-alpha4` against `8.10.0-alpha5`. A
 line the night does not build is not covered, which today is the preview line.
+
+## 11. A cancelled case is reported from 8.10 on, and the model pays a version for it
+
+Camunda 8.10 brought the `cancel` execution listener. The cluster takes it on the PROCESS element
+and nowhere else. It runs when an instance is terminated, after every child element has terminated
+and before the instance reaches its final state. That is the one moment the `end` listener beside
+it does not run, which is why a cancelled case used to stay open in the cockpit for good.
+
+So this extension writes that listener. It carries the job type of the `end` listener at the same
+process and the zero retries of decision 5. The worker which is open for that type receives the
+job, and the case is reported as cancelled.
+
+Whether the line has the construct is the adapter's answer, not a second rule here.
+`Camunda8CancelListeners` of the VanillaBP Camunda 8 adapter answers it and writes the listener
+(decision 28 in the DECISIONS.md of vanillabp/camunda8-adapter). Asking it first matters. A cluster
+of 8.8 or 8.9 refuses a model which carries the listener, and that fails the deployment of the
+whole workflow module. A second copy of the rule is a rule which will be wrong in one of the two
+places.
+
+An upgrading application deploys a new process version on 8.10. A listener added to the process
+changes the bytes of the process, and a cluster counts a version per set of bytes. Decision 4
+accepts exactly that for the start events of decision 1. This is the second reason, and it works
+the same way. Workflows which are already running stay on the version they were started on. They
+keep reporting what the listeners of that version report, so a cancellation of theirs stays
+unreported. Moving from a build of line 8.9 to a build of line 8.10 costs one more version as well.
+
+Nothing is derived for the user tasks of a cancelled case. Every Camunda-managed user task this
+extension reports carries its own `canceling` task listener. That listener runs on every release
+line, and it runs before the listener of the process. So the tasks report themselves and the case
+reports itself. Deriving a `CANCELED` per known open task would say a second time what already
+arrived. The order of the two reports does not matter either: the cockpit server records an end
+even when it holds something younger, and a second end of the same thing changes nothing.
+
+Nor are the other open things of the instance looked up. A search of the cluster's secondary
+storage from inside a listener job would wait for the exporter while the termination waits for the
+job. And the answer would be about a moment the job has already left. What the cockpit shows is
+user tasks, and those carry their own listener.
+
+A failing cancel listener leaves an incident on the cancellation. That is measured rather than read
+anywhere: `Camunda8CockpitIT` arms a details provider which throws, cancels the instance on
+`camunda/camunda:8.10.0-alpha5`, and the cluster raises an incident on it. The instance then stays
+in its cancellation until somebody resolves that incident. It is the same answer decision 5 gives
+everywhere else. Here the alternative is worse than usual: completing the job anyway would let the
+instance finish terminating with nobody told, and the case would stay open in the cockpit for good.
+
+A terminate end event is not a cancellation on Camunda 8. The `end` listener runs, the instance
+reads as completed, and no cancel job exists. Such a case is reported as completed, on every line,
+and this entry does not change it. Deleting an instance creates no job at all and reports nothing.
+
+What line 8.8 and line 8.9 still cannot say is written down in `GAPS.md`.
