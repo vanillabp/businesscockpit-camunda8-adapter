@@ -102,15 +102,16 @@ core and gets the Camunda client through it, so a build of this repository inher
 cluster version of the adapter build it was compiled against. A line here means the same thing it
 means there:
 
-|   Channel   |        Version        | Camunda 8 adapter line |   Client pin    | Tested against |
-|-------------|-----------------------|------------------------|-----------------|----------------|
-| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.37`        | `8.8.37`       |
-| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.19`        | `8.9.19`       |
-| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha5` | not yet        |
+|   Channel   |        Version        | Camunda 8 adapter line |   Client pin    | Tested against  |
+|-------------|-----------------------|------------------------|-----------------|-----------------|
+| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.37`        | `8.8.37`        |
+| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.19`        | `8.9.19`        |
+| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha5` | `8.10.0-alpha5` |
 
 The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
 Camunda offers, and they move when that repository moves. A cluster version appears in the last
-column only once a build of that line has been proven against it.
+column only once a build of that line has been proven against it. The preview line is proven
+without the tests which need a user task, for the reason the next section but one gives.
 
 The integration tests do not start the cluster this POM pins. The image comes from
 `camunda8-adapter-test-support`: the Camunda 8 adapter filters its own pin into

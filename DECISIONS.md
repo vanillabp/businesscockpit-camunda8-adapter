@@ -447,6 +447,15 @@ moved pin. The preview line is still released, as it always was. Its version say
 nothing claims it was proven. This narrows decision 9, which asked the release to wait for every
 line of the matrix while the matrix held GA lines only.
 
+The exclusion costs coverage, and the gate had to be measured rather than guessed. Nineteen
+tests of thirty is a lot of code left uncovered, and the build stops below 85 per platform. The
+first green run of this line says 86.43 % for Spring Boot and 87.40 % for Quarkus, against 90.80 %
+and 91.77 % on line 8.9 in the same matrix run. So the gate holds on the preview line with about
+one and a half points to spare, and no line of this repository gets a threshold of its own. If a
+later test pushes it under the gate, the answer is a threshold in the `line-8.10` profile, with a
+comment which ties the number to the exclusion so that both go away together. Lowering the gate
+for every line would be the wrong answer to a defect of one alpha.
+
 A red preview line still gets its GitHub issue in the night, the same as any other line, because
 somebody has to decide whether it is the alpha's defect or ours. Answering that is what the tag
 asks for at every pin move: deploy a user task with a `creating` listener, start an instance and
