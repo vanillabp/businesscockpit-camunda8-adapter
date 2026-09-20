@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -67,6 +68,19 @@ public class Camunda8CockpitTest {
   private static final String ADAPTER_ID = "c8";
 
   private static final String MODULE_ID = "c8-cockpit";
+
+  /**
+   * Tests which need a user task the cluster really created. The preview line hands none out, so
+   * they are left out there.
+   * <p>
+   * The REST gateway of the 8.10 alpha drops the activate-jobs batch a <code>creating</code>
+   * listener job arrives in, so the task is never finished being created (camunda/camunda#58193,
+   * gap 4 of GAPS.md). The <code>line-8.10</code> profile of the parent POM excludes this tag and
+   * says what the exclusion costs and when it goes away. It excludes it in surefire as well as in
+   * failsafe, because this suite runs through surefire. {@code Camunda8CockpitIT} of the Spring
+   * Boot module carries the long form of the same reason.
+   */
+  private static final String USER_TASK_LISTENER_JOBS = "user-task-listener-jobs";
 
   /** The BPMN process of the file which no workflow aggregate of this application claims. */
   private static final String UNCLAIMED_PROCESS_ID = "IncidentDetailsProcess";
@@ -331,6 +345,7 @@ public class Camunda8CockpitTest {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A called process is a step of the case above it, not a case of its own")
   public void aCalledProcessIsAStepOfTheCaseAboveIt() throws Exception {
@@ -482,6 +497,7 @@ public class Camunda8CockpitTest {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A started workflow and its user task reach the cockpit, enriched by the application")
   public void aStartedWorkflowReachesTheCockpit() throws Exception {
@@ -506,6 +522,7 @@ public class Camunda8CockpitTest {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A details provider is picked by the version of the deployed process")
   public void aDetailsProviderIsPickedByTheDeployedVersion() throws Exception {
@@ -548,6 +565,7 @@ public class Camunda8CockpitTest {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("An application reporting a changed aggregate updates its workflow and its user task")
   public void aggregateChangedUpdatesWhatTheCockpitShows() throws Exception {
@@ -571,6 +589,7 @@ public class Camunda8CockpitTest {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A question about something the cluster does not hold is answered with nothing")
   public void aQuestionAboutSomethingTheClusterDoesNotHoldIsAnsweredWithNothing() throws Exception {
@@ -601,6 +620,7 @@ public class Camunda8CockpitTest {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("An application can read one user task of its own case")
   public void getUserTaskAnswersForItsOwnAggregate() throws Exception {

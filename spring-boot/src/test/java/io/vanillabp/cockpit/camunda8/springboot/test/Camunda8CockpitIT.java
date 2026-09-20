@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,6 +78,32 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 public class Camunda8CockpitIT {
 
   private static final String MODULE_ID = "c8-cockpit";
+
+  /**
+   * Tests which need a user task the cluster really created. The preview line hands none out, so
+   * they are left out there.
+   * <p>
+   * The REST gateway of the 8.10 alpha drops a whole activate-jobs batch as soon as it meets a
+   * task listener job whose event carries no user task action in its headers. The two events
+   * without one are <code>creating</code> and <code>canceling</code>. So the
+   * <code>creating</code> listener VanillaBP writes never reaches a worker, the task is never
+   * finished being created, and it never reaches the state {@link UserTaskState#CREATED} which
+   * {@link #userTaskIdOf(TestAggregate)} searches for. The bug is camunda/camunda#58193, and gap
+   * 4 of GAPS.md tells it from the cockpit's side.
+   * <p>
+   * The other events are untouched. An <code>assigning</code> job triggered by an assign command,
+   * an <code>updating</code> job and a <code>completing</code> job carry the action and reach
+   * their worker on the alpha as fast as on a GA line.
+   * <p>
+   * The <code>line-8.10</code> profile of the parent POM excludes this tag, and the tag carries
+   * the same name and the same meaning in vanillabp/camunda8-adapter, so a reader of both
+   * repositories reads one thing. Everything else of the line passes, and that is what the
+   * exclusion buys: a line which is always red says nothing on the day something else breaks in
+   * it. When the pin moves to a newer alpha, measure rather than assume: deploy a user task with
+   * a <code>creating</code> listener, start an instance and see whether the job arrives. Once one
+   * does, the tag and the exclusion go away together.
+   */
+  private static final String USER_TASK_LISTENER_JOBS = "user-task-listener-jobs";
 
   /**
    * How long a wait for the cluster's searchable storage keeps hoping. It is the slowest thing
@@ -589,6 +616,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A started workflow and its user task reach the cockpit, enriched by the application")
   public void aStartedWorkflowReachesTheCockpit() {
@@ -617,6 +645,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A details provider is picked by the version of the deployed process")
   public void aDetailsProviderIsPickedByTheDeployedVersion() {
@@ -670,6 +699,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A called process is a step of the case above it, not a case of its own")
   public void aCalledProcessIsAStepOfTheCaseAboveIt() {
@@ -701,6 +731,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("Completing the user task reports the task and the workflow as completed")
   public void completingTheUserTaskIsReported() {
@@ -721,6 +752,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("Cancelling a workflow which holds a user task reports that task, and the case as far as the line says it")
   public void cancellingTheWorkflowIsReportedAsFarAsCamundaSaysIt() {
@@ -761,6 +793,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A user task taken away by an interrupting event is reported as cancelled while its case runs on")
   public void anInterruptedUserTaskIsReportedAsCancelled() {
@@ -1082,6 +1115,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("An application reporting a changed aggregate updates the named user task")
   public void aggregateChangedUpdatesTheNamedUserTask() {
@@ -1103,6 +1137,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A report carries the state its case had at the moment of the event")
   public void aReportCarriesTheStateOfItsEvent() {
@@ -1128,6 +1163,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("An application can read one user task of its own case, and no other")
   public void getUserTaskAnswersOnlyForItsOwnAggregate() {
@@ -1157,6 +1193,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("Reading a user task reports nothing to the cockpit")
   public void readingAUserTaskReportsNothing() {
@@ -1180,6 +1217,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A details provider which fails raises an incident, and the transition waits")
   public void aFailingDetailsProviderRaisesAnIncident() {
@@ -1243,6 +1281,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A question about something the cluster does not hold is answered with nothing")
   public void aQuestionAboutSomethingTheClusterDoesNotHoldIsAnsweredWithNothing() {
