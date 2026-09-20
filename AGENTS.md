@@ -74,6 +74,25 @@ clone of `adapter-platform-integration` was 58 commits behind `main` and failed 
 When that happens, the pull-request build is the proof. A runner clones `main` and reads the
 published snapshots, so it has neither problem.
 
+## A deploy is every module or none
+
+`mvn deploy -pl <module>` publishes the modules you name and leaves the rest of the repository as
+it was. What stays behind is half of an older build. The parent POM of today can end up beside
+module POMs from before the build moved to the flatten plugin's mode `oss`, which still name a
+parent and carry dependencies without a version. Neither half looks wrong on its own, and
+nothing compares them.
+Even `Camunda8PublishedPomTest` reads the POM the running build has just flattened and not the
+one lying in the repository, so a green build says nothing about the mixture. Whoever resolves
+the artifacts next is the one who finds out, and what they get to see reads like a mistake in
+their own code. On 2026-09-20 such a mixture sat in a shared `~/.m2` and cost somebody a quarter
+of an hour.
+
+So deploy the whole reactor or nothing. The workflows do it that way already:
+`deploy-to-github-packages.yaml` runs `mvn deploy` from the root POM on a push to main, and
+`release.yaml` runs `clean deploy` once per line, also from the root. Neither of them passes
+`-pl`, so only a deploy somebody types by hand can produce the mixture. If you have to repair a
+single module, deploy the whole reactor again instead.
+
 ## This is an extension, not a BPMS adapter
 
 An extension joins the deployment pipeline of the VanillaBP core and implements
