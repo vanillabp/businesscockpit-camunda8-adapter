@@ -580,7 +580,8 @@
                   Quarkus test of the deployment module waits for the reports of a user task, and
                   they ride on the 'creating' listener job the gateway drops. Excluding the tag in
                   failsafe alone leaves this line red once it gets as far as that module, which is
-                  where the adapter measured it. The tag means the same here as above.
+                  where the adapter measured it. The tag marks a test which needs a user task the
+                  cluster really created, in this plugin as in the one above.
                 -->
                 <excludedGroups>user-task-listener-jobs</excludedGroups>
               </configuration>

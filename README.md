@@ -124,7 +124,7 @@ While they are not equal, a line runs a client older than the cluster answering 
 over that. The literals the newer cluster gained arrive as `UNKNOWN_ENUM_VALUE`, and a fallback
 nobody chose reads like one somebody did. So the nightly matrix is what says it: every line it
 builds prints the image the adapter named beside its own pin, and the line is red while the two
-differ. A line the night leaves out is not covered, which today is the preview line.
+differ. The night builds every line, so every line is covered.
 
 A client downgrade inside a line is not supported. Camunda adds enum literals and interface
 methods in patch releases and does not count that as breaking, so a build compiled against
@@ -137,14 +137,17 @@ GA line it also gets a red check. That check is `client-api-changes.yaml` of
 `vanillabp/camunda8-adapter`, called from `.github/workflows/client-api-changes.yaml` here, so both
 repositories answer the same way.
 
-The preview line is compiled but not run. A user-task listener job never reached its worker on
-`camunda/camunda:8.10.0-alpha4`, the alpha this line pinned when that was measured. The REST
-gateway throws a `NullPointerException` while converting the job and drops the whole activate-jobs
-batch, which starves the execution listeners beside it (`camunda/camunda#58193`, open). Ten of the
-fifteen integration tests then sit in their deadline. The line pins `8.10.0-alpha5` today and that
-issue is still open, so the nightly matrix keeps leaving the line out and says so, while the API
-check still compiles it on every pull request. The VanillaBP Camunda 8 adapter keeps the same alpha
-out of its pull-request checks for the same bug.
+The preview line is built every night, without the tests which need a user task. The REST gateway
+of `camunda/camunda:8.10.0-alpha5` throws a `NullPointerException` while it converts a task
+listener job whose event carries no user task action, and it drops the whole activate-jobs batch
+(`camunda/camunda#58193`). The two events without an action are `creating` and `canceling`, so a
+Camunda-managed user task is never finished being created on that alpha. The tests which need one
+carry the tag `user-task-listener-jobs`, and the `line-8.10` profile excludes it. Nineteen of the
+thirty integration tests carry it. The eleven which run prove the deployment, the start of a case,
+the execution listeners, the search in the secondary storage, and the two things this line alone
+has, the cancel listener of the process and the job lease. A red preview line holds up no pull
+request and no release, see [decision 14](./DECISIONS.md). The VanillaBP Camunda 8 adapter runs its
+8.10 line the same way, with the same tag.
 
 Snapshots have no suffix. Until the first release they are `0.9.0-SNAPSHOT` of the current GA line,
 which is what a build without a profile produces, and every line still reads the same
