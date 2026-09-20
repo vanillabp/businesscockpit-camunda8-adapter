@@ -292,3 +292,44 @@ reads as completed, and no cancel job exists. Such a case is reported as complet
 and this entry does not change it. Deleting an instance creates no job at all and reports nothing.
 
 What line 8.8 and line 8.9 still cannot say is written down in `GAPS.md`.
+
+## 12. A line hands an application its own client and nothing else of ours
+
+This repository is published once per Camunda 8 minor so that an application can stay on the
+cluster it has. The POM is what keeps that promise, because the POM is what puts a Camunda client
+on the application's classpath. Until 2026-09-20 it did not keep it.
+
+The published POM was a copy of the source POM with `${revision}` filled in, which is all the
+flatten mode `resolveCiFriendliesOnly` does. The client version stood in a property that the line
+profile sets, and an application activates no profile of ours, so it read the default of the file.
+Every line therefore published a POM asking for the client of the current GA line. Read in the
+installed artifacts of `0.9.0-8.8-SNAPSHOT`: the module POM named `io.camunda:camunda-client-java`
+with no version and kept its parent, and the parent said `${camunda8.version.line-8.9}`. An
+application on the 8.8 line would have been handed the 8.9 client, whose job activations an 8.8
+cluster rejects. No line is released yet, so nothing of this reached a user.
+
+Every version is written into the published POM now. The flatten plugin runs in its `oss` mode.
+Each published module names its dependencies with resolved versions and carries no parent, no
+`dependencyManagement`, no properties and no profiles. Nothing in it waits for something a reader
+would have to activate or inherit. `Camunda8PublishedPomTest` reads that file in `core`, the one
+module which names the client, and fails when the version in it is not the client this build was
+compiled against or when a parent or a `dependencyManagement` is back. The flatten mode is set
+once for every module, so the guard covers every module from there.
+
+What one line needs is no business of another line's users. That rule is wider than the client,
+and it is why the parent is dropped rather than only corrected. What this repository pins for its
+own build is chosen for the newest line: the protobuf runtime, Testcontainers, Lombok, and the
+Spring Boot and Quarkus versions it compiles against. None of it may arrive at an application
+through us. A pin an application needs is named in the README and set by the application, and
+every other pin stops at our own classpath.
+
+The protobuf pin stays one number. It reaches no application now, so a number per line would
+change nothing a user runs and would only lower what the tests of the older lines run against. The
+comment at the pin says so, and what an application really resolves is a table in the README,
+together with the one case where an application pins protobuf itself.
+
+The VanillaBP Camunda 8 adapter found the same fault in its own artifacts on the same day and
+answered it the same way, which is its decision 39. The entry here is ours because the modules,
+the pins and the test are ours.
+
+See [What an application pins itself](./README.md#what-an-application-pins-itself).

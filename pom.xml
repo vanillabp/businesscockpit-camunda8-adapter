@@ -109,9 +109,16 @@
            Camunda client brings generated code, while the Spring Boot BOM manages an older one
            and would win, because an imported BOM beats a transitive version. This entry stands
            BEFORE that import so every line gets it.
+           It pins the classpath of THIS build and reaches no application. The published POMs
+           carry no parent and no dependencyManagement since the flatten mode 'oss', so an
+           application resolves protobuf from its own platform BOM, or from the client when
+           nothing of its own manages it. That is why the number must not be read as a promise
+           to a user: what an application has to pin itself is in README.md, section "Release
+           lines". See decision 12 in the repository's DECISIONS.md.
            The number is the protobuf version of the NEWEST client pinned above. A runtime may
            be newer than the generated code and never older, so that one number serves every
-           line. When it was last set, the clients asked for 4.31.1 on line 8.8, 4.33.6 on
+           line, and a number per line would only lower what the older lines are tested
+           against. When it was last set, the clients asked for 4.31.1 on line 8.8, 4.33.6 on
            line 8.9 and 4.36.0 on line 8.10.
            So raise it whenever a camunda8.version.line-* pin moves, and read the new number
            rather than guess it:
@@ -289,15 +296,30 @@
       </plugins>
     </pluginManagement>
     <plugins>
-      <!-- resolves '${revision}' in the POMs that get installed and deployed; without it a
-           consumer would read a version they cannot resolve -->
+      <!-- The POM an application reads is written here, and it has to stand on its own. The
+           'oss' mode writes every version into it and drops the parent, and with the parent
+           our dependencyManagement, our properties and our profiles. What a public
+           repository asks for stays: name, description, url, licenses, developers, scm.
+           Standing on its own is what a release line needs. The mode was
+           'resolveCiFriendliesOnly' before, which copies this source POM and resolves
+           '${revision}' and nothing else. The Camunda client then stayed a property whose
+           value the active line profile sets, and an application activates no profile of
+           ours, so it read the default of the file: every line published a POM asking for
+           the client of the CURRENT GA line. An application on the 8.8 line was handed the
+           8.9 client, and the client a build was compiled against is the lowest cluster
+           version that build accepts, so the line promised a cluster it then took away.
+           Read in the installed POMs of line 8.8 on 2026-09-20, and guarded since by
+           Camunda8PublishedPomTest.
+           The other half of the same rule: nothing an application resolves may come out of
+           our dependencyManagement, because what one line needs is no business of another
+           line's users. See decision 12 in the repository's DECISIONS.md. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>flatten-maven-plugin</artifactId>
         <version>1.8.0</version>
         <configuration>
           <updatePomFile>true</updatePomFile>
-          <flattenMode>resolveCiFriendliesOnly</flattenMode>
+          <flattenMode>oss</flattenMode>
         </configuration>
         <executions>
           <execution>
