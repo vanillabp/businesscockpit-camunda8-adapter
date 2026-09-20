@@ -96,10 +96,12 @@ jobs:
         # artifact per line and nothing can quietly fall back to the published snapshot
         # of the current GA line.
         #
-        # 'maven.test.skip' and not 'skipTests': the adapter's Failsafe executions run
-        # under plain '-DskipTests' anyway, and the run measured that as three quarters of
-        # an hour of integration tests against a cluster we did not want to start here.
-        # Skipping the test compilation as well is what actually makes this a compile.
+        # 'maven.test.skip' and not 'skipTests': Failsafe 3.6.0 reads '-DskipITs' and no
+        # longer reads '-DskipTests', and the adapter pins that version as this repository
+        # does. So under plain '-DskipTests' its integration tests still run, and the run
+        # measured three quarters of an hour of them against a cluster we did not want to
+        # start here. 'maven.test.skip' skips the test compilation as well, which is what
+        # makes this a compile.
         run: mvn -f camunda8-adapter/pom.xml
           -s "$GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml"
           --batch-mode --no-transfer-progress --update-snapshots

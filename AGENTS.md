@@ -8,6 +8,72 @@ work and why, and how to build. The release lines are not optional reading befor
 touch the POM: this repository is published once per Camunda 8 minor, and the section of the README
 that explains it says which parts move when a line rotates.
 
+## Before your first build
+
+`mvn install` builds the current GA line and runs everything, the integration tests included.
+Three things about a local build here have each cost somebody a run already.
+
+### The Camunda 8 adapter in your local repository belongs to one line
+
+This extension compiles against the VanillaBP Camunda 8 adapter, and that adapter is not
+released per line yet. Every line of this repository asks for the same `2.0.0-SNAPSHOT` of it,
+so your local repository holds one adapter for all lines. The last `mvn install` in the
+adapter's clone decides which line is in it, and `~/.m2` is usually shared: between agents
+working at the same time, and between containers which mount the same volume.
+
+Going wrong looks like this. The build stops with a `cannot find symbol` on a class of the
+adapter, because a per-line class of your line is missing from the jar somebody else installed.
+Or it does not stop at all, and the integration tests run the client of one line against the
+cluster of another. On 2026-09-20 that was 16 red tests out of 20 and 38 minutes, and every
+error read like an error of the cockpit, down to an HTTP 400 from the search API.
+
+So build the adapter for the line you want, and give that build the version of the line:
+
+```bash
+# in the clone of vanillabp/camunda8-adapter
+mvn -Pline-8.8 -Drevision=2.0.0-8.8-SNAPSHOT -Dmaven.test.skip=true \
+  -pl core,spring-boot,quarkus/runtime,quarkus/deployment,test-support -am \
+  clean install
+
+# here
+mvn -Pline-8.8,adapter-built-locally clean install
+```
+
+The profile of the line is not optional in the adapter's build. The adapter keeps the code that
+cannot compile against every client in `src/main/java-line-<id>`, and a build without a profile
+takes the directory of the current GA line.
+
+`adapter-built-locally` is a profile of this repository. It asks for `2.0.0-<line>-SNAPSHOT`
+instead of the shared snapshot, which is the version the nightly matrix builds the adapter
+under. It is what makes the two builds meet: with it a line gets the adapter that was built for
+that line, or the build stops because nobody built one.
+
+### Skipping the tests takes `-DskipITs`
+
+`-DskipTests` skips the unit tests and starts the integration tests. Failsafe 3.6.0 does not
+read that property any more, and this repository pins 3.6.0, so `mvn install -DskipTests` boots
+a Camunda 8 cluster and runs the whole suite. That is half an hour nobody asked for.
+
+Skip both with `-DskipTests -DskipITs`, or with `-Dmaven.test.skip=true` when the tests need
+not be compiled either. The nightly matrix uses the second one where it builds the adapter.
+
+### A clone in your container can be behind its main
+
+This one is a note about a container, not a rule of this repository. The clones of the other
+VanillaBP repositories are not always at the `main` they publish from. A build against such a
+clone fails on a class that `main` no longer has, or does not have yet, and the message points
+at code nobody in your branch wrote. Ask the clone you built from before you believe the error:
+
+```bash
+git rev-list --left-right --count origin/main...HEAD
+```
+
+On the evening of 2026-09-20 no local build under the GA coordinates could be had at all: the
+clone of `adapter-platform-integration` was 58 commits behind `main` and failed on
+`AdapterPlatformVersion`, and the published snapshots were not reachable from there either.
+When that happens, the pull-request build is the proof. A runner clones `main` and reads the
+published snapshots, so it has neither problem.
+
 ## This is an extension, not a BPMS adapter
 
 An extension joins the deployment pipeline of the VanillaBP core and implements

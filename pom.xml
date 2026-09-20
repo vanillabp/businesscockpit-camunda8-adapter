@@ -540,5 +540,29 @@
         <camunda8.line.preview>true</camunda8.line.preview>
       </properties>
     </profile>
+    <!-- For a build on a developer machine, against a Camunda 8 adapter built there by hand.
+         The adapter is not released per line yet, so every line above asks for the same
+         '2.0.0-SNAPSHOT' of it, and the local repository holds one adapter for all lines.
+         Whoever installed last decides which line is in it, and '~/.m2' is shared between
+         agents and containers. A build then compiles against another line than it says, and
+         says so as a 'cannot find symbol' on a per-line class, or it does not say so at all
+         and the integration tests fail as if this repository were broken.
+         This profile asks for '2.0.0-<line>-SNAPSHOT' instead, which is the version the
+         nightly matrix builds the adapter under, so a line gets the adapter somebody built
+         for that line and nothing else resolves:
+           mvn -Pline-8.8 -Drevision=2.0.0-8.8-SNAPSHOT clean install   (adapter clone)
+           mvn -Pline-8.8,adapter-built-locally clean install           (here)
+         It reads '${camunda8.line}', so it needs no entry per line. It has to stay BELOW
+         the line profiles, because two active profiles setting one property are applied in
+         the order they stand here, whatever order the command line names them in.
+         And its id must not read as 'line-<number>': the nightly matrix, the release and
+         bin/api-identity.sh take the live lines out of those ids, and an id like
+         'line-8.x-local' would arrive as a line to build. -->
+    <profile>
+      <id>adapter-built-locally</id>
+      <properties>
+        <camunda8-adapter.version>2.0.0-${camunda8.line}-SNAPSHOT</camunda8-adapter.version>
+      </properties>
+    </profile>
   </profiles>
 </project>
