@@ -34,6 +34,14 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * kind of worker rather than two. The counters of these workers therefore appear next to the
  * adapter's, under the adapter id they belong to and under the listener type as their job type.
  * <p>
+ * They also lease their activations where the adapter leases its own. A listener job is held
+ * from the activation until the answer, so a report which outlives the lock is exactly the case
+ * the lease was built for: the cluster hands the job out again, the second run answers first,
+ * and the late answer of the first run is refused rather than overwriting it. Whether a lease is
+ * asked for is the adapter's answer, not this extension's, and it is given per adapter id in
+ * <code>vanillabp.adapters.&lt;id&gt;.job-lease</code>. See decision 13 in the repository's
+ * DECISIONS.md.
+ * <p>
  * These workers usually stop because the pipeline stops workflow processing of their module.
  * Where a shutdown never gets that far, the adapter's client factory closes them. It is told
  * they are open, and it stops what is still open before it closes the client.
@@ -177,6 +185,11 @@ public class Camunda8CockpitWorkers {
     builder = Camunda8Workers
         .applyWorkerOptions(
             builder, cluster.scope().adapterId(), listenerType, cluster.configuration(), metrics);
+    // a listener job is held from the activation until the answer, which is the case a lease
+    // is for. The adapter decides whether one is asked for: it knows whether its release line
+    // has a lease and what the application configured, and two components leasing the same job
+    // type with different opinions starve each other
+    builder = Camunda8Workers.leaseTheActivations(builder, cluster.configuration());
     final var tenantId = cluster.scope().tenantIdOf(workflowModuleId);
     if (tenantId != null) {
       // with 'by-adapter': jobs of a tenant are only delivered to workers subscribing for

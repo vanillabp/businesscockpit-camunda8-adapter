@@ -1,6 +1,7 @@
 package io.vanillabp.cockpit.camunda8.springboot.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -29,6 +30,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import io.camunda.client.CamundaClient;
+import io.camunda.client.api.response.ActivatedJob;
 import io.camunda.client.api.search.enums.UserTaskState;
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
@@ -40,6 +42,7 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
+import io.vanillabp.camunda8.client.Camunda8JobLease;
 import io.vanillabp.camunda8.test.ClusterUnderTest;
 import io.vanillabp.camunda8.wiring.Camunda8CancelListeners;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
@@ -47,6 +50,7 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.cockpit.extension.test.support.CockpitServer;
+import io.vanillabp.integration.test.utils.CapturedOutput;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -826,6 +830,154 @@ public class Camunda8CockpitIT {
         List.of(),
         CockpitServer.matching("/workflow/%s/cancelled".formatted(workflowId)),
         "a case whose cancel listener failed was reported anyway");
+
+  }
+
+  @Test
+  @DisplayName("The answer of a run whose lock expired is refused, and the case is reported once")
+  public void theAnswerOfTheRunWhoseLockExpiredIsRefused(
+      final CapturedOutput output) {
+
+    assumeTrue(
+        theAdapterLeasesItsJobs(),
+        "this build activates its jobs without a lease, so the cluster takes the answer of whichever run sends one first");
+
+    waitingWorkflowService.forgetWhatWasReported();
+    final var aggregate = aStartedWaitingWorkflowWhoseReportIsHeld("Leonie");
+    // the report of the started case is inside the details provider now, and the lock of its
+    // listener job is running out under it
+    waitingWorkflowService.awaitTheHeldReport();
+
+    // the second activation is this test's own rather than a redelivery, for the reason the
+    // adapter's own lease test gives: a redelivery cannot be timed, and what is under test is
+    // the ORDER of the two answers. So the test takes the job the way a second pod would
+    final var takenOver = theListenerJobHandedOutAgain();
+    assertNotNull(
+        Camunda8JobLease.tokenOf(takenOver),
+        "the activation which holds the listener job now carries a token of its own");
+
+    waitingWorkflowService.letTheHeldReportAnswer();
+
+    // the held run answers a job somebody else holds now. The lease is what makes the cluster
+    // say so, and the adapter's protocol drops that answer instead of failing the job
+    awaitValue(
+        () -> logOf(output).contains("another activation holds the job")
+            ? Boolean.TRUE
+            : null,
+        () -> "the cluster to refuse the answer of the run whose lock had expired. The log so far: "
+            + logOf(output));
+
+    // the one thing which must not happen: the refused answer turning into a failure. The
+    // listeners of this extension carry no retries, so a failure IS the incident, and it would
+    // be an incident about a report which was written and is fine. See decision 13 in the
+    // repository's DECISIONS.md
+    assertFalse(
+        logOf(output).contains("failing the job"),
+        "the refused answer was reported to the cluster as a failure of the job");
+
+    // and the report itself went out. It was written before the answer was sent, so the case
+    // reaches the cockpit although the cluster refused the run which reported it
+    final var workflowId = workflowIdOf(WaitingWorkflowService.BPMN_PROCESS_ID, aggregate.getId());
+    assertNotNull(
+        CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Leonie\""));
+    assertEquals(
+        1,
+        waitingWorkflowService.reportsBuilt(),
+        "the report was built by the held run and by nobody else in this test");
+
+    // the activation which holds the job answers, and that is what the workflow goes on with
+    Camunda8JobLease
+        .withToken(
+            client().newCompleteCommand(takenOver.getKey()),
+            Camunda8JobLease.tokenOf(takenOver))
+        .send()
+        .join();
+    CockpitServer.awaitQuiet();
+    assertFalse(
+        client()
+            .newProcessInstanceGetRequest(Long.parseLong(workflowId))
+            .send()
+            .join()
+            .getHasIncident(),
+        "the workflow whose listener job was answered twice carries an incident");
+
+  }
+
+  /**
+   * The listener job of the started waiting case, activated once more and with a lease.
+   * <p>
+   * With a lease, because a job which was leased once is handed to nobody who does not lease.
+   * With a long timeout, so that the run holding it keeps it until this test answers.
+   *
+   * @return The job, as a second pod would receive it
+   */
+  private ActivatedJob theListenerJobHandedOutAgain() {
+
+    final var jobType = Camunda8CockpitListeners
+        .listenerTypeOf(
+            "%s__%s".formatted(MODULE_ID, WaitingWorkflowService.BPMN_PROCESS_ID));
+    return awaitValue(
+        () -> Camunda8JobLease
+            .leaseTheActivation(
+                client()
+                    .newActivateJobsCommand()
+                    .jobType(jobType)
+                    .maxJobsToActivate(1)
+                    .timeout(Duration.ofMinutes(5))
+                    .workerName("the-pod-which-took-over"))
+            .requestTimeout(Duration.ofSeconds(2))
+            .send()
+            .join()
+            .getJobs()
+            .stream()
+            .findFirst()
+            .orElse(null),
+        () -> "the listener job of type '%s' to be handed out a second time, which happens once the lock of the first run ran out"
+            .formatted(jobType),
+        // shorter than the usual wait on this cluster, and it has to be: the run holding the
+        // report gives up after three minutes, and this test has to answer before that
+        Duration.ofMinutes(2));
+
+  }
+
+  /**
+   * Whether the jobs of this build are activated with a lease. It is the adapter's answer, and
+   * it is false wherever the client of the release line has no lease, whatever is configured.
+   */
+  private boolean theAdapterLeasesItsJobs() {
+
+    return clientFactories.getFactory("c8").getConfiguration().leasesItsJobs();
+
+  }
+
+  /**
+   * Starts a waiting workflow whose report of the start is held inside its listener job.
+   * <p>
+   * The hold is armed while the starting transaction is still open, for the reason
+   * {@link #aStartedWorkflowWhoseDetailsProviderIsHeld(String)} gives: the workflow reaches the
+   * cluster after that transaction committed, so no listener job exists before the hold does.
+   *
+   * @param customer What the case is about
+   * @return The started case
+   */
+  private WaitingAggregate aStartedWaitingWorkflowWhoseReportIsHeld(
+      final String customer) {
+
+    return transactions
+        .execute(status -> {
+          final var fresh = new WaitingAggregate();
+          fresh.setCustomer(customer);
+          final var started = waitingWorkflowService.processes().startWorkflow(fresh);
+          waitingWorkflowService.holdTheNextReportOf(started.getId());
+          return started;
+        });
+
+  }
+
+  private static String logOf(
+      final CapturedOutput output) {
+
+    return output.getOut() + output.getErr();
 
   }
 
