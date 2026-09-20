@@ -261,6 +261,11 @@ public class Camunda8CockpitIT {
 
   /**
    * The key of the user task of one case, once the cluster's searchable storage knows it.
+   * <p>
+   * The process is named as well, and it has to be, for the reason
+   * {@link #workflowIdOf(String, Long)} gives: every workflow aggregate of this application
+   * counts its ids for itself, so a case of this workflow and a case of another one share the
+   * id 1, and a search by the variable alone finds whichever task the cluster lists first.
    */
   private String userTaskIdOf(
       final TestAggregate aggregate) {
@@ -271,6 +276,7 @@ public class Camunda8CockpitIT {
             .filter(
                 filter -> filter
                     .state(UserTaskState.CREATED)
+                    .bpmnProcessId(scopedProcessId())
                     .processInstanceVariables(
                         Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
             .send()
