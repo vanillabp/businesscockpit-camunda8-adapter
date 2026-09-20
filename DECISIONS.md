@@ -181,7 +181,7 @@ case said when the event happened rather than what it said when the report went 
 whole point. And a report which cannot be built never goes out at all, where it used to go out
 late.
 
-## 9. An old line holds up a release, not a pull request
+## 9. An old line holds up a release, not a pull request - which lines a release waits for narrowed by decision 14
 
 A pull request builds the current GA line and tests it against that line's cluster. Every other
 line waits for the nightly matrix. Only a pull request which moves a pin runs the matrix itself,
@@ -204,11 +204,13 @@ result is about last night's SNAPSHOTs of the VanillaBP Camunda 8 adapter and of
 "the same thing" means. There is no input which switches the gate off, because a defect published
 to Maven Central cannot be taken back.
 
-A line which is not current yet is not asked. Line 8.10 is an alpha, it is published as a preview,
-and the nightly matrix already leaves it out because a user-task listener job never reaches its
-worker on that alpha. The list in `line-matrix.yaml` is the one place which says which lines are
-proven, and the release reads it by running that workflow rather than keeping a list of its own.
-The preview line is still released. Its version says alpha, and nothing claims it was proven.
+A line which is not GA yet is not asked. Line 8.10 is an alpha, it is published as a preview, and
+it is still released. Its version says alpha, and nothing claims it was proven. When this was
+written the matrix left that line out altogether, so "every line of the matrix" and "every GA
+line" were the same sentence. Decision 14 put the line back into the matrix and told the two
+apart: the matrix says which of its GA lines broke, and the release reads that rather than the
+matrix as a whole. Either way the answer comes from the workflow and not from a list kept in
+`release.yaml`.
 
 The second is the issue. A line which breaks in the night gets a GitHub issue, so that the break is
 seen and fixed rather than scrolled past. `release-lines-issue.yaml` opens it, one per line, and
@@ -240,8 +242,9 @@ by holding the image it ran against the pin it was built with, and the line is r
 name different versions. The issue of decision 9 is then what asks for the pin.
 
 It had already happened on two lines at once when this was written. Line 8.9 pinned `8.9.18` while
-its tests ran a cluster `8.9.19`, and line 8.10 pinned `8.10.0-alpha4` against `8.10.0-alpha5`. A
-line the night does not build is not covered, which today is the preview line.
+its tests ran a cluster `8.9.19`, and line 8.10 pinned `8.10.0-alpha4` against `8.10.0-alpha5`. The
+preview line was not built at night then, so nothing held its pin against its cluster. It is built
+now, see decision 14, and the check runs there like on every other line.
 
 ## 11. A cancelled case is reported from 8.10 on, and the model pays a version for it
 
@@ -406,5 +409,55 @@ polling for four minutes without being offered the job again, while an explicit 
 as soon as the lock was over. A test which waits for the cluster to do it would measure that alpha
 rather than this extension.
 
-The test skips itself where the build does not lease, and the nightly matrix leaves the 8.10 line
-out today (gap 4 in `GAPS.md`), so this evidence comes from a run by hand.
+The test skips itself where the build does not lease. It needs no user task, so it runs on the
+preview line in the nightly matrix, which is where this is proven every night since decision 14.
+
+## 14. The preview line is built every night, and a red one holds up nothing
+
+The nightly matrix builds every line this repository defines, the preview line included. What the
+cluster of that line cannot serve is left out one level deeper: the tests which need a
+Camunda-managed user task carry the tag `user-task-listener-jobs`, and the `line-8.10` profile of
+`pom.xml` excludes that tag in failsafe and in surefire.
+
+Before this the whole line was left out of the matrix, and the argument for that was the same one:
+a line which is always red stops being read. What it cost was everything else the line says.
+Nineteen of the thirty integration tests need such a task, so eleven were thrown away with them,
+and among those eleven are the deployment, the start of a case, the execution listeners, the search
+in the secondary storage, and the two things which exist on 8.10 alone: the cancel listener of the
+process of decision 11 and the job lease of decision 13. Those two are the reason the line exists,
+and they had no automatic proof anywhere. Two defects of this line were found by hand in September
+2026, a missing lease switch and an old protobuf pin, and both would have failed the first night
+under the tag.
+
+The exclusion sits in the profile and not in the workflow. It travels: a build by hand on 8.10
+behaves like the night. And it goes away in one place, because the tag and the exclusion name each
+other and both say what they cost. A variable in a workflow would be found by whoever already knew
+it was there.
+
+The tag has the same name and the same meaning in `vanillabp/camunda8-adapter`, whose 8.10 line
+runs green with it. Two repositories doing the same thing two ways would make every reader learn it
+twice. See decision 31 in the DECISIONS.md of that repository.
+
+A red preview line holds up no pull request and no release. That line is built against an alpha
+which Camunda rewrites under us, and a defect of the alpha may cost a night, it may not cost a
+release of the GA lines. So the matrix hands out `broken-ga-lines` beside its own result: the job
+`lines-verified` needs every line and is what the night reads, and the job `ga-lines` reports which
+of the GA lines broke. The release gate reads the second, and so does the pull-request check of a
+moved pin. The preview line is still released, as it always was. Its version says alpha, and
+nothing claims it was proven. This narrows decision 9, which asked the release to wait for every
+line of the matrix while the matrix held GA lines only.
+
+The exclusion costs coverage, and the gate had to be measured rather than guessed. Nineteen
+tests of thirty is a lot of code left uncovered, and the build stops below 85 per platform. The
+first green run of this line says 86.43 % for Spring Boot and 87.40 % for Quarkus, against 90.80 %
+and 91.77 % on line 8.9 in the same matrix run. So the gate holds on the preview line with about
+one and a half points to spare, and no line of this repository gets a threshold of its own. If a
+later test pushes it under the gate, the answer is a threshold in the `line-8.10` profile, with a
+comment which ties the number to the exclusion so that both go away together. Lowering the gate
+for every line would be the wrong answer to a defect of one alpha.
+
+A red preview line still gets its GitHub issue in the night, the same as any other line, because
+somebody has to decide whether it is the alpha's defect or ours. Answering that is what the tag
+asks for at every pin move: deploy a user task with a `creating` listener, start an instance and
+see whether the job arrives. Once one does, the tag and the exclusion go away together and the line
+is proven whole.

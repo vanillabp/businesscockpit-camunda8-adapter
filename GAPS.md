@@ -47,17 +47,17 @@ and the cancel listener of the process never runs because the cluster runs it on
 element has terminated.
 
 **Where it can be read:** [camunda/camunda#58193](https://github.com/camunda/camunda/issues/58193),
-open on `camunda/camunda:8.10.0-alpha5`. It is also why `line-matrix.yaml` leaves 8.10 out of the
-nightly matrix and why the VanillaBP Camunda 8 adapter keeps the same alpha out of its pull-request
-checks.
+open on `camunda/camunda:8.10.0-alpha5`. It is also why the `line-8.10` profile of `pom.xml` leaves
+the tests which need such a task out of that line, here and in the VanillaBP Camunda 8 adapter. See
+decision 14 in `DECISIONS.md`.
 
 **What it costs:** nothing in production, because the line is a preview and no GA cluster carries the
 defect. What it costs here is proof. The integration test which cancels a case holding a user task is
 written and runs on 8.8 and 8.9; on 8.10 what is proven is the cancellation of a case which waits at
 a timer instead (`waiting-process.bpmn`).
 
-**What would close it** is the cluster fix. Once it ships, the 8.10 line comes back into the nightly
-matrix and the test which holds a user task proves the same thing there.
+**What would close it** is the cluster fix. Once it ships, the tag and the exclusion go away, and the
+test which holds a user task proves the same thing on this line as on the others.
 
 ## 3. Nobody is named as the initiator of a workflow
 
@@ -97,11 +97,11 @@ holding such a task cannot be cancelled either.
 reaches the cockpit, neither as created nor as cancelled. VanillaBP itself never learns of the task,
 because its own `creating` listener is dropped in the same batch. Nothing is lost on a GA cluster,
 because no GA cluster carries the defect. What is lost here is proof. The integration tests which show
-a task reported as created, as cancelled and as completed run on 8.8 and 8.9, and the 8.10 line stays
-out of the nightly matrix until the fix ships.
+a task reported as created, as cancelled and as completed run on 8.8 and 8.9. On 8.10 they are
+excluded by the tag `user-task-listener-jobs`, and the rest of the line is built every night.
 
 **What would close it** is the cluster fix. The tests are written and they say the same thing on every
-line, so the line comes back into the matrix and proves it there.
+line, so the tag comes off and the line proves it with the rest.
 
 ## 5. A late answer overwrites the newer one before 8.10
 

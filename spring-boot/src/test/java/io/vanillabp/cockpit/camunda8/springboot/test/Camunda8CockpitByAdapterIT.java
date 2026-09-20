@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,6 +60,18 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 public class Camunda8CockpitByAdapterIT {
 
   private static final String MODULE_ID = "c8-cockpit";
+
+  /**
+   * Tests which need a user task the cluster really created. The preview line hands none out, so
+   * they are left out there.
+   * <p>
+   * The REST gateway of the 8.10 alpha drops the activate-jobs batch a <code>creating</code>
+   * listener job arrives in, so the task is never finished being created (camunda/camunda#58193,
+   * gap 4 of GAPS.md). The <code>line-8.10</code> profile of the parent POM excludes this tag and
+   * says what the exclusion costs and when it goes away. {@code Camunda8CockpitIT} of the Spring
+   * Boot module carries the long form of the same reason.
+   */
+  private static final String USER_TASK_LISTENER_JOBS = "user-task-listener-jobs";
 
   @Container
   static final GenericContainer<?> CAMUNDA = ClusterUnderTest.clusterWithTenants();
@@ -190,6 +203,7 @@ public class Camunda8CockpitByAdapterIT {
 
   }
 
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A workflow of the tenant reports its start and its user task to the cockpit")
   public void aWorkflowOfTheTenantReachesTheCockpit() {

@@ -32,10 +32,11 @@ concurrency:
 permissions:
   contents: read
 jobs:
-  # No release while a CURRENT line is red. A line which is not current yet is not asked:
-  # 8.10 is an alpha, it is published as a preview, and the matrix leaves it out because a
-  # user-task listener job never reaches its worker on that alpha. Which lines those are is
-  # the matrix's own word, not a second list kept here.
+  # No release while a GA line is red. A line which is not GA yet is not asked: 8.10 is an
+  # alpha, it is published as a preview, and nothing claims it was proven. The matrix builds
+  # it like every other line and hands out the GA lines separately, so which lines this gate
+  # waits for is the matrix's own word and not a second list kept here. See decision 14 in
+  # the repository's DECISIONS.md.
   #
   # The gate is the nightly matrix itself, called here, and not a look at what the matrix
   # said last night. Reading last night's result would be cheaper, and it would prove less
@@ -56,6 +57,33 @@ jobs:
     uses: ./.github/workflows/line-matrix.yaml
     secrets: inherit
 
+  # The gate itself. It runs whatever the matrix did, because a red preview line fails the
+  # matrix as a whole and this job still has to read which lines were red. The answer is the
+  # 'broken-ga-lines' output, and an empty one means the matrix never got far enough to say.
+  ga-lines-verified:
+    if: always()
+    needs: lines
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every GA line is green
+        env:
+          BROKEN: "${{ needs.lines.outputs.broken-ga-lines }}"
+        run: |
+          echo "lines: ${{ needs.lines.result }}"
+          case "$BROKEN" in
+            none)
+              echo "Every GA line built and tested green, so this release may go out." ;;
+            "")
+              echo "The matrix did not get far enough to say which lines built, so nothing" >&2
+              echo "here says this release is safe. Read the jobs of the matrix above." >&2
+              exit 1 ;;
+            *)
+              echo "These GA lines did not build: ${BROKEN}" >&2
+              echo "A release publishes to Maven Central and cannot be taken back, so it" >&2
+              echo "waits until they are green." >&2
+              exit 1 ;;
+          esac
+
   # The live lines are not maintained here: they are the line-* profiles of the POM, which
   # also carry the pins. So the release cannot fall behind the build.
   #
@@ -63,7 +91,7 @@ jobs:
   # preview out, because nothing has proven it and nothing claims it is proven: its version
   # says alpha.
   discover:
-    needs: lines
+    needs: ga-lines-verified
     runs-on: ubuntu-latest
     outputs:
       lines: "${{ steps.list.outputs.lines }}"

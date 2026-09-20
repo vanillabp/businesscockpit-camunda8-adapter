@@ -16,9 +16,16 @@ name: Release lines
     - cron: "47 23 * * *"
   workflow_dispatch:
   # Two callers. The pull-request checks run the matrix when a pin moves, and the release
-  # runs it as its gate, because no line of a release may be red. See decision 9 in the
-  # repository's DECISIONS.md.
+  # runs it as its gate, because no GA line of a release may be red. Both read the output
+  # below, which leaves the preview line out. See decisions 9 and 14 in the repository's
+  # DECISIONS.md.
   workflow_call:
+    outputs:
+      broken-ga-lines:
+        description: The GA lines which did not build, separated by blanks, or 'none'.
+          Empty when this matrix did not get far enough to say, which a caller has to
+          read as a failure.
+        value: "${{ jobs.ga-lines.outputs.broken }}"
 # A called workflow may not ask for more than the workflow calling it granted, and the
 # pull-request checks grant 'contents: read'. Nothing here needs more: what the build reads from
 # GitHub Packages it reads with VANILLABP_USER_TOKEN and not with the workflow's own token.
@@ -41,27 +48,17 @@ jobs:
       - uses: actions/checkout@v7
       - id: list
         name: Collect the release lines
-        # A line whose cluster cannot serve this extension at all is named here and left out,
-        # because a matrix which is always red stops being read. It is one line of shell and a
-        # reason rather than a profile which quietly disappears: the line still exists, it is
-        # still released, and its code is still compiled on every pull request by the API check.
-        #
-        # 8.10: a user-task LISTENER job never reached its worker on camunda/camunda:8.10.0-alpha4,
-        # the alpha that line pinned when this was measured. The REST gateway throws a
-        # NullPointerException while converting the job and drops the whole activate-jobs batch
-        # (camunda/camunda#58193, still open on alpha5), which starves the execution listeners
-        # beside it. Ten of fifteen integration tests then sit in their deadline, and the run of
-        # the 15th of September 2026 took 44 minutes to say so. The VanillaBP Camunda 8
-        # adapter keeps the same alpha out of its pull-request checks for the same bug. Take the
-        # line out of this list once Camunda ships the fix.
+        # Every line the POM defines is built, the preview line included. What one cluster
+        # cannot serve is left out a level deeper, by tag: the 'line-8.10' profile of the POM
+        # excludes the tests which need a user task that alpha never finishes creating, and it
+        # says there what that costs and when it goes away. A whole line left out here would
+        # prove nothing at all, and the two things which exist on 8.10 alone, the cancel
+        # listener of the process and the job lease, would have no automatic proof anywhere.
         run: |
-          skipped="8.10"
           list=$(sed -n 's|.*<id>line-\([0-9][^<]*\)</id>.*|\1|p' pom.xml \
-            | grep -v -x -F "${skipped}" \
             | jq -R -s -c 'split("\n")[:-1]')
           echo "lines=${list}" >> "$GITHUB_OUTPUT"
           echo "Building lines: ${list}"
-          echo "Not built, see the comment above: ${skipped}"
 
   # One build per line, against the cluster that line pins, with its own version string.
   line:
@@ -162,6 +159,21 @@ jobs:
             echo "camunda8.version.line-${{ matrix.line }} in pom.xml to what that image names." >&2
             exit 1
           fi
+      # What this line did, written down for the job 'ga-lines' below. A matrix cannot hand
+      # one result per line to another job: every job of it writes the same output and the
+      # last one to finish overwrites the rest. So each line leaves a file named after
+      # itself. The same shape as in vanillabp/camunda8-adapter.
+      - name: What this line did
+        if: always()
+        run: |
+          mkdir -p "${RUNNER_TEMP}/line-result"
+          echo "${{ job.status }}" > "${RUNNER_TEMP}/line-result/${{ matrix.line }}"
+      - name: Hand that to the job which sorts the lines
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: line-result-${{ matrix.line }}
+          path: "${{ runner.temp }}/line-result/${{ matrix.line }}"
 
   # One name that never changes, so branch protection, the pull-request checks and the
   # release gate have something to require while the matrix grows and shrinks with the
@@ -178,3 +190,62 @@ jobs:
         run: |
           echo "lines: ${{ needs.line.result }}"
           [ "${{ needs.line.result }}" = "success" ]
+
+  # The same matrix, read without the preview line, for the callers which need that answer.
+  # Both of them do: the preview line is built against an alpha which is rewritten under us,
+  # and a defect of that alpha may cost a night, it may not cost a pull request or a release.
+  # The preview line still builds here, its job is there to read, and a red one still gets its
+  # issue in the night. That is decision 14 in the repository's DECISIONS.md, and
+  # 'lines-verified' above is the name the night reads.
+  #
+  # This job reports what it found, it does not fail on it. A failed job hands no output to
+  # the caller, so failing here would leave the caller with an empty answer instead of the
+  # names of the broken lines.
+  ga-lines:
+    if: always()
+    needs: [discover, line]
+    runs-on: ubuntu-latest
+    outputs:
+      broken: "${{ steps.read.outputs.broken }}"
+    steps:
+      - uses: actions/checkout@v7
+      # Which line is the preview line is the 'camunda8.line.preview' property of its profile,
+      # and bin/line-preview.sh of the Camunda 8 adapter is what reads that property out of a
+      # POM. It is checked out rather than copied: the script is tested there, it is what the
+      # client API check of this repository already uses, and a second reader of the same
+      # property would be a second opinion about it.
+      - uses: actions/checkout@v7
+        with:
+          repository: vanillabp/camunda8-adapter
+          ref: main
+          path: camunda8-adapter
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: line-result-*
+          merge-multiple: true
+          path: line-results
+      - id: read
+        name: Which lines did not build, and which of them a caller waits for
+        env:
+          LINES: "${{ needs.discover.outputs.lines }}"
+        run: |
+          set -euo pipefail
+          broken=""
+          counted=0
+          for line in $(echo "${LINES:-[]}" | jq -r '.[]'); do
+            counted=$((counted + 1))
+            # a line whose job was cancelled before it could write anything counts as a line
+            # which did not build
+            result=nothing
+            [ ! -f "line-results/${line}" ] || result="$(cat "line-results/${line}")"
+            preview="$(camunda8-adapter/bin/line-preview.sh "$line" pom.xml)"
+            echo "line ${line}: ${result}, preview line: ${preview}"
+            [ "$result" != "success" ] || continue
+            [ "$preview" != "true" ] || continue
+            broken="${broken}${broken:+ }${line}"
+          done
+          if [ "$counted" -eq 0 ]; then
+            echo "No line was collected, so this run says nothing about any line." >&2
+            exit 1
+          fi
+          echo "broken=${broken:-none}" >> "$GITHUB_OUTPUT"
