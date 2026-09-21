@@ -236,8 +236,10 @@ POM of each line and from the two platform BOMs this repository builds against:
 
 An imported BOM beats a transitive version. So on both GA lines the application runs a protobuf
 newer than its client asks for, which is what protobuf allows. On the preview line both platforms
-hand it an older one, and the first command that touches the protocol ends in an
-`ExceptionInInitializerError` naming the two versions.
+hand it an older one. The VanillaBP Camunda 8 adapter asks protobuf that question while it builds
+its client, so the boot stops there and the message names both versions and the entry to add.
+Before that check the answer came at the first command touching the protocol, an
+`ExceptionInInitializerError` out of whichever part of the application had sent it.
 
 An application on the preview line therefore pins `protobuf-java` itself, to the gencode of that
 line's client, in its own `dependencyManagement` and above the platform BOM. Nothing published
