@@ -345,8 +345,18 @@ comment at the pin says so, and what an application really resolves is a table i
 together with the one case where an application pins protobuf itself.
 
 The VanillaBP Camunda 8 adapter found the same fault in its own artifacts on the same day and
-answered it the same way, which is its decision 39. The entry here is ours because the modules,
-the pins and the test are ours.
+answered it the same way, which is its decision 39. It now holds what the check knows. The class
+`PublishedPom` sits in `camunda8-adapter-test-support`, and that adapter publishes the module on
+the same release lines this repository builds against. `Camunda8PublishedPomTest` is the caller.
+It names what is ours: the artifact, the client of this line and the address of this repository.
+Two copies of one check drift apart, and a check like this one is only worth something while it
+still runs in two years. The entry here stays ours, because the modules, the pins and what we ask
+of them are ours.
+
+The shared class cannot read one thing, the client to expect. The adapter reads it from its own
+line descriptor and we cannot. Every line here compiles against the same adapter snapshot, so
+that descriptor answers for whichever line the adapter was built for last. The build hands the
+client to surefire instead, see the configuration in `core/pom.xml`.
 
 See [What an application pins itself](./README.md#what-an-application-pins-itself).
 
