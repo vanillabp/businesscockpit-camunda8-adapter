@@ -910,7 +910,7 @@ public class Camunda8CockpitIT {
     // the held run answers a job somebody else holds now. The lease is what makes the cluster
     // say so, and the adapter's protocol drops that answer instead of failing the job
     awaitValue(
-        () -> logOf(output).contains("another activation holds the job")
+        () -> aLineAboutTheJobSays(output, takenOver.getKey(), "another activation holds the job")
             ? Boolean.TRUE
             : null,
         () -> "the cluster to refuse the answer of the run whose lock had expired. The log so far: "
@@ -920,18 +920,8 @@ public class Camunda8CockpitIT {
     // listeners of this extension carry no retries, so a failure IS the incident, and it would
     // be an incident about a report which was written and is fine. See decision 13 in the
     // repository's DECISIONS.md
-    //
-    // The line has to name THIS job. What a test is handed is everything the class printed
-    // since it started, not only what its own test printed, and
-    // aFailingCancelListenerLeavesAnIncident writes the same sentence about a job of its own a
-    // few tests earlier. Both tests run on this release line alone, so the two never met until
-    // the line came back into the nightly matrix, and then the sentence of the older test failed
-    // this one.
-    final var thisJob = "job '%d'".formatted(takenOver.getKey());
     assertFalse(
-        logOf(output)
-            .lines()
-            .anyMatch(line -> line.contains("failing the job") && line.contains(thisJob)),
+        aLineAboutTheJobSays(output, takenOver.getKey(), "failing the job"),
         "the refused answer was reported to the cluster as a failure of the job");
 
     // and the report itself went out. It was written before the answer was sent, so the case
@@ -1037,6 +1027,39 @@ public class Camunda8CockpitIT {
       final CapturedOutput output) {
 
     return output.getOut() + output.getErr();
+
+  }
+
+  /**
+   * Whether the log holds a line about this job which carries the given phrase.
+   * <p>
+   * A reader of the log has to name the job it asks about. What a test is handed is
+   * everything the class printed since it started, not only what its own test printed. So a
+   * sentence another test provoked about its own job reads like a sentence about this one.
+   * {@link #aFailingCancelListenerLeavesAnIncident()} writes 'failing the job' about a job of
+   * its own. That sentence failed
+   * {@link #theAnswerOfTheRunWhoseLockExpiredIsRefused(CapturedOutput)} the first night both
+   * tests ran. They run on this release line alone, so the two had never met before.
+   * <p>
+   * The key alone, not the words around it. The adapter writes it as <code>job 123</code> in
+   * the line about a refused answer and as <code>job '123'</code> in the line about a
+   * failure, and a test must not depend on which of the two it reads. A job key is unique in
+   * a cluster, so a line carrying it is a line about this job.
+   *
+   * @param output What the class has printed so far
+   * @param jobKey The job this test asks about
+   * @param phrase What the line has to say about it
+   * @return Whether such a line was printed
+   */
+  private static boolean aLineAboutTheJobSays(
+      final CapturedOutput output,
+      final long jobKey,
+      final String phrase) {
+
+    final var key = Long.toString(jobKey);
+    return logOf(output)
+        .lines()
+        .anyMatch(line -> line.contains(phrase) && line.contains(key));
 
   }
 
