@@ -369,8 +369,9 @@ This extension asks for it. Its workers hold a listener job from the activation 
 because the report is built while the job waits, and that is the case the lease was made for. The
 case is not a rare one. A details provider which needs longer than the lock loses the job, the
 cluster hands it out again, the second run writes its entry and completes the job, and the first
-run then completes a job somebody else holds. Without a lease the cluster took that late answer
-and said nothing about it.
+run then answers for a job somebody else holds. Without a lease the cluster has no opinion about
+which of the two runs is the current one: the job goes to whoever answers first, and the other run
+is told there is no such job.
 
 It is asked for through `Camunda8Workers.leaseTheActivations` of the VanillaBP Camunda 8 adapter,
 the same entry point the worker options come from. That method decides, and this extension does
@@ -401,21 +402,23 @@ the event. That is the ordinary case here: a lock runs out in seconds and an out
 a fraction of one. Either way a person sees one created case. See decision 26 in the DECISIONS.md
 of vanillabp/business-cockpit.
 
-Line 8.8 and line 8.9 have no lease, in their clusters and in their clients. There the older
-answer wins, as it always did. The build of those lines accepts the key and ignores it, which is
-what lets one configuration serve an application that moves between lines.
+Line 8.8 and line 8.9 have no lease, in their clusters and in their clients. There the first
+answer wins and the other run gets an HTTP 404, which story `1366` measured in both orders on
+`8.9.19`. The build of those lines accepts the key and ignores it, which is what lets one
+configuration serve an application that moves between lines.
 
 Measured rather than read. `Camunda8CockpitIT` holds the details provider of a started case
 inside its listener job until the lock runs out, and then activates that job once more with a
-lease, the way a second pod would. The held run is released afterwards, so its answer arrives
+lease, the way another worker would. The held run is released afterwards, so its answer arrives
 last. On `camunda/camunda:8.10.0-alpha5` the cluster refuses it, the log says another activation
 holds the job, the job is not failed, the case reaches the cockpit as created, and the instance
 carries no incident once the newer activation completes.
 
 The second activation is the test's own and not a redelivery, the same way the adapter's lease
-test does it. What is under test is the ORDER of the two answers. A redelivery cannot carry that
-order: the run which holds the report sits in the handler of the worker the job came from, and
-that worker is the one place the job does not turn up again.
+test does it. What is under test is the ORDER of the two answers, and a redelivery cannot carry
+that order. On the preview line the test runs on, the worker holding the report is the one place
+the job does not come back, and where a repaired client does hand it back, the moment belongs to
+the cluster rather than to the test.
 
 An earlier version of this entry said the cluster does not redeliver at all. That was wrong.
 Story `1346` measured it on `camunda/camunda:8.10.0-alpha5`. The cluster hands an expired job out
@@ -423,33 +426,57 @@ again about a second after the lock ran out. It does so for a listener job and f
 service task job, with a lease and without one, and it does not care which worker name the job
 was held under. An open job worker gets it as readily as an activate command sent by hand.
 
-The one worker which does not get it back is the worker whose handler is still holding it. It is
-offered nothing while that handler runs, with no line in its log, and it gets the job the moment
-the handler returns. This does not change what an application depends on: every other worker has
-the job about a second after the lock ran out, and a restarted application is exactly that, a new
-client with new workers. So what a shutdown left to its lock does come back.
+The one worker which did not get it back there is the worker whose handler was still holding it. It
+is offered nothing while that handler runs, with no line in its log, and it gets the job the moment
+the handler returns. That is the client of the preview line, and what a repaired client does instead
+is below. It changes nothing an application depends on either way: every other worker has the job
+about a second after the lock ran out, and a restarted application is exactly that, a new client
+with new workers. So what a shutdown left to its lock does come back.
 
-The race two runs have over one answer therefore has a condition. It starts only where a second
-worker can activate the job, and that worker has to be on the same job type. A second pod of the
-application is the usual way to have one. Two adapter ids in one application are another, where
-the name mode `use-prefix` or `none` leaves both ids on one job type. The third is an extension
-which opens listener workers of its own on the same cluster, which is this extension. An
-application which runs as a single pod with one worker starts no second run beside a slow
-provider, and its job waits for the handler holding it.
+The race two runs have over one answer needs no second worker. A client which polls while its
+handler works activates its own expired job again, so one worker is both runs. Story `1366`
+measured that on cluster and client `8.9.19`: one pod, one client, one worker, a lock of 30
+seconds, and a details provider which held its job for 45 seconds in one run and for 75 seconds in
+the other. The same worker had the job back 957 ms and 1142 ms after the lock ran out. Both runs
+went through to the end, and both would have written their outbox entry.
 
-That is no promise about a single pod. Story `1362` chased the reason down, and it is the client,
-not the cluster and not the transport. `JobWorkerImpl` schedules the next poll after a poll which
-brought jobs only when no job is left open. Otherwise the polling comes back through
-`handleJobFinished()`, which runs after the handler returns. A handler which hangs therefore leaves
-nothing scheduled, and the worker goes quiet at its first empty poll after that. Measured at the
-gateway: not one activation request over two minutes, over REST and over gRPC, while a command sent
-by hand got the job at once, and the same worker had the job 20 seconds after its handler returned.
+The answer which reached the cluster first was the one it kept, in both orders, and the run which
+came second got `Command 'COMPLETE' rejected with code 'NOT_FOUND'` as an HTTP 404. A job which was
+finished long ago answers exactly the same way, so nothing tells anybody that two runs did the same
+work. On those lines the idempotency key of the outbox entry is the whole of the protection.
 
-Camunda repaired this in 8.8.37 and in 8.9.18. The old form is in the 8.8 releases up to 8.8.36,
-in the 8.9 releases up to 8.9.17, and in both 8.10 alphas. This repository pins 8.8.37 and 8.9.19, so only the preview line
-still carries it, and a repaired client polls again while a handler holds a job. One thing survives
-the repair. The client runs one job worker execution thread by default, and there the handler and
-the scheduled poll share that thread, so a blocking handler silences a repaired client as well.
+A second worker is no longer a condition then. It is the plainer way to get a race, and every
+other worker on the job type is offered the job in the same moment: a second pod of the
+application, a second adapter id in one application where the name mode `use-prefix` or `none`
+leaves both ids on one job type, or an extension with listener workers of its own, which is this
+extension.
+
+Whether a worker polls while its handler holds a job belongs to the client, not to the cluster.
+Camunda repaired it in 8.8.37 and in 8.9.18, and this repository pins 8.8.37 and 8.9.19, so both
+released lines race with themselves. The old form is in the 8.8 releases up to 8.8.36, in the 8.9
+releases up to 8.9.17, and in both 8.10 alphas. Story `1366` ran the same measurement on
+`8.10.0-alpha5` and got no second activation within two minutes, with a lease and without one,
+because that client asked for nothing while the handler held.
+
+Story `1362` chased the older form down, and it is the client, not the cluster and not the
+transport. `JobWorkerImpl` schedules the next poll after a poll which brought jobs only when no job
+is left open. Otherwise the polling comes back through `handleJobFinished()`, which runs after the
+handler returns. A handler which hangs therefore leaves nothing scheduled, and the worker goes quiet
+at its first empty poll after that. Measured at the gateway: not one activation request over two
+minutes, over REST and over gRPC, while a command sent by hand got the job at once, and the same
+worker had the job 20 seconds after its handler returned.
+
+The client would build itself one job worker execution thread, and an application here does not
+run on it. The VanillaBP Camunda 8 adapter hands the client an executor of its own, which schedules
+the polls on threads nothing else uses. So a handler never sits on the thread a poll needs, and
+only an adapter whose execution slots are all busy stops asking for more. See decision 18 in the
+DECISIONS.md of vanillabp/camunda8-adapter. That is why the measurement ran eight handler threads
+rather than the client's one.
+
+What cannot be measured today is whether a lease settles the race a worker has with itself. No
+release carries both halves: 8.9 has the repaired worker and no lease, and 8.10 has the lease and
+the worker which stays quiet. That question stays open until there is a repaired 8.10, and nothing
+here stands in for the answer.
 
 The test skips itself where the build does not lease. It needs no user task, so it runs on the
 preview line in the nightly matrix, which is where this is proven every night since decision 14.
