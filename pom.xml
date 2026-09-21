@@ -124,23 +124,25 @@
            carry no parent and no dependencyManagement since the flatten mode 'oss', so an
            application resolves protobuf from its own platform BOM, or from the client when
            nothing of its own manages it. That is why the number must not be read as a promise
-           to a user: what an application has to pin itself is in README.md, section "Release
-           lines". See decision 12 in the repository's DECISIONS.md.
+           to a user. What an application has to pin itself, with the numbers of every line, is
+           told once in README.md, section "Release lines". See decision 12 in the repository's
+           DECISIONS.md.
            The number is the protobuf version of the NEWEST client pinned above. A runtime may
            be newer than the generated code and never older, so that one number serves every
            line, and a number per line would only lower what the older lines are tested
-           against. When it was last set, the clients asked for 4.31.1 on line 8.8, 4.33.6 on
-           line 8.9 and 4.36.0 on line 8.10.
+           against.
            So raise it whenever a camunda8.version.line-* pin moves, and read the new number
            rather than guess it:
              mvn -Pline-<id> -pl spring-boot dependency:tree -Dincludes=com.google.protobuf
            prints this pin and, as "version managed from", the version the client of that line
            was generated against. Raising it by hand is the rule the client pins follow as
            well, see decision 10 in the repository's DECISIONS.md.
-           A pin left behind is easy to miss. The older lines stay green, and only the newest
-           line breaks: its first deployment fails with a ProtobufRuntimeVersionException
-           naming both versions. No test run of this repository uses the preview line, neither
-           the pull request nor the night, so whoever runs that line by hand sees it first. -->
+           A pin left behind is easy to miss. The older lines stay green and only the newest
+           line breaks, and no test run of this repository uses the preview line, neither the
+           pull request nor the night. So whoever runs that line by hand sees it first, and
+           what they see is the VanillaBP Camunda 8 adapter refusing to boot, with a message
+           naming both versions and the entry to add. It arrives while that adapter builds its
+           client, so it comes before this repository deploys anything to a cluster. -->
       <dependency>
         <groupId>com.google.protobuf</groupId>
         <artifactId>protobuf-java</artifactId>
@@ -251,11 +253,18 @@
         <artifactId>testcontainers-junit-jupiter</artifactId>
         <version>${testcontainers.version}</version>
       </dependency>
+      <!-- scope 'provided', here and at every declaration a module adds: Lombok translates
+           our source and has no work left once the class file exists, so no application using
+           our artifacts may find it on its runtime classpath. Writing 'optional' here does not
+           do that. Maven copies a managed version, scope and exclusions into a dependency and
+           leaves the optional flag behind, so the POM we publish would say nothing about
+           Lombok at all. No module declares Lombok today, it only stands on the compiler's
+           annotationProcessorPaths, so this scope waits for the first module to declare it. -->
       <dependency>
         <groupId>org.projectlombok</groupId>
         <artifactId>lombok</artifactId>
         <version>${lombok.version}</version>
-        <optional>true</optional>
+        <scope>provided</scope>
       </dependency>
     </dependencies>
   </dependencyManagement>
