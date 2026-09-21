@@ -79,6 +79,15 @@
       <artifactId>test-utils</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- holds PublishedPom, which says what the POM of a Camunda 8 adapter promises an
+        application. The adapter publishes that module once per release line, so this module
+        checks with the assertions of the line it compiles against and keeps no copy of its
+        own. See decision 12 in the repository's DECISIONS.md. -->
+      <groupId>org.camunda.community.vanillabp</groupId>
+      <artifactId>camunda8-adapter-test-support</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -94,7 +103,6 @@
               build rather than from the adapter on the classpath, because every line still
               compiles against the same adapter snapshot, so the adapter's own line descriptor
               would answer for whichever line it was last built for. -->
-            <camunda8.line>${camunda8.line}</camunda8.line>
             <camunda8.client>${camunda8.version}</camunda8.client>
           </systemPropertyVariables>
         </configuration>
