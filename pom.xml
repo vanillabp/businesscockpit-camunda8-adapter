@@ -304,6 +304,15 @@
           <version>3.16.0</version>
           <configuration>
             <release>${version.java}</release>
+            <compilerArgs>
+              <!-- javac is the only javadoc check which reads a package private class and
+                   a per-line source tree. The javadoc plugin of the parent opens what a
+                   release publishes, so it starts at protected, and it never sees the code
+                   of the two lines a build does not select. Every group is checked here
+                   except 'missing': a comment which was never written is a warning, not a
+                   broken build. -->
+              <arg>-Xdoclint:all,-missing</arg>
+            </compilerArgs>
             <annotationProcessorPaths>
               <path>
                 <groupId>org.projectlombok</groupId>
