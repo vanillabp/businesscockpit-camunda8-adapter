@@ -134,6 +134,12 @@ jobs:
       # with no other one, so a stale target/ from the previous line fails at runtime
       # rather than at compile time
       - name: "Release line ${{ matrix.line }}"
+        # No release has run yet, so this number is read off the publish workflow: that
+        # step does the same build and upload and takes 6.9 minutes at its worst. This one
+        # also signs and hands the artifacts to Maven Central, which is why it gets twice
+        # what the publish gets. The lines release one at a time, so a line which hangs
+        # holds every line after it.
+        timeout-minutes: 60
         run: mvn -s $GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml
           --batch-mode --no-transfer-progress -Dgpg.passphrase=$GPG_PASSPHRASE
           -Pline-${{ matrix.line }},release,central-portal

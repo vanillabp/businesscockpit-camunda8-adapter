@@ -44,6 +44,11 @@ jobs:
       # second run, the compiler does not, and every javac warning is reported twice. It
       # stays 'install' because the Quarkus tests load modules from the local repository.
       - name: Build and test
+        # The tests of the current GA line against a cluster. The worst run on record
+        # took 6.2 minutes and the median 4.5, so 30 minutes is around five times the
+        # worst. The same reason as in line-matrix.yaml: without a limit a step which
+        # stops moving holds the runner for the six hours GitHub gives a job by default.
+        timeout-minutes: 30
         run: mvn -s $GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml
           --batch-mode --no-transfer-progress --update-snapshots install
         env:
@@ -81,6 +86,9 @@ jobs:
           distribution: temurin
           cache: maven
       - name: The public API is the same on every line
+        # Builds the API of every line, with no cluster. The worst run on record took
+        # 3.7 minutes and the median 2.5.
+        timeout-minutes: 20
         env:
           MAVEN_ARGS: -s ${{ github.workspace }}/.github/workflows/github-packages-settings.xml
             --update-snapshots
@@ -97,6 +105,10 @@ jobs:
         with:
           node-version: 24
       - name: Install Renovate
+        # Half a minute of npm at its worst. The limit is here because the step waits on
+        # a registry of its own, and a registry which stops answering must not cost the
+        # runner an afternoon.
+        timeout-minutes: 10
         run: npm install --no-save --no-audit --no-fund renovate
       - name: Validate renovate.json
         run: npx --no-install renovate-config-validator --strict
