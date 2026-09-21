@@ -87,6 +87,15 @@ jobs:
           distribution: temurin
           cache: maven
       - name: "Build the Camunda 8 adapter of line ${{ matrix.line }}"
+        # The step this limit was written for. On the 20th of September 2026 it hung for
+        # 35 minutes on line 8.8 without printing a line and the run had to be stopped by
+        # hand, while the run before it had done the same work in under two minutes.
+        # Nothing in this repository touches how a line is built, so it was the runner or
+        # GitHub Packages. Over the runs still on record this compile takes 2.2 minutes at
+        # its worst and 1.6 at its median. So 20 minutes is around nine times the worst,
+        # and a compile which hangs still ends the same night. Without a limit the step
+        # inherits the six hours GitHub gives a job by default.
+        timeout-minutes: 20
         # Only the modules this repository consumes, plus what they need: the adapter's
         # integration tests, its smoke test and its native-image tests are none of our
         # business. The revision names the line, so the local repository holds one
@@ -107,6 +116,12 @@ jobs:
           -pl core,spring-boot,quarkus/runtime,quarkus/deployment,test-support -am
           clean install
       - name: "Build and test line ${{ matrix.line }}"
+        # The long step of this workflow: the integration tests start a cluster. The
+        # worst run on record took 42 minutes. That one was a failing 8.10 line whose
+        # tests sat out their own waits, and the worst green run took 12. So 90 minutes
+        # is more than twice the worst. It is here for a run which stops moving, not to
+        # make a slow runner red.
+        timeout-minutes: 90
         # 'clean', because classes compiled against another client are binary compatible
         # with nothing, and the revision is the version string this line would publish,
         # so the build proves the coordinates as well as the code. The adapter version is

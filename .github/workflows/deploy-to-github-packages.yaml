@@ -41,6 +41,11 @@ jobs:
           distribution: temurin
           cache: maven
       - name: Publish package
+        # The whole lifecycle up to 'deploy', tests included. The worst run on record
+        # took 6.9 minutes and the median 5.4, so 30 minutes is around four times the
+        # worst. A publish which hangs also blocks the next one, because this workflow
+        # allows one publish at a time.
+        timeout-minutes: 30
         run: mvn -s $GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml
           --batch-mode --no-transfer-progress --update-snapshots deploy
         env:
