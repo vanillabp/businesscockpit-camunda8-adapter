@@ -423,12 +423,33 @@ again about a second after the lock ran out. It does so for a listener job and f
 service task job, with a lease and without one, and it does not care which worker name the job
 was held under. An open job worker gets it as readily as an activate command sent by hand.
 
-The one worker which does not get it back is the worker whose handler is still holding it. It
-polls the whole time and is offered nothing, with no line in its log, and it gets the job the
-moment its handler returns. Why the client behaves that way was not chased down, because it is
-not what an application depends on: every other worker has the job about a second after the lock
-ran out, and a restarted application is exactly that, a new client with new workers. So what a
-shutdown left to its lock does come back.
+The one worker which does not get it back is the worker whose handler is still holding it. It is
+offered nothing while that handler runs, with no line in its log, and it gets the job the moment
+the handler returns. This does not change what an application depends on: every other worker has
+the job about a second after the lock ran out, and a restarted application is exactly that, a new
+client with new workers. So what a shutdown left to its lock does come back.
+
+The race two runs have over one answer therefore has a condition. It starts only where a second
+worker can activate the job, and that worker has to be on the same job type. A second pod of the
+application is the usual way to have one. Two adapter ids in one application are another, where
+the name mode `use-prefix` or `none` leaves both ids on one job type. The third is an extension
+which opens listener workers of its own on the same cluster, which is this extension. An
+application which runs as a single pod with one worker starts no second run beside a slow
+provider, and its job waits for the handler holding it.
+
+That is no promise about a single pod. Story `1362` chased the reason down, and it is the client,
+not the cluster and not the transport. `JobWorkerImpl` schedules the next poll after a poll which
+brought jobs only when no job is left open. Otherwise the polling comes back through
+`handleJobFinished()`, which runs after the handler returns. A handler which hangs therefore leaves
+nothing scheduled, and the worker goes quiet at its first empty poll after that. Measured at the
+gateway: not one activation request over two minutes, over REST and over gRPC, while a command sent
+by hand got the job at once, and the same worker had the job 20 seconds after its handler returned.
+
+Camunda repaired this in 8.8.37 and in 8.9.18. The old form is in the 8.8 releases up to 8.8.36,
+in the 8.9 releases up to 8.9.17, and in both 8.10 alphas. This repository pins 8.8.37 and 8.9.19, so only the preview line
+still carries it, and a repaired client polls again while a handler holds a job. One thing survives
+the repair. The client runs one job worker execution thread by default, and there the handler and
+the scheduled poll share that thread, so a blocking handler silences a repaired client as well.
 
 The test skips itself where the build does not lease. It needs no user task, so it runs on the
 preview line in the nightly matrix, which is where this is proven every night since decision 14.
