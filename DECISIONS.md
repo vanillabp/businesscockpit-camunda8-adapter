@@ -413,11 +413,22 @@ holds the job, the job is not failed, the case reaches the cockpit as created, a
 carries no incident once the newer activation completes.
 
 The second activation is the test's own and not a redelivery, the same way the adapter's lease
-test does it. Two reasons. A redelivery cannot be timed, and what is under test is the ORDER of
-the two answers. And the redelivery did not come: on that alpha the worker of this extension kept
-polling for four minutes without being offered the job again, while an explicit activation got it
-as soon as the lock was over. A test which waits for the cluster to do it would measure that alpha
-rather than this extension.
+test does it. What is under test is the ORDER of the two answers. A redelivery cannot carry that
+order: the run which holds the report sits in the handler of the worker the job came from, and
+that worker is the one place the job does not turn up again.
+
+An earlier version of this entry said the cluster does not redeliver at all. That was wrong.
+Story `1346` measured it on `camunda/camunda:8.10.0-alpha5`. The cluster hands an expired job out
+again about a second after the lock ran out. It does so for a listener job and for an ordinary
+service task job, with a lease and without one, and it does not care which worker name the job
+was held under. An open job worker gets it as readily as an activate command sent by hand.
+
+The one worker which does not get it back is the worker whose handler is still holding it. It
+polls the whole time and is offered nothing, with no line in its log, and it gets the job the
+moment its handler returns. Why the client behaves that way was not chased down, because it is
+not what an application depends on: every other worker has the job about a second after the lock
+ran out, and a restarted application is exactly that, a new client with new workers. So what a
+shutdown left to its lock does come back.
 
 The test skips itself where the build does not lease. It needs no user task, so it runs on the
 preview line in the nightly matrix, which is where this is proven every night since decision 14.

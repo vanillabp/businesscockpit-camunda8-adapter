@@ -897,9 +897,11 @@ public class Camunda8CockpitIT {
     // listener job is running out under it
     waitingWorkflowService.awaitTheHeldReport();
 
-    // the second activation is this test's own rather than a redelivery, for the reason the
-    // adapter's own lease test gives: a redelivery cannot be timed, and what is under test is
-    // the ORDER of the two answers. So the test takes the job the way a second pod would
+    // the second activation is this test's own rather than a redelivery. What is under test is
+    // the ORDER of the two answers, and the held run sits in the handler of the very worker the
+    // job came from, which is the one place a redelivery does not show up. The cluster itself
+    // hands the job out again about a second after the lock ran out, measured by story 1346.
+    // So the test takes the job the way a second pod would
     final var takenOver = theListenerJobHandedOutAgain();
     assertNotNull(
         Camunda8JobLease.tokenOf(takenOver),
