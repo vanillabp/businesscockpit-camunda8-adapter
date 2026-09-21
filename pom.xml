@@ -253,11 +253,18 @@
         <artifactId>testcontainers-junit-jupiter</artifactId>
         <version>${testcontainers.version}</version>
       </dependency>
+      <!-- scope 'provided', here and at every declaration a module adds: Lombok translates
+           our source and has no work left once the class file exists, so no application using
+           our artifacts may find it on its runtime classpath. Writing 'optional' here does not
+           do that. Maven copies a managed version, scope and exclusions into a dependency and
+           leaves the optional flag behind, so the POM we publish would say nothing about
+           Lombok at all. No module declares Lombok today, it only stands on the compiler's
+           annotationProcessorPaths, so this scope waits for the first module to declare it. -->
       <dependency>
         <groupId>org.projectlombok</groupId>
         <artifactId>lombok</artifactId>
         <version>${lombok.version}</version>
-        <optional>true</optional>
+        <scope>provided</scope>
       </dependency>
     </dependencies>
   </dependencyManagement>

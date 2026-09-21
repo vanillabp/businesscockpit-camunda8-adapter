@@ -93,6 +93,23 @@ So deploy the whole reactor or nothing. The workflows do it that way already:
 `-pl`, so only a deploy somebody types by hand can produce the mixture. If you have to repair a
 single module, deploy the whole reactor again instead.
 
+## What a POM hands an application
+
+A tool that only translates our source belongs in scope `provided`, and the scope stands at the
+declaration in the module using it. Lombok is such a tool, and an annotation processor is another.
+Somebody added one dependency to see their user tasks in the cockpit. Every jar they did not ask
+for is one more thing to ship and to answer a CVE report about.
+
+Writing `<optional>true</optional>` in a `dependencyManagement` does not do it. Maven copies a
+managed version, scope and exclusions into a dependency and leaves the optional flag behind, so
+the POM we publish says nothing at all about that dependency.
+
+The two cases differ, and a sentence written for one does not fit the other. A declaration without
+a scope hands the jar to every application, and that is a defect. An `optional` in a
+`dependencyManagement` hands out nothing as long as no module declares the dependency. It is a
+promise nobody ever keeps, and it breaks on the day the first module declares it. This repository
+had the second case for Lombok, and the VanillaBP adapters had the first.
+
 ## This is an extension, not a BPMS adapter
 
 An extension joins the deployment pipeline of the VanillaBP core and implements
