@@ -346,9 +346,12 @@ together with the one case where an application pins protobuf itself.
 
 The VanillaBP Camunda 8 adapter found the same fault in its own artifacts on the same day and
 answered it the same way, which is its decision 39. It now holds what the check knows. The class
-`PublishedPom` sits in `camunda8-adapter-test-support`, and that adapter publishes the module on
-the same release lines this repository builds against. `Camunda8PublishedPomTest` is the caller.
-It names what is ours: the artifact, the client of this line and the address of this repository.
+`PublishedPom` sits in `camunda8-adapter-published-pom`, and that adapter publishes the module on
+the same release lines this repository builds against. It stood in
+`camunda8-adapter-test-support` until 2026-09-22. That module starts clusters, so a test which
+wanted this one class got Testcontainers as well, and `core` wants no cluster.
+`Camunda8PublishedPomTest` is the caller. It names what is ours: the artifact, the client of this
+line, the address of this repository and the run a failure came from.
 Two copies of one check drift apart, and a check like this one is only worth something while it
 still runs in two years. The entry here stays ours, because the modules, the pins and what we ask
 of them are ours.

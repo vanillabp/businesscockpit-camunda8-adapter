@@ -83,9 +83,12 @@
       <!-- holds PublishedPom, which says what the POM of a Camunda 8 adapter promises an
         application. The adapter publishes that module once per release line, so this module
         checks with the assertions of the line it compiles against and keeps no copy of its
-        own. See decision 12 in the repository's DECISIONS.md. -->
+        own. See decision 12 in the repository's DECISIONS.md.
+        The class used to sit in 'camunda8-adapter-test-support', which starts clusters and
+        so put Testcontainers on this module's test classpath. Nothing here wants a cluster.
+        The module named here holds that one class and needs nothing but the JDK. -->
       <groupId>org.camunda.community.vanillabp</groupId>
-      <artifactId>camunda8-adapter-test-support</artifactId>
+      <artifactId>camunda8-adapter-published-pom</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
