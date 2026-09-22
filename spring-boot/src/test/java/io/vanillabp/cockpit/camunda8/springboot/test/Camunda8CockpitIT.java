@@ -747,8 +747,8 @@ public class Camunda8CockpitIT {
                 .processes()
                 .completeUserTask(aggregates.findById(aggregate.getId()).orElseThrow(), userTaskId));
 
-    assertNotNull(CockpitServer.awaitRequest("/usertask/%s/completed".formatted(userTaskId)));
-    assertNotNull(CockpitServer.awaitRequest("/workflow/%s/completed".formatted(workflowId)));
+    assertNotNull(CockpitServer.awaitAnyRequest("/usertask/%s/completed".formatted(userTaskId)));
+    assertNotNull(CockpitServer.awaitAnyRequest("/workflow/%s/completed".formatted(workflowId)));
 
   }
 
@@ -767,7 +767,7 @@ public class Camunda8CockpitIT {
     client().newCancelInstanceCommand(Long.parseLong(workflowId)).send().join();
 
     // the task listener of the task runs on every line, so this half is the same everywhere
-    assertNotNull(CockpitServer.awaitRequest("/usertask/%s/cancelled".formatted(userTaskId)));
+    assertNotNull(CockpitServer.awaitAnyRequest("/usertask/%s/cancelled".formatted(userTaskId)));
     assertTheCaseWasReportedAsCancelledWhereTheLineSaysIt(workflowId);
 
     // never as completed, on any line. The 'end' listener of a process does not run when the
@@ -816,8 +816,8 @@ public class Camunda8CockpitIT {
 
     // the 'canceling' task listener runs on every release line, and this is the one way a
     // cluster cancels a user task without cancelling the case it belongs to
-    assertNotNull(CockpitServer.awaitRequest("/usertask/%s/cancelled".formatted(userTaskId)));
-    assertNotNull(CockpitServer.awaitRequest("/workflow/%s/completed".formatted(workflowId)));
+    assertNotNull(CockpitServer.awaitAnyRequest("/usertask/%s/cancelled".formatted(userTaskId)));
+    assertNotNull(CockpitServer.awaitAnyRequest("/workflow/%s/completed".formatted(workflowId)));
 
     // the task went away rather than being done, so nobody may read it as done
     assertEquals(
@@ -1093,7 +1093,7 @@ public class Camunda8CockpitIT {
       final String workflowId) {
 
     if (Camunda8CancelListeners.theProcessCanReportItsCancellation()) {
-      assertNotNull(CockpitServer.awaitRequest("/workflow/%s/cancelled".formatted(workflowId)));
+      assertNotNull(CockpitServer.awaitAnyRequest("/workflow/%s/cancelled".formatted(workflowId)));
       return;
     }
     CockpitServer.awaitQuiet();

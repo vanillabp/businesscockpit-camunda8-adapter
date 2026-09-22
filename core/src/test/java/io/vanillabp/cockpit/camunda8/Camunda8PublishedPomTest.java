@@ -21,11 +21,11 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * the flatten plugin's 'oss' mode ended, and this test is what keeps it ended. See decision 12
  * in the repository's DECISIONS.md.
  * <p>
- * What the assertions know sits in {@link PublishedPom} of 'camunda8-adapter-test-support',
+ * What the assertions know sits in {@link PublishedPom} of 'camunda8-adapter-published-pom',
  * published by the VanillaBP Camunda 8 adapter on the same release lines as this repository.
  * Both repositories build a Camunda 8 adapter, both make the same promise, and a copy of the
  * check in each of them would drift. This test is the caller: it names the artifact, the
- * versions expected of it and the repository it comes from.
+ * versions expected of it, the repository it comes from and the run it belongs to.
  * <p>
  * The client to expect is handed over by the build, see the surefire configuration in this
  * module's pom.xml. The adapter reads it from its own line descriptor and we cannot: every line
@@ -42,9 +42,8 @@ public class Camunda8PublishedPomTest {
   @DisplayName("the published POM asks for the client of this release line")
   public void thePublishedPomAsksForTheClientOfThisLine() {
 
-    PublishedPom
-        .ofTheModuleUnderTest()
-        .asksFor("io.camunda", "camunda-client-java", clientOfThisBuild());
+    thePublishedPom()
+        .asksFor("io.camunda", "camunda-client-java", theClientToExpect());
 
   }
 
@@ -52,9 +51,7 @@ public class Camunda8PublishedPomTest {
   @DisplayName("the published POM leaves an application nothing of ours to inherit")
   public void thePublishedPomHasNoParentAndNoDependencyManagement() {
 
-    PublishedPom
-        .ofTheModuleUnderTest()
-        .handsAnApplicationNothingToInherit();
+    thePublishedPom().handsAnApplicationNothingToInherit();
 
   }
 
@@ -62,9 +59,7 @@ public class Camunda8PublishedPomTest {
   @DisplayName("every address in the published POM is one which opens")
   public void thePublishedPomNamesTheRepositoryAndNoModulePath() {
 
-    PublishedPom
-        .ofTheModuleUnderTest()
-        .pointsAt(REPOSITORY);
+    thePublishedPom().pointsAt(REPOSITORY);
 
   }
 
@@ -72,17 +67,47 @@ public class Camunda8PublishedPomTest {
   @DisplayName("the published POM says nothing about where we deploy")
   public void thePublishedPomHasNoDistributionManagement() {
 
-    PublishedPom
-        .ofTheModuleUnderTest()
-        .saysNothingAboutWhereWeDeploy();
+    thePublishedPom().saysNothingAboutWhereWeDeploy();
 
   }
 
-  /** The exact Camunda client the active line profile selected for this build. */
-  private String clientOfThisBuild() {
+  /** The published POM of this module, told which run is asking about it. */
+  private PublishedPom thePublishedPom() {
 
-    final var client = System.getProperty("camunda8.client");
-    if ((client != null) && !client.isBlank()) {
+    return PublishedPom
+        .ofTheModuleUnderTest()
+        .inTheRun(theRunOfThisBuild());
+
+  }
+
+  /**
+   * Which of the three line builds is asking, repeated in every failure message.
+   * <p>
+   * A failure names the coordinate of the artifact, and ours says nothing about the line
+   * outside a release: a pull request builds '0.9.0-SNAPSHOT' on every one of them, so the
+   * same message fits all three and a reader of a red build has to guess. The Camunda client
+   * the active line profile chose tells them apart.
+   */
+  private String theRunOfThisBuild() {
+
+    final var client = clientOfThisBuild();
+    return client == null
+        ? "a run which named no Camunda client"
+        : "the line of the Camunda client "
+            + client;
+
+  }
+
+  /**
+   * The client version to hold the published POM against.
+   *
+   * @throws AssertionError If the build handed none over, because a test which cannot name
+   *           the client it expects proves nothing about the POM
+   */
+  private String theClientToExpect() {
+
+    final var client = clientOfThisBuild();
+    if (client != null) {
       return client;
     }
     throw new AssertionError(
@@ -90,6 +115,19 @@ public class Camunda8PublishedPomTest {
             + "published POM against. The build hands it to surefire from the property the "
             + "active line profile selected, see this module's pom.xml. A run which skipped "
             + "that configuration cannot answer the question this test asks.");
+
+  }
+
+  /**
+   * The exact Camunda client the active line profile selected for this build, or
+   * {@code null} where the build handed none over.
+   */
+  private String clientOfThisBuild() {
+
+    final var client = System.getProperty("camunda8.client");
+    return ((client == null) || client.isBlank())
+        ? null
+        : client;
 
   }
 

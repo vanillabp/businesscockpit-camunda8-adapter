@@ -238,6 +238,15 @@
         <artifactId>camunda8-adapter-test-support</artifactId>
         <version>${camunda8-adapter.version}</version>
       </dependency>
+      <!-- what a published POM of a Camunda 8 adapter has to promise, published by the
+           adapter per release line as well. A module of its own over there since the adapter
+           moved it out of its test support, so that a test asking only this question keeps
+           Testcontainers off its classpath. Only 'core' reads it. -->
+      <dependency>
+        <groupId>org.camunda.community.vanillabp</groupId>
+        <artifactId>camunda8-adapter-published-pom</artifactId>
+        <version>${camunda8-adapter.version}</version>
+      </dependency>
       <dependency>
         <groupId>io.camunda</groupId>
         <artifactId>camunda-client-java</artifactId>
