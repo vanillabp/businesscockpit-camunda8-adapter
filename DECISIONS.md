@@ -455,7 +455,7 @@ leaves both ids on one job type, or an extension with listener workers of its ow
 extension.
 
 Whether a worker polls while its handler holds a job belongs to the client, not to the cluster.
-Camunda repaired it in 8.8.37 and in 8.9.18, and this repository pins 8.8.37 and 8.9.19, so both
+Camunda repaired it in 8.8.37 and in 8.9.18, and this repository pins 8.8.39 and 8.9.21, so both
 released lines race with themselves. The old form is in the 8.8 releases up to 8.8.36, in the 8.9
 releases up to 8.9.17, and in both 8.10 alphas. Story `1366` ran the same measurement on
 `8.10.0-alpha5` and got no second activation within two minutes, with a lease and without one,
