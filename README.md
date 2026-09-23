@@ -104,8 +104,8 @@ means there:
 
 |   Channel   |        Version        | Camunda 8 adapter line |   Client pin    | Tested against  |
 |-------------|-----------------------|------------------------|-----------------|-----------------|
-| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.37`        | `8.8.37`        |
-| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.19`        | `8.9.19`        |
+| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.39`        | `8.8.39`        |
+| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.21`        | `8.9.21`        |
 | preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha5` | `8.10.0-alpha5` |
 
 The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
@@ -129,7 +129,7 @@ differ. The night builds every line, so every line is covered.
 
 A client downgrade inside a line is not supported. Camunda adds enum literals and interface
 methods in patch releases and does not count that as breaking, so a build compiled against
-`8.9.19` can call a method `8.9.11` never had. Going back therefore fails at runtime and nowhere
+`8.9.21` can call a method `8.9.11` never had. Going back therefore fails at runtime and nowhere
 near the downgrade. Move the pin forward instead, or move to the line whose pin you want.
 
 The same habit is why a moved pin is read rather than trusted. Every pull request which raises one
@@ -225,13 +225,13 @@ the Camunda client when nothing of its own manages it. There is one case where t
 enough.
 
 Protobuf refuses a runtime older than the generated code linked against it, and the Camunda
-client brings generated code. These are the numbers involved, read on 2026-09-20 from the client
+client brings generated code. These are the numbers involved, read on 2026-09-23 from the client
 POM of each line and from the two platform BOMs this repository builds against:
 
 | Line |   Client pin    | Its gencode | Spring Boot 4.1.1 manages | Quarkus 3.39.3 manages |
 |------|-----------------|-------------|---------------------------|------------------------|
-| 8.8  | `8.8.37`        | `4.31.1`    | `4.35.1`                  | `4.35.0`               |
-| 8.9  | `8.9.19`        | `4.33.6`    | `4.35.1`                  | `4.35.0`               |
+| 8.8  | `8.8.39`        | `4.31.1`    | `4.35.1`                  | `4.35.0`               |
+| 8.9  | `8.9.21`        | `4.33.6`    | `4.35.1`                  | `4.35.0`               |
 | 8.10 | `8.10.0-alpha5` | `4.36.0`    | `4.35.1`                  | `4.35.0`               |
 
 An imported BOM beats a transitive version. So on both GA lines the application runs a protobuf
