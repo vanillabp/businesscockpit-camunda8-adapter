@@ -49,6 +49,14 @@ Beside them stands the machinery. `test-coverage-report` measures each platform 
 release-line machinery both of the sections below describe, the formatting rules every VanillaBP
 repository shares, and the license and notice files.
 
+The gate reads the reports in the `test` phase, and the reports are written in `verify`. A run
+which stops at `package` never gets that far, so the gate prints a line per platform saying that
+the coverage was not checked and reports those two tests as skipped. That way a run without
+reports does not fail over a file it could not have written, and nobody reads it as a checked one
+either. The same module reads the main sources of this repository, the per-release-line sources
+included, for a guiding message whose sentence fell apart: a run of spaces between two words, or
+two words a line continuation glued into one.
+
 What the integration tests of both platforms need comes from two published artifacts rather than from
 a module here. The Camunda 8 cluster is `camunda8-adapter-test-support`, published by the VanillaBP
 Camunda 8 adapter per release line, so the tests of a line meet the cluster that line was built for.
