@@ -106,6 +106,30 @@ public class Camunda8CockpitIT {
   private static final String USER_TASK_LISTENER_JOBS = "user-task-listener-jobs";
 
   /**
+   * Tests which need the cluster to hand a job out a second time. The preview line loses whole
+   * activate-jobs batches, so such a test waits for nothing there.
+   * <p>
+   * The REST gateway of the 8.10 alpha throws a NullPointerException in
+   * <code>ResponseMapper.toUserTaskProperties</code> when an answer to an activate-jobs call
+   * meets a listener job in the state <code>creating</code> or <code>canceling</code>, and the
+   * whole batch goes with it. The caller waits for an answer which never arrives, so the job
+   * stays at the cluster and the next activation of it ends the same way. A test which waits for
+   * the second hand-out reads that as a lease which ran out and did nothing, and it sits in its
+   * deadline. The bug is camunda/camunda#58193.
+   * <p>
+   * This is not what {@link #USER_TASK_LISTENER_JOBS} says. A test tagged here runs a process
+   * which holds no user task at all, and it still loses its answer, because the batch is dropped
+   * wherever such a listener job is met in the cluster this class shares between its own tests.
+   * Decision 43 of vanillabp/camunda8-adapter holds what was measured about that.
+   * <p>
+   * The <code>line-8.10</code> profile of the parent POM excludes this tag, in failsafe and in
+   * surefire. When the pin moves to a newer alpha, measure rather than assume: run the tagged
+   * test against it and read the cluster log afterwards. Once it passes and the log carries no
+   * NullPointerException from the response mapper, the tag and the exclusion go away together.
+   */
+  private static final String JOBS_HANDED_OUT_AGAIN = "jobs-handed-out-again";
+
+  /**
    * How long a wait for the cluster's searchable storage keeps hoping. It is the slowest thing
    * in this class by far.
    */
@@ -882,6 +906,7 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Tag(JOBS_HANDED_OUT_AGAIN)
   @Test
   @DisplayName("The answer of a run whose lock expired is refused, and the case is reported once")
   public void theAnswerOfTheRunWhoseLockExpiredIsRefused(

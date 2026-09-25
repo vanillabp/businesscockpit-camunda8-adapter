@@ -49,14 +49,6 @@ Beside them stands the machinery. `test-coverage-report` measures each platform 
 release-line machinery both of the sections below describe, the formatting rules every VanillaBP
 repository shares, and the license and notice files.
 
-The gate reads the reports in the `test` phase, and the reports are written in `verify`. A run
-which stops at `package` never gets that far, so the gate prints a line per platform saying that
-the coverage was not checked and reports those two tests as skipped. That way a run without
-reports does not fail over a file it could not have written, and nobody reads it as a checked one
-either. The same module reads the main sources of this repository, the per-release-line sources
-included, for a guiding message whose sentence fell apart: a run of spaces between two words, or
-two words a line continuation glued into one.
-
 What the integration tests of both platforms need comes from two published artifacts rather than from
 a module here. The Camunda 8 cluster is `camunda8-adapter-test-support`, published by the VanillaBP
 Camunda 8 adapter per release line, so the tests of a line meet the cluster that line was built for.
@@ -331,6 +323,49 @@ tests and starts them, because Failsafe 3.6.0 no longer reads that property.
 Snapshots are published to GitHub Packages by the pipeline described below, and releases go to
 Maven Central under the groupId `io.vanillabp.businesscockpit`, like the rest of the Business
 Cockpit.
+
+## Test coverage
+
+`mvn install` writes one aggregated JaCoCo report per platform:
+
+1. Spring Boot, over `core` and `spring-boot`, into `test-coverage-report/spring-boot/report`
+2. Quarkus, over `core`, `quarkus/runtime` and `quarkus/deployment`, into
+   `test-coverage-report/quarkus/report`
+
+Coverage is measured separately per platform, because the tests of one platform never run the
+other platform's code. The core is in both reports, and a core class one platform never reaches
+names a feature that platform never runs. Click a badge at the top of this page to open the
+published report.
+
+The last module of the reactor is `test-coverage-report/coverage-gate`. It reads both reports and
+breaks the build when a platform is below its threshold in the root POM
+(`coverage.threshold.spring-boot`, `coverage.threshold.quarkus`, in percent of covered
+instructions, which is the number the badges show). Both hold 85, the number every VanillaBP
+repository stops at, and that is not the target: the rule is `coverage.rule` in the same POM, 90
+per platform, so a report between 85 and 90 passes the build and still names a gap. The gate is
+where a gap has grown too big to carry, which is why it is never edited to make a build pass. It
+also compares every module producing a `jacoco.exec` with the two aggregates, so a module added to
+the build without being added to a report cannot stay unnoticed. `CoverageGateTest` is where all
+of that happens.
+
+The gate reports what it measured on every run, green ones included, so it is the one test class
+of this repository which prints while it passes. The angle brackets stand for the numbers of the
+run:
+
+```
+coverage gate | Spring Boot: <percent> % instructions (<missed> of <total> missed) | at the rule of 90 %
+coverage gate | Quarkus: <percent> % instructions (<missed> of <total> missed) | <gap> points below the rule of 90 %, build breaks below 85 %
+```
+
+The reports are written in the `verify` phase and the gate reads them in `test`, so a run which
+stops at `package` never gets that far. `mvn package` checks no threshold at all: the gate then
+prints a line per platform saying that the coverage was not checked, and those two tests are
+reported as skipped, instead of failing over a file the run could not have written.
+
+`TestClassConventionsTest` sits in the same module. It keeps every test class on the output
+suppression the printed lines above depend on, and it reads the main sources of this repository,
+the per-release-line sources included, for a guiding message whose sentence fell apart: a run of
+spaces between two words, or two words a line continuation glued into one.
 
 ## What CI runs
 
