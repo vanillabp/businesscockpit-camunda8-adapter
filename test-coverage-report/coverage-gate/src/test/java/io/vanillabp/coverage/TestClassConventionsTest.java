@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import io.vanillabp.integration.test.utils.CoverageGate;
+import io.vanillabp.integration.test.utils.MessageConventions;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 import io.vanillabp.integration.test.utils.TestClassConventions;
 
@@ -17,6 +18,12 @@ import io.vanillabp.integration.test.utils.TestClassConventions;
  * <p>
  * The rule drifts silently, because a class which forgets it is quiet as long as its tests
  * pass. So it is checked here rather than reviewed.
+ * <p>
+ * It also checks the guiding messages of this repository. A message is what a developer
+ * reads in the moment something goes wrong, so a sentence which fell apart in the source
+ * takes away the one explanation they get. The check reads the main sources, which
+ * includes the per-release-line sources (<code>src/main/java-line-8.9</code> and its
+ * siblings), and one run of it covers every module.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class TestClassConventionsTest {
@@ -46,6 +53,34 @@ public class TestClassConventionsTest {
     assertTrue(
         offenders.isEmpty(),
         () -> TestClassConventions.describeTestClassesSuppressingTooLate(offenders));
+
+  }
+
+  @Test
+  @DisplayName("No message of this repository carries a run of spaces between two words")
+  public void noMessageFellApart() {
+
+    final var root = CoverageGate.repositoryRoot("coverage.repository.root");
+
+    final var offenders = MessageConventions.messagesPulledApart(root);
+
+    assertTrue(
+        offenders.isEmpty(),
+        () -> MessageConventions.describeMessagesPulledApart(offenders));
+
+  }
+
+  @Test
+  @DisplayName("No message of this repository glues two words into one")
+  public void noMessageIsGluedTogether() {
+
+    final var root = CoverageGate.repositoryRoot("coverage.repository.root");
+
+    final var offenders = MessageConventions.messagesGluedTogether(root);
+
+    assertTrue(
+        offenders.isEmpty(),
+        () -> MessageConventions.describeMessagesGluedTogether(offenders));
 
   }
 
