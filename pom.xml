@@ -82,8 +82,8 @@
          gained arrives as UNKNOWN_ENUM_VALUE, and a fallback nobody chose reads like one
          somebody did. The night is what notices, see decision 10 in the repository's
          DECISIONS.md. -->
-    <camunda8.line>8.9</camunda8.line>
-    <camunda8.version>${camunda8.version.line-8.9}</camunda8.version>
+    <camunda8.line>8.10</camunda8.line>
+    <camunda8.version>${camunda8.version.line-8.10}</camunda8.version>
     <camunda8.version.line-8.8>8.8.40</camunda8.version.line-8.8>
     <camunda8.version.line-8.9>8.9.21</camunda8.version.line-8.9>
     <camunda8.version.line-8.10>8.10.0</camunda8.version.line-8.10>
@@ -534,7 +534,9 @@
          editing these profiles, the pin properties and the line table of the README, and it
          follows whatever vanillabp/camunda8-adapter does. -->
     <profile>
-      <!-- previous GA: bugfixes only, ends when the next minor goes GA -->
+      <!-- a bugfix line: it takes fixes and nothing which needs a newer cluster. It did not
+           end when 8.10 went GA, see the README of vanillabp/camunda8-adapter, section
+           "How long a line lives" -->
       <id>line-8.8</id>
       <properties>
         <camunda8.line>8.8</camunda8.line>
@@ -543,7 +545,7 @@
       </properties>
     </profile>
     <profile>
-      <!-- current GA: everything lands here, and it is what a plain build produces -->
+      <!-- a bugfix line: it takes fixes and nothing which needs a newer cluster -->
       <id>line-8.9</id>
       <properties>
         <camunda8.line>8.9</camunda8.line>
