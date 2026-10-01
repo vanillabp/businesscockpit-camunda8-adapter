@@ -95,6 +95,15 @@
     <camunda8-adapter.version.line-8.8>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.8>
     <camunda8-adapter.version.line-8.9>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.9>
     <camunda8-adapter.version.line-8.10>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.10>
+    <!-- The test tags the line of this build leaves out, read by surefire and by failsafe
+         below. It is a property and not a setting inside a line profile because a build
+         without a profile IS the current GA line: a profile would leave the tags in for
+         exactly the build .github/workflows/build.yaml runs before it publishes. That build
+         was measured on 2026-10-01 and it ran the excluded test and went red, which is how
+         this property came to exist. Every line profile sets it, the current GA line leaves
+         it at the value here, and what each value means stands beside the profile which sets
+         it. -->
+    <camunda8.line.excluded-test-tags>jobs-handed-out-again</camunda8.line.excluded-test-tags>
     <!-- Which cluster the integration tests start is not decided here. It is decided by
          camunda8-adapter-test-support of the line this build compiles against: that artifact
          carries the image and the secondary storage of its line as a filtered resource, and
@@ -287,6 +296,9 @@
             <!-- '@{jacoco.agent}' is resolved lazily per module (late property binding),
                  forwarding coverage also into forked JVMs -->
             <argLine>@{jacoco.agent}</argLine>
+            <!-- The Quarkus deployment module runs its end-to-end tests through this plugin,
+                 so a tag a line leaves out has to be named here as well as in failsafe. -->
+            <excludedGroups>${camunda8.line.excluded-test-tags}</excludedGroups>
           </configuration>
         </plugin>
         <plugin>
@@ -295,6 +307,7 @@
           <version>3.6.0</version>
           <configuration>
             <argLine>@{jacoco.agent}</argLine>
+            <excludedGroups>${camunda8.line.excluded-test-tags}</excludedGroups>
           </configuration>
           <executions>
             <execution>
@@ -541,6 +554,10 @@
         <camunda8.line>8.8</camunda8.line>
         <camunda8.version>${camunda8.version.line-8.8}</camunda8.version>
         <camunda8-adapter.version>${camunda8-adapter.version.line-8.8}</camunda8-adapter.version>
+        <!-- this line leaves no test out: its cluster answers everything the tests ask, and
+             the lease which the one excluded test of line 8.10 needs does not exist here, so
+             that test skips itself through an assumption -->
+        <camunda8.line.excluded-test-tags/>
       </properties>
     </profile>
     <profile>
@@ -550,6 +567,8 @@
         <camunda8.line>8.9</camunda8.line>
         <camunda8.version>${camunda8.version.line-8.9}</camunda8.version>
         <camunda8-adapter.version>${camunda8-adapter.version.line-8.9}</camunda8-adapter.version>
+        <!-- this line leaves no test out, for the same reason as line 8.8 -->
+        <camunda8.line.excluded-test-tags/>
       </properties>
     </profile>
     <profile>
@@ -565,70 +584,36 @@
         <camunda8.line>8.10</camunda8.line>
         <camunda8.version>${camunda8.version.line-8.10}</camunda8.version>
         <camunda8-adapter.version>${camunda8-adapter.version.line-8.10}</camunda8-adapter.version>
+        <!--
+          One test is left out of this line, and it is the same value the property carries
+          above, because this line is what a build without a profile gets. Whoever rotates the
+          lines moves both.
+          A job whose lock ran out is not handed out again here. The one test which needs that
+          waits for the cluster to offer the listener job to a second activation, and on
+          camunda/camunda:8.10.0 it waits until its own deadline. Measured on 2026-10-01: the
+          whole line was run without the exclusion and that one test failed, and it failed
+          twice more on its own. Twice after waiting about 122 seconds and once after 41
+          seconds in a socket timeout of the client, with the cluster log carrying nothing at
+          all about the job.
+          What this is NOT any more is camunda/camunda#58193. That defect dropped whole
+          activate-jobs batches and wrote an uncaught NullPointerException out of
+          ResponseMapper.toUserTaskProperties into the cluster log every thirty seconds. It is
+          closed for 8.10.0, the log of these runs holds no such line, and the tests which need
+          a Camunda-managed user task pass on this line now. So the tag which went with that
+          defect, user-task-listener-jobs, is gone and this one is left.
+          The symptom is the same symptom as before and the cause is open: a leased activation
+          may change when a job comes back, or it may be the client which stops asking while a
+          handler of the same worker runs. The lease exists on this line alone, so no other
+          line can answer it. Until somebody measures it, this test is excluded rather than the
+          line being red, because a line which is always red stops being read.
+          The rest of the line keeps saying what it always said, and more of it than before:
+          deployment, start, execution listeners, the user task listeners, the search in the
+          secondary storage, and the two things which exist on this line alone, the cancel
+          listener of the process and the job lease itself. Twenty-nine of thirty integration
+          tests run here.
+        -->
+        <camunda8.line.excluded-test-tags>jobs-handed-out-again</camunda8.line.excluded-test-tags>
       </properties>
-      <build>
-        <pluginManagement>
-          <plugins>
-            <plugin>
-              <groupId>org.apache.maven.plugins</groupId>
-              <artifactId>maven-failsafe-plugin</artifactId>
-              <configuration>
-                <!--
-                  The REST gateway of this line drops a whole activate-jobs batch as soon as it
-                  meets a task listener job whose event carries no user task action in its
-                  headers. The two events without one are 'creating' and 'canceling'. So the
-                  'creating' listener of a Camunda-managed user task never reaches a worker, the
-                  task is never finished being created, and nothing of it reaches the cockpit.
-                  The tagged tests all let the cluster create such a task. Some of them wait for
-                  its report and sit in their deadline. The others only leave the unfinished task
-                  behind, and the next activation of jobs in the cluster they share loses its
-                  batch over it. Either way the line turns red as a whole, which hides whatever
-                  else this line might break, and a line which is always red stops being read. So
-                  they are excluded here, by tag,
-                  and the rest of the line keeps saying something: the deployment, the start, the
-                  execution listeners, the search in the secondary storage, and the two things
-                  which exist on this line alone, the cancel listener of the process and the job
-                  lease.
-                  The bug is camunda/camunda#58193, and gaps 2 and 4 of GAPS.md tell it from the
-                  cockpit's side. The issue was closed on 2026-09-01 and 8.10.0-alpha5 was
-                  published on 2026-08-31, so that alpha is older than the fix. When the pin moves
-                  to a newer alpha, measure rather than assume: deploy a user task with a
-                  'creating' listener, start an instance and see whether the job arrives. Once one
-                  does, this exclusion and the tag go away together.
-                  The same tag under the same name does the same thing in
-                  vanillabp/camunda8-adapter.
-                  The second tag is the same defect met from the other side. A lost batch also
-                  loses the answer to an activation which asks for the listener job of a process
-                  holding no user task, so a test which waits for a job to be handed out a second
-                  time waits for nothing. Camunda8CockpitIT has the one test which does that, and
-                  it sat in its deadline for 121 seconds in the night of 2026-09-25 while the
-                  gateway wrote that NullPointerException five times. Both tags go away with the
-                  alpha which carries the fix.
-                -->
-                <excludedGroups>user-task-listener-jobs,jobs-handed-out-again</excludedGroups>
-              </configuration>
-            </plugin>
-            <plugin>
-              <groupId>org.apache.maven.plugins</groupId>
-              <artifactId>maven-surefire-plugin</artifactId>
-              <configuration>
-                <!--
-                  The same bug, in the suite which runs its end-to-end tests through surefire: the
-                  Quarkus test of the deployment module waits for the reports of a user task, and
-                  they ride on the 'creating' listener job the gateway drops. Excluding the tag in
-                  failsafe alone leaves this line red once it gets as far as that module, which is
-                  where the adapter measured it. The tag marks a test which lets the cluster
-                  create a user task Camunda manages, in this plugin as in the one above.
-                  The second tag has no test in this plugin today. It is named here all the same,
-                  so that a test which waits for a second hand-out is left out wherever somebody
-                  writes it, and so that both plugins say the same thing about the same line.
-                -->
-                <excludedGroups>user-task-listener-jobs,jobs-handed-out-again</excludedGroups>
-              </configuration>
-            </plugin>
-          </plugins>
-        </pluginManagement>
-      </build>
     </profile>
     <!-- For a build on a developer machine, against a Camunda 8 adapter built there by hand.
          The adapter is not released per line yet, so every line above asks for the same

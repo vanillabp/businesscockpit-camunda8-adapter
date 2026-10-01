@@ -80,58 +80,22 @@ public class Camunda8CockpitIT {
   private static final String MODULE_ID = "c8-cockpit";
 
   /**
-   * Tests which let the cluster create a user task Camunda manages. The preview line never
-   * finishes creating one, so they are left out there.
+   * Tests which need the cluster to hand a job out a second time. Line 8.10 does not do it: the
+   * job whose lock ran out is never offered to a second activation, and a test which waits for
+   * that waits until its own deadline.
    * <p>
-   * The REST gateway of the 8.10 alpha drops a whole activate-jobs batch as soon as it meets a
-   * task listener job whose event carries no user task action in its headers. The two events
-   * without one are <code>creating</code> and <code>canceling</code>. So the
-   * <code>creating</code> listener VanillaBP writes never reaches a worker, the task is never
-   * finished being created, and it never reaches the state {@link UserTaskState#CREATED} which
-   * {@link #userTaskIdOf(TestAggregate)} searches for. The bug is camunda/camunda#58193, and gap
-   * 4 of GAPS.md tells it from the cockpit's side.
-   * <p>
-   * Creating such a task is enough to earn the tag, and waiting for its report is the smaller
-   * half. A task the cluster never finished creating stays there, and all tests of this class
-   * share one cluster. The next activation of jobs loses its batch over that task. So a test
-   * which starts the cockpit process and then asserts something else entirely carries the tag
-   * too.
-   * <p>
-   * The other events are untouched. An <code>assigning</code> job triggered by an assign command,
-   * an <code>updating</code> job and a <code>completing</code> job carry the action and reach
-   * their worker on the alpha as fast as on a GA line.
-   * <p>
-   * The <code>line-8.10</code> profile of the parent POM excludes this tag, and the tag carries
-   * the same name and the same meaning in vanillabp/camunda8-adapter, so a reader of both
-   * repositories reads one thing. Everything else of the line passes, and that is what the
-   * exclusion buys: a line which is always red says nothing on the day something else breaks in
-   * it. When the pin moves to a newer alpha, measure rather than assume: deploy a user task with
-   * a <code>creating</code> listener, start an instance and see whether the job arrives. Once one
-   * does, the tag and the exclusion go away together.
-   */
-  private static final String USER_TASK_LISTENER_JOBS = "user-task-listener-jobs";
-
-  /**
-   * Tests which need the cluster to hand a job out a second time. The preview line loses whole
-   * activate-jobs batches, so such a test waits for nothing there.
-   * <p>
-   * The REST gateway of the 8.10 alpha throws a NullPointerException in
-   * <code>ResponseMapper.toUserTaskProperties</code> when an answer to an activate-jobs call
-   * meets a listener job in the state <code>creating</code> or <code>canceling</code>, and the
-   * whole batch goes with it. The caller waits for an answer which never arrives, so the job
-   * stays at the cluster and the next activation of it ends the same way. A test which waits for
-   * the second hand-out reads that as a lease which ran out and did nothing, and it sits in its
-   * deadline. The bug is camunda/camunda#58193.
-   * <p>
-   * This is not what {@link #USER_TASK_LISTENER_JOBS} says. A test tagged here runs a process
-   * which holds no user task at all, and it still loses its answer, because the batch is dropped
-   * wherever such a listener job is met in the cluster this class shares between its own tests.
-   * Decision 43 of vanillabp/camunda8-adapter holds what was measured about that.
+   * Measured on 2026-10-01 against <code>camunda/camunda:8.10.0</code>, three runs: twice about
+   * 122 seconds of waiting and once a socket timeout of the client after 41 seconds. The cluster
+   * log says nothing at all about the job. The defect which used
+   * to explain it, a whole activate-jobs batch dropped over a listener job carrying no user task
+   * action, is closed for this release and its own tag is gone with it. What is left has no
+   * measured cause. The lease of an activation exists on this line alone, so a lease which
+   * changes when a job comes back is one candidate, and the client which stops asking while a
+   * handler of the same worker runs is the other. No other line can answer either.
    * <p>
    * The <code>line-8.10</code> profile of the parent POM excludes this tag, in failsafe and in
-   * surefire. When the pin moves to a newer alpha, measure rather than assume: run the tagged
-   * test against it and read the cluster log afterwards. Once it passes and the log carries no
-   * NullPointerException from the response mapper, the tag and the exclusion go away together.
+   * surefire, and says the same thing from the build's side. Whoever measures the cause takes
+   * both away together.
    */
   private static final String JOBS_HANDED_OUT_AGAIN = "jobs-handed-out-again";
 
@@ -646,7 +610,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A started workflow and its user task reach the cockpit, enriched by the application")
   public void aStartedWorkflowReachesTheCockpit() {
@@ -675,7 +638,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A details provider is picked by the version of the deployed process")
   public void aDetailsProviderIsPickedByTheDeployedVersion() {
@@ -729,7 +691,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A called process is a step of the case above it, not a case of its own")
   public void aCalledProcessIsAStepOfTheCaseAboveIt() {
@@ -761,7 +722,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("Completing the user task reports the task and the workflow as completed")
   public void completingTheUserTaskIsReported() {
@@ -782,7 +742,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("Cancelling a workflow which holds a user task reports that task, and the case as far as the line says it")
   public void cancellingTheWorkflowIsReportedAsFarAsCamundaSaysIt() {
@@ -823,7 +782,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A user task taken away by an interrupting event is reported as cancelled while its case runs on")
   public void anInterruptedUserTaskIsReportedAsCancelled() {
@@ -1137,7 +1095,6 @@ public class Camunda8CockpitIT {
 
   // the cockpit process holds user tasks, so this start leaves one behind even though nothing
   // here reads it
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A workflow started by a message reports its start with the case it is about")
   public void aWorkflowStartedByMessageIsReported() {
@@ -1163,7 +1120,6 @@ public class Camunda8CockpitIT {
 
   // this test asserts the report of the case, and the user task of the cockpit process comes
   // with it whether the test reads it or not
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("An application reporting a changed aggregate updates its workflow")
   public void aggregateChangedUpdatesTheWorkflow() {
@@ -1189,7 +1145,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("An application reporting a changed aggregate updates the named user task")
   public void aggregateChangedUpdatesTheNamedUserTask() {
@@ -1211,7 +1166,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A report carries the state its case had at the moment of the event")
   public void aReportCarriesTheStateOfItsEvent() {
@@ -1237,7 +1191,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("An application can read one user task of its own case, and no other")
   public void getUserTaskAnswersOnlyForItsOwnAggregate() {
@@ -1267,7 +1220,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("Reading a user task reports nothing to the cockpit")
   public void readingAUserTaskReportsNothing() {
@@ -1291,7 +1243,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A details provider which fails raises an incident, and the transition waits")
   public void aFailingDetailsProviderRaisesAnIncident() {
@@ -1355,7 +1306,6 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A question about something the cluster does not hold is answered with nothing")
   public void aQuestionAboutSomethingTheClusterDoesNotHoldIsAnsweredWithNothing() {
