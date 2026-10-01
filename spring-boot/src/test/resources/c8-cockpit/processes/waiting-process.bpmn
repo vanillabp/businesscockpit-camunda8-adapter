@@ -4,12 +4,15 @@
     A workflow which waits for a timer nobody intends to let expire, so that a test can cancel a
     running instance.
 
-    It holds no Camunda user task on purpose. An instance which holds one cannot be cancelled on
-    camunda/camunda:8.10.0-alpha5 at all: the 'creating' listener job of that task never reaches
-    a worker (camunda/camunda#58193), so the task stays half created, the instance stays active,
-    and the cancel listener of the process never runs because the cluster runs it only after
-    every child element ended. A timer is a child element which terminates by itself, which
-    leaves the cancellation to be about the process.
+    It holds no Camunda user task on purpose, so that the cancellation this file is here for is
+    about the process and about nothing a user task does. A timer is a child element which
+    terminates by itself, and the cluster runs the cancel listener of a process only after every
+    child element ended.
+
+    It was also the only way to cancel anything on the 8.10 pre-releases. The 'creating' listener
+    job of a Camunda-managed user task never reached a worker there (camunda/camunda#58193), so
+    the task stayed half created and the instance stayed active. Camunda closed that for 8.10.0
+    and the test which cancels a case holding a user task runs on every line again.
   -->
   <bpmn:process id="WaitingProcess" isExecutable="true">
     <bpmn:startEvent id="WaitingStart">

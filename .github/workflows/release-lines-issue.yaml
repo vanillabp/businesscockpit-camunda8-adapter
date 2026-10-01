@@ -89,7 +89,7 @@ jobs:
               failure | timed_out) state=red ;;
               *) continue ;;
             esac
-            # The job of the preview line carries 'continue-on-error', so it hands out a
+            # The job of a preview line carries 'continue-on-error', so it hands out a
             # success whatever it did and this API reports that success as its conclusion.
             # Its steps keep their own word, so a line with a failed step is red here even
             # when its job is not. Without this the night would comment 'green again' on
