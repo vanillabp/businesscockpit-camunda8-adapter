@@ -62,8 +62,9 @@ public class Camunda8CockpitByAdapterIT {
   private static final String MODULE_ID = "c8-cockpit";
 
   /**
-   * Tests which need a user task the cluster really created. The preview line hands none out, so
-   * they are left out there.
+   * Tests which let the cluster create a user task Camunda manages. The preview line never
+   * finishes creating one, so they are left out there. Creating such a task is enough to earn the
+   * tag, and waiting for its report is the smaller half.
    * <p>
    * The REST gateway of the 8.10 alpha drops the activate-jobs batch a <code>creating</code>
    * listener job arrives in, so the task is never finished being created (camunda/camunda#58193,

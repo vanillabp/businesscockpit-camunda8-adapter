@@ -31,6 +31,9 @@ vanillabp:
       workflows:
         CockpitProcess:
           allow-full-sync-with-bpms: true
+          declared-aggregate-values:
+            - signers
+            - version
         CallingProcess:
           allow-full-sync-with-bpms: true
         CalledProcess:
