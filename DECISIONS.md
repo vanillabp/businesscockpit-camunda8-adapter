@@ -484,7 +484,7 @@ here stands in for the answer.
 The test skips itself where the build does not lease. It needs no user task, so it runs on the
 preview line in the nightly matrix, which is where this is proven every night since decision 14.
 
-## 14. The preview line is built every night, and a red one holds up nothing
+## 14. The preview line is built every night, and a red one holds up nothing - narrowed by decision 16, which holds while no line is a preview line
 
 The nightly matrix builds every line this repository defines, the preview line included. What the
 cluster of that line cannot serve is left out one level deeper: the tests which need a
@@ -586,3 +586,54 @@ result. `continue-on-error` changes the result a job hands out, it does not chan
 reason `release-lines-issue.yaml` reads the steps of a line job as well as its conclusion,
 because the API reports that forced success too. Stephan decided this on 2026-10-01, after
 pull request 78 was red while its required check was green and could not be merged.
+
+## 16. Every line is GA, so every line counts
+
+No line of this repository is a preview line. Camunda released `8.10.0` on 2026-09-29, so 8.8
+and 8.9 are bugfix lines, 8.10 is the current GA line and a build without a profile is that
+line. The next preview line is the one built against the first pre-release of 8.11.
+
+Nothing in the line matrix was rebuilt for this. The preview line was never named in a workflow:
+the job `discover` reads the property `camunda8.line.preview` out of the `line-*` profiles of
+`pom.xml`, and `line-8.10` stopped carrying it. So `continue-on-error` is false for every line,
+the job `ga-lines` counts 8.10 among the lines a pull request and a release wait for, and
+`lines-verified` gives the same answer whichever of the two outputs it reads.
+
+The input `preview-line-counts` and the output `broken-all` stay. They are what the night reads,
+and while no line is a preview line they say the same thing as `broken`. Taking them out would
+mean writing them again for 8.11, and the reason they exist is written down where they are.
+
+One of the two tag exclusions of line 8.10 went with the pre-releases. The REST gateway of those
+dropped a whole activate-jobs batch as soon as it met a task listener job whose event carries no
+user task action, so a Camunda-managed user task was never finished being created
+(`camunda/camunda#58193`). Nineteen of the thirty integration tests were left out over it,
+eighteen by the tag `user-task-listener-jobs` and one by `jobs-handed-out-again`. Camunda closed
+that defect for `8.10.0`.
+
+The exclusion was not simply deleted on the strength of a closed issue. Decision 14 asked for a
+measurement at every pin move, and this is what the measurement said: the line was run once with
+no exclusion at all, every test which needs a user task passed, and one test failed. So that tag
+went, the line runs twenty-nine of its thirty tests now, and the other tag stayed. The test it
+holds needs the cluster to offer a listener
+job whose lock ran out to a second activation, and `camunda/camunda:8.10.0` does not. Three runs
+on 2026-10-01 failed on it, two of them after waiting about 122 seconds and one after 41 seconds
+in a socket timeout of the client. The cluster log held nothing at all about the job, which is
+what tells this apart from the old defect: that one wrote an uncaught NullPointerException into
+the log every thirty seconds. The cause is open and the candidates are written down in the
+profile. Nothing else was switched off for it.
+
+That exclusion is a property now and no longer a setting inside the line profile. A profile
+cannot carry it any more, because a build without a profile is the current GA line: the exclusion
+would be missing from exactly the build `.github/workflows/build.yaml` runs before it publishes,
+which is where the red test turned up first. So the tags a line leaves out are
+`camunda8.line.excluded-test-tags`, surefire and failsafe both read it, and every line profile
+sets it. Measured both ways on 2026-10-01: a build without a profile is green, and line 8.9 with
+an empty value runs every test it has.
+
+What this costs is the thing decision 14 bought. A defect of the 8.10 cluster now reddens a pull
+request which has nothing to do with it, which is why the one test above is excluded rather than
+left to redden every wave. That is the price of a GA line and the same price the other two lines
+carry, and the alternative would be a line nobody has to believe. A pre-release is rewritten
+under us and a GA release is not, which is the whole difference between the two cases.
+
+Stephan decided this on 2026-10-01, with the GA of 8.10 and the adapter's own move behind it.
