@@ -100,7 +100,7 @@
          carries the image and the secondary storage of its line as a filtered resource, and
          ClusterUnderTest reads them from it. A property here would only look like it decides
          something, which is what the one that stood here did. -->
-    <protobuf.version>4.36.0</protobuf.version>
+    <protobuf.version>4.36.2</protobuf.version>
     <spring-boot.version>4.1.1</spring-boot.version>
 
     <testcontainers.version>2.0.5</testcontainers.version>
