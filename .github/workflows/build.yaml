@@ -166,6 +166,10 @@ jobs:
   # as it is not the slowest one.
   #
   # The release calls the matrix itself, so what happens here does not touch it.
+  #
+  # Called without 'preview-line-counts', which is what keeps a red preview line out of this
+  # run. The matrix has a job of its own for the night, and a red job of a called workflow
+  # makes the run of the caller red whatever the gate below says.
   lines:
     uses: ./.github/workflows/line-matrix.yaml
     secrets: inherit

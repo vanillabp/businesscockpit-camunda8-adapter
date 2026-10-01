@@ -17,9 +17,19 @@ name: Release lines
   workflow_dispatch:
   # Two callers. The pull-request checks run the matrix on every pull request, and the
   # release runs it as its gate, because no GA line of a release may be red. Both read the
-  # output below, which leaves the preview line out. See decisions 9 and 14 in the
+  # output below, which leaves the preview line out, and both call without the input below,
+  # so a red preview line does not colour their run either. See decisions 9 and 14 in the
   # repository's DECISIONS.md.
   workflow_call:
+    inputs:
+      preview-line-counts:
+        description: Whether a red preview line makes the job 'lines-verified' red, and
+          with it the run of the caller. Off by default, because a defect of the alpha
+          the preview line is built against may cost a night and may not cost a pull
+          request or a release. See decision 14 in the repository's DECISIONS.md.
+        type: boolean
+        required: false
+        default: false
     outputs:
       broken-ga-lines:
         description: The GA lines which did not build, separated by blanks, or 'none'.
@@ -190,28 +200,62 @@ jobs:
           name: line-result-${{ matrix.line }}
           path: "${{ runner.temp }}/line-result/${{ matrix.line }}"
 
-  # One name that never changes, so branch protection, the pull-request checks and the
-  # release gate have something to require while the matrix grows and shrinks with the
-  # lines.
+  # One name that never changes while the matrix grows and shrinks with the lines. The night
+  # is who reads it, and there it means every line of the matrix, the preview line included.
+  #
+  # A caller does not read it: build.yaml requires 'line-pins-verified' and the release
+  # requires 'ga-lines-verified', and both of those read the GA lines alone. But a red job of
+  # a called workflow colours the whole run of its caller, so this job made every pull
+  # request red while the gate of that pull request was green. That is what the input is for.
+  # A caller leaves it at 'false' and this job then asks the GA lines only; the night has no
+  # input at all and asks every line. A defect of the alpha may cost a night, it may not cost
+  # a pull request or a release. See decision 14 in the repository's DECISIONS.md.
+  #
+  # Which line is the preview line is not asked twice: the job 'ga-lines' below reads it out
+  # of the POM and reports the broken GA lines, and this job reads that report.
   #
   # A red night is answered by release-lines-issue.yaml, which opens an issue for the line
   # that broke. It is a workflow of its own and not a step here, and that file says why.
   lines-verified:
     if: always()
-    needs: line
+    needs: [line, ga-lines]
     runs-on: ubuntu-latest
     steps:
       - name: Every line built
+        env:
+          # The night and a dispatch ARE this workflow, they do not call it, so there is no
+          # input and this is empty. Empty therefore has to mean that the preview line
+          # counts, and only the word 'false' from a caller turns it off.
+          COUNT_PREVIEW: "${{ inputs.preview-line-counts }}"
+          MATRIX: "${{ needs.line.result }}"
+          BROKEN: "${{ needs.ga-lines.outputs.broken }}"
         run: |
-          echo "lines: ${{ needs.line.result }}"
-          [ "${{ needs.line.result }}" = "success" ]
+          set -euo pipefail
+          if [ "${COUNT_PREVIEW}" != "false" ]; then
+            echo "lines: ${MATRIX}, and the preview line counts here"
+            [ "${MATRIX}" = "success" ]
+            exit 0
+          fi
+          echo "lines: ${MATRIX}, broken GA lines: ${BROKEN:-nothing was said}"
+          case "${BROKEN}" in
+            none)
+              echo "Every GA line built, and the caller asked for nothing more." ;;
+            "")
+              echo "The job 'ga-lines' said nothing, so this run cannot tell a broken GA" >&2
+              echo "line from a broken preview one. Read the jobs above." >&2
+              exit 1 ;;
+            *)
+              echo "These GA lines did not build: ${BROKEN}" >&2
+              exit 1 ;;
+          esac
 
   # The same matrix, read without the preview line, for the callers which need that answer.
   # Both of them do: the preview line is built against an alpha which is rewritten under us,
   # and a defect of that alpha may cost a night, it may not cost a pull request or a release.
   # The preview line still builds here, its job is there to read, and a red one still gets its
   # issue in the night. That is decision 14 in the repository's DECISIONS.md, and
-  # 'lines-verified' above is the name the night reads.
+  # 'lines-verified' above is the name the night reads. On a call that job reads the answer of
+  # this one, so which line is the preview line is asked here and nowhere else.
   #
   # This job reports what it found, it does not fail on it. A failed job hands no output to
   # the caller, so failing here would leave the caller with an empty answer instead of the

@@ -57,9 +57,13 @@ jobs:
     uses: ./.github/workflows/line-matrix.yaml
     secrets: inherit
 
-  # The gate itself. It runs whatever the matrix did, because a red preview line fails the
-  # matrix as a whole and this job still has to read which lines were red. The answer is the
-  # 'broken-ga-lines' output, and an empty one means the matrix never got far enough to say.
+  # The gate itself. It runs whatever the matrix did, because this job and not the matrix
+  # decides which lines a release waits for, and it still has to read which lines were red
+  # when the matrix ended red. The answer is the 'broken-ga-lines' output, and an empty one
+  # means the matrix never got far enough to say.
+  #
+  # The matrix is called above without 'preview-line-counts', so a red preview line leaves
+  # the release run green as well as this gate.
   ga-lines-verified:
     if: always()
     needs: lines
