@@ -71,8 +71,8 @@ jobs:
 
   # The ground rule of the release lines: a user must never read the version suffix of an
   # artifact to find out which methods exist. This job keeps that true, and it needs no
-  # cluster, so it runs on every pull request while the integration tests of the other
-  # lines wait for the nightly matrix.
+  # cluster, so it answers in a few minutes while the matrix below is still building the
+  # lines it tests.
   api-identity:
     runs-on: ubuntu-latest
     permissions:
@@ -167,9 +167,11 @@ jobs:
   #
   # The release calls the matrix itself, so what happens here does not touch it.
   #
-  # Called without 'preview-line-counts', which is what keeps a red preview line out of this
-  # run. The matrix has a job of its own for the night, and a red job of a called workflow
-  # makes the run of the caller red whatever the gate below says.
+  # Called without 'preview-line-counts', so the job the night reads asks the GA lines alone
+  # here. That input is half of what keeps a red preview line out of this run. The other
+  # half is in the matrix itself: the job of the preview line carries 'continue-on-error',
+  # because a red job of a called workflow makes the run of the caller red whatever the gate
+  # below says. See decision 14 in the repository's DECISIONS.md.
   lines:
     uses: ./.github/workflows/line-matrix.yaml
     secrets: inherit

@@ -66,14 +66,19 @@ jobs:
           work=$(mktemp -d)
 
           # A job of the matrix is called 'line (8.8)'. Nothing else in that workflow is.
+          # The steps are counted along with the conclusion of the job, see below.
           gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/jobs" \
             --jq '.jobs[]
                   | select(.name | startswith("line ("))
-                  | [.name, .conclusion, .id, .html_url]
+                  | [.name, .conclusion,
+                     ([.steps[]?
+                       | select(.conclusion == "failure" or .conclusion == "timed_out")]
+                      | length),
+                     .id, .html_url]
                   | @tsv' > "$work/jobs.tsv"
 
           : > "$work/subjects.tsv"
-          while IFS=$'\t' read -r name conclusion id url; do
+          while IFS=$'\t' read -r name conclusion failed_steps id url; do
             [ -n "$name" ] || continue
             line=${name#"line ("}
             line=${line%")"}
@@ -84,6 +89,13 @@ jobs:
               failure | timed_out) state=red ;;
               *) continue ;;
             esac
+            # The job of the preview line carries 'continue-on-error', so it hands out a
+            # success whatever it did and this API reports that success as its conclusion.
+            # Its steps keep their own word, so a line with a failed step is red here even
+            # when its job is not. Without this the night would comment 'green again' on
+            # the issue of a line which had just broken. See decision 14 in the
+            # repository's DECISIONS.md.
+            [ "${failed_steps:-0}" -eq 0 ] || state=red
             printf '%s\t%s\t%s\t%s\n' "line $line" "$state" "$id" "$url" \
               >> "$work/subjects.tsv"
           done < "$work/jobs.tsv"

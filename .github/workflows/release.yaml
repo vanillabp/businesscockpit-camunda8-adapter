@@ -62,8 +62,10 @@ jobs:
   # when the matrix ended red. The answer is the 'broken-ga-lines' output, and an empty one
   # means the matrix never got far enough to say.
   #
-  # The matrix is called above without 'preview-line-counts', so a red preview line leaves
-  # the release run green as well as this gate.
+  # The matrix is called above without 'preview-line-counts', so the job the night reads
+  # asks the GA lines alone here and this gate stays green on a red preview line. The run of
+  # the release stays green with it, because the job of the preview line carries
+  # 'continue-on-error' in the matrix. See decision 14 in the repository's DECISIONS.md.
   ga-lines-verified:
     if: always()
     needs: lines
