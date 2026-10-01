@@ -578,9 +578,12 @@
                   headers. The two events without one are 'creating' and 'canceling'. So the
                   'creating' listener of a Camunda-managed user task never reaches a worker, the
                   task is never finished being created, and nothing of it reaches the cockpit.
-                  The tagged tests all need such a task. They would sit in their deadline and turn
-                  the line red as a whole, which hides whatever else this line might break, and a
-                  line which is always red stops being read. So they are excluded here, by tag,
+                  The tagged tests all let the cluster create such a task. Some of them wait for
+                  its report and sit in their deadline. The others only leave the unfinished task
+                  behind, and the next activation of jobs in the cluster they share loses its
+                  batch over it. Either way the line turns red as a whole, which hides whatever
+                  else this line might break, and a line which is always red stops being read. So
+                  they are excluded here, by tag,
                   and the rest of the line keeps saying something: the deployment, the start, the
                   execution listeners, the search in the secondary storage, and the two things
                   which exist on this line alone, the cancel listener of the process and the job
@@ -613,8 +616,8 @@
                   Quarkus test of the deployment module waits for the reports of a user task, and
                   they ride on the 'creating' listener job the gateway drops. Excluding the tag in
                   failsafe alone leaves this line red once it gets as far as that module, which is
-                  where the adapter measured it. The tag marks a test which needs a user task the
-                  cluster really created, in this plugin as in the one above.
+                  where the adapter measured it. The tag marks a test which lets the cluster
+                  create a user task Camunda manages, in this plugin as in the one above.
                   The second tag has no test in this plugin today. It is named here all the same,
                   so that a test which waits for a second hand-out is left out wherever somebody
                   writes it, and so that both plugins say the same thing about the same line.

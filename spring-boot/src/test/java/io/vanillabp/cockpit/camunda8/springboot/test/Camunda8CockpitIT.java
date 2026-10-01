@@ -80,8 +80,8 @@ public class Camunda8CockpitIT {
   private static final String MODULE_ID = "c8-cockpit";
 
   /**
-   * Tests which need a user task the cluster really created. The preview line hands none out, so
-   * they are left out there.
+   * Tests which let the cluster create a user task Camunda manages. The preview line never
+   * finishes creating one, so they are left out there.
    * <p>
    * The REST gateway of the 8.10 alpha drops a whole activate-jobs batch as soon as it meets a
    * task listener job whose event carries no user task action in its headers. The two events
@@ -90,6 +90,12 @@ public class Camunda8CockpitIT {
    * finished being created, and it never reaches the state {@link UserTaskState#CREATED} which
    * {@link #userTaskIdOf(TestAggregate)} searches for. The bug is camunda/camunda#58193, and gap
    * 4 of GAPS.md tells it from the cockpit's side.
+   * <p>
+   * Creating such a task is enough to earn the tag, and waiting for its report is the smaller
+   * half. A task the cluster never finished creating stays there, and all tests of this class
+   * share one cluster. The next activation of jobs loses its batch over that task. So a test
+   * which starts the cockpit process and then asserts something else entirely carries the tag
+   * too.
    * <p>
    * The other events are untouched. An <code>assigning</code> job triggered by an assign command,
    * an <code>updating</code> job and a <code>completing</code> job carry the action and reach
@@ -1129,6 +1135,9 @@ public class Camunda8CockpitIT {
 
   }
 
+  // the cockpit process holds user tasks, so this start leaves one behind even though nothing
+  // here reads it
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("A workflow started by a message reports its start with the case it is about")
   public void aWorkflowStartedByMessageIsReported() {
@@ -1152,6 +1161,9 @@ public class Camunda8CockpitIT {
 
   }
 
+  // this test asserts the report of the case, and the user task of the cockpit process comes
+  // with it whether the test reads it or not
+  @Tag(USER_TASK_LISTENER_JOBS)
   @Test
   @DisplayName("An application reporting a changed aggregate updates its workflow")
   public void aggregateChangedUpdatesTheWorkflow() {
