@@ -84,7 +84,7 @@
          DECISIONS.md. -->
     <camunda8.line>8.9</camunda8.line>
     <camunda8.version>${camunda8.version.line-8.9}</camunda8.version>
-    <camunda8.version.line-8.8>8.8.39</camunda8.version.line-8.8>
+    <camunda8.version.line-8.8>8.8.40</camunda8.version.line-8.8>
     <camunda8.version.line-8.9>8.9.21</camunda8.version.line-8.9>
     <camunda8.version.line-8.10>8.10.0-alpha5</camunda8.version.line-8.10>
     <!-- The VanillaBP Camunda 8 adapter this extension plugs into: it names the processing
