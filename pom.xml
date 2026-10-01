@@ -136,12 +136,11 @@
            prints this pin and, as "version managed from", the version the client of that line
            was generated against. Raising it by hand is the rule the client pins follow as
            well, see decision 10 in the repository's DECISIONS.md.
-           A pin left behind is easy to miss. The older lines stay green and only the newest
-           line breaks, and no test run of this repository uses the preview line, neither the
-           pull request nor the night. So whoever runs that line by hand sees it first, and
-           what they see is the VanillaBP Camunda 8 adapter refusing to boot, with a message
-           naming both versions and the entry to add. It arrives while that adapter builds its
-           client, so it comes before this repository deploys anything to a cluster. -->
+           A pin left behind breaks the newest line alone and leaves the older ones green.
+           What it looks like is the VanillaBP Camunda 8 adapter refusing to boot, with a
+           message naming both versions and the entry to add. It arrives while that adapter
+           builds its client, so it comes before this repository deploys anything to a
+           cluster. -->
       <dependency>
         <groupId>com.google.protobuf</groupId>
         <artifactId>protobuf-java</artifactId>
@@ -554,18 +553,18 @@
       </properties>
     </profile>
     <profile>
-      <!-- preview: built against the alpha of the next minor and published as a pre-release,
-           so a feature only the new cluster can do is deliverable before that cluster is GA -->
+      <!-- current GA: everything lands here, and it is what a plain build produces. It was the
+           preview line until Camunda released 8.10.0 on 2026-09-29. No profile carries
+           'camunda8.line.preview' now, and the next one to carry it is the line of the first
+           8.11 pre-release. That property is read by the client-api-changes workflow of
+           camunda8-adapter, which turns what a client bump added into a red check on a GA line
+           and into a comment on a preview line, because a pre-release rewrites its classes all
+           the time and must not hold up a pull request. -->
       <id>line-8.10</id>
       <properties>
         <camunda8.line>8.10</camunda8.line>
         <camunda8.version>${camunda8.version.line-8.10}</camunda8.version>
         <camunda8-adapter.version>${camunda8-adapter.version.line-8.10}</camunda8-adapter.version>
-        <!-- read by the client-api-changes workflow of camunda8-adapter, which turns what a
-             client bump added into a red check on the GA lines and into a comment here: an
-             alpha changes its classes all the time and must not hold up a pull request of
-             the GA lines -->
-        <camunda8.line.preview>true</camunda8.line.preview>
       </properties>
       <build>
         <pluginManagement>
