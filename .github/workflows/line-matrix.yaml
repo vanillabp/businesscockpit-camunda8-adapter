@@ -1,8 +1,8 @@
 name: Release lines
 # Every release line, built and tested against the cluster its own pin names. A pull
-# request builds the current GA line alone, because the Camunda 8 integration tests are
-# the slowest thing in this repository and a story would otherwise pay for every line.
-# What a story does not prove is proven here, once a night.
+# request runs this matrix as well, so a line which breaks is seen while whoever wrote the
+# change is still there. It runs here once a night on top of that, which is what answers a
+# line broken by something outside the repository, an alpha rewritten under us for example.
 "on":
   schedule:
     # Early enough to be green or red before anybody starts working. GitHub queues a
@@ -15,10 +15,10 @@ name: Release lines
     # hour, and it is not the 23rd, so the two repositories do not ask at the same moment.
     - cron: "47 23 * * *"
   workflow_dispatch:
-  # Two callers. The pull-request checks run the matrix when a pin moves, and the release
-  # runs it as its gate, because no GA line of a release may be red. Both read the output
-  # below, which leaves the preview line out. See decisions 9 and 14 in the repository's
-  # DECISIONS.md.
+  # Two callers. The pull-request checks run the matrix on every pull request, and the
+  # release runs it as its gate, because no GA line of a release may be red. Both read the
+  # output below, which leaves the preview line out. See decisions 9 and 14 in the
+  # repository's DECISIONS.md.
   workflow_call:
     outputs:
       broken-ga-lines:
