@@ -161,17 +161,20 @@ jobs:
   # and 25: between 7m47s and 8m16s in total, with line 8.8 the slowest at 7m24s to 7m56s. A
   # pull-request build on its own took between 5m03s and 8m16s in the same days. The 42
   # minutes the comment in line-matrix.yaml names as its worst run are older than that: they
-  # are from the time the 8.10 tests sat out their deadlines, before the tag which leaves
-  # them out. A line added later costs another runner, and it costs this job nothing as long
-  # as it is not the slowest one.
+  # are from the time the 8.10 tests sat out their deadlines, before the tags which left them
+  # out. One of those tags went when 8.10 went GA, so that line runs twenty-nine of its
+  # thirty integration tests now instead of eleven and costs more wall clock than those
+  # measurements say. A line added later costs another runner, and it costs this job nothing
+  # as long as it is not the slowest one.
   #
   # The release calls the matrix itself, so what happens here does not touch it.
   #
   # Called without 'preview-line-counts', so the job the night reads asks the GA lines alone
-  # here. That input is half of what keeps a red preview line out of this run. The other
-  # half is in the matrix itself: the job of the preview line carries 'continue-on-error',
-  # because a red job of a called workflow makes the run of the caller red whatever the gate
-  # below says. See decision 14 in the repository's DECISIONS.md.
+  # here. Every line is a GA line today, so that asks for all of them, and the input is what
+  # keeps a red preview line out of this run once there is one again. The other half of that
+  # is in the matrix itself: the job of the preview line carries 'continue-on-error', because
+  # a red job of a called workflow makes the run of the caller red whatever the gate below
+  # says. See decision 14 in the repository's DECISIONS.md.
   lines:
     uses: ./.github/workflows/line-matrix.yaml
     secrets: inherit
@@ -180,11 +183,13 @@ jobs:
   # given while a moved pin was what bought the matrix. It stays, because branch protection
   # stores the name, and a renamed check is one nobody requires any more.
   #
-  # It reads the GA lines of the matrix and not the matrix as a whole. The preview line
-  # builds there like every other line and its job is on this pull request to read, but it
-  # does not decide this check: that line is built against an alpha which is rewritten under
-  # us, and a defect of the alpha may cost a night, it may not cost a pull request. The night
-  # still opens an issue for it. See decision 14 in the repository's DECISIONS.md.
+  # It reads the GA lines of the matrix and not the matrix as a whole. Every line is a GA
+  # line today, so this check waits for all of them, 8.10 included. A preview line would
+  # build there like every other line and its job would be on the pull request to read
+  # without deciding this check: such a line is built against a pre-release which is
+  # rewritten under us, and a defect of that may cost a night, it may not cost a pull
+  # request. The night still opens an issue for it. See decision 14 in the repository's
+  # DECISIONS.md.
   line-pins-verified:
     if: always()
     needs: lines

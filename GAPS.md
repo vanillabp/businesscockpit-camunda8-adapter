@@ -35,7 +35,12 @@ way a cluster tells anybody anything, and the construct is not there. The way ou
 line: an application which needs cancelled cases in its cockpit runs the 8.10 build. See decision 11
 in `DECISIONS.md`.
 
-## 2. An instance holding a user task cannot be cancelled on 8.10.0-alpha5
+## 2. An instance holding a user task cannot be cancelled on the 8.10 pre-releases - closed on 2026-10-01
+
+**Closed by** `8.10.0`. Camunda closed the defect below for that release, and the line was run
+against it without the tag exclusion to see it. The tests which hold a user task pass on 8.10 like
+they do on 8.8 and on 8.9, so the exclusion and both tags are gone. What the entry says below is
+what the pre-releases did.
 
 **The cockpit needs** the cancellation of a case to reach it whatever the case was waiting for, a
 user task included, because a user task is what most cases wait at.
@@ -47,16 +52,16 @@ and the cancel listener of the process never runs because the cluster runs it on
 element has terminated.
 
 **Where it can be read:** [camunda/camunda#58193](https://github.com/camunda/camunda/issues/58193),
-open on `camunda/camunda:8.10.0-alpha5`. It is also why the `line-8.10` profile of `pom.xml` leaves
-the tests which need such a task out of that line, here and in the VanillaBP Camunda 8 adapter. See
+closed and labelled `version:8.10.0`. It was also why the `line-8.10` profile of `pom.xml` left the
+tests which need such a task out of that line, here and in the VanillaBP Camunda 8 adapter. See
 decision 14 in `DECISIONS.md`.
 
-**What it costs:** nothing in production, because the line is a preview and no GA cluster carries the
-defect. What it costs here is proof. The integration test which cancels a case holding a user task is
-written and runs on 8.8 and 8.9; on 8.10 what is proven is the cancellation of a case which waits at
-a timer instead (`waiting-process.bpmn`).
+**What it cost:** nothing in production, because the line was a preview then and no GA cluster carried
+the defect. What it cost here was proof. The integration test which cancels a case holding a user task
+ran on 8.8 and 8.9 alone; on 8.10 what was proven was the cancellation of a case which waits at a
+timer instead (`waiting-process.bpmn`).
 
-**What would close it** is the cluster fix. Once it ships, the tag and the exclusion go away, and the
+**What would close it** was the cluster fix. It shipped, the tag and the exclusion went away, and the
 test which holds a user task proves the same thing on this line as on the others.
 
 ## 3. Nobody is named as the initiator of a workflow
@@ -76,7 +81,10 @@ from its own `@WorkflowDetailsProvider`.
 **What would close it** is the engine recording the authenticated user of a process-instance creation
 and handing it out with the instance.
 
-## 4. A user task says nothing at all on 8.10.0-alpha5
+## 4. A user task says nothing at all on the 8.10 pre-releases - closed on 2026-10-01
+
+**Closed by** `8.10.0`, the same release and the same measurement as gap 2. The tests which show a
+task reported as created, as cancelled and as completed run on every line again.
 
 **The cockpit needs** to hear what happened to each user task: that it was created, that somebody
 finished it, and that the cluster took it away again. The last of the three is what closes a piece of
@@ -90,18 +98,19 @@ REST gateway fails while it converts a listener job and drops the whole batch. S
 listener of a user task never reaches a worker, and the task is never finished being created.
 
 **Where it can be read:** [camunda/camunda#58193](https://github.com/camunda/camunda/issues/58193),
-open on `camunda/camunda:8.10.0-alpha5`. Gap 2 is the same defect seen from the case: an instance
-holding such a task cannot be cancelled either.
+closed and labelled `version:8.10.0`. Gap 2 is the same defect seen from the case: an instance
+holding such a task could not be cancelled either.
 
 **What it costs** an application which runs the 8.10 build against that alpha: no user task of it
 reaches the cockpit, neither as created nor as cancelled. VanillaBP itself never learns of the task,
 because its own `creating` listener is dropped in the same batch. Nothing is lost on a GA cluster,
 because no GA cluster carries the defect. What is lost here is proof. The integration tests which show
 a task reported as created, as cancelled and as completed run on 8.8 and 8.9. On 8.10 they are
-excluded by the tag `user-task-listener-jobs`, and the rest of the line is built every night.
+excluded by the tag `user-task-listener-jobs` until `8.10.0`, and the rest of the line was built
+every night.
 
 **What would close it** is the cluster fix. The tests are written and they say the same thing on every
-line, so the tag comes off and the line proves it with the rest.
+line, so the tag came off and the line proves it with the rest.
 
 ## 5. A late answer overwrites the newer one before 8.10
 

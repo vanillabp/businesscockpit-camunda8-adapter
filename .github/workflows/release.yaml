@@ -32,11 +32,12 @@ concurrency:
 permissions:
   contents: read
 jobs:
-  # No release while a GA line is red. A line which is not GA yet is not asked: 8.10 is an
-  # alpha, it is published as a preview, and nothing claims it was proven. The matrix builds
-  # it like every other line and hands out the GA lines separately, so which lines this gate
-  # waits for is the matrix's own word and not a second list kept here. See decision 14 in
-  # the repository's DECISIONS.md.
+  # No release while a GA line is red. A line which is not GA yet is not asked: it is
+  # published as a preview and nothing claims it was proven. The matrix builds it like every
+  # other line and hands out the GA lines separately, so which lines this gate waits for is
+  # the matrix's own word and not a second list kept here. Every line is a GA line since
+  # 8.10 went GA on 2026-09-29, so this gate waits for all three of them today. See
+  # decision 14 in the repository's DECISIONS.md.
   #
   # The gate is the nightly matrix itself, called here, and not a look at what the matrix
   # said last night. Reading last night's result would be cheaper, and it would prove less
@@ -64,8 +65,9 @@ jobs:
   #
   # The matrix is called above without 'preview-line-counts', so the job the night reads
   # asks the GA lines alone here and this gate stays green on a red preview line. The run of
-  # the release stays green with it, because the job of the preview line carries
-  # 'continue-on-error' in the matrix. See decision 14 in the repository's DECISIONS.md.
+  # the release stays green with it, because the job of a preview line carries
+  # 'continue-on-error' in the matrix. There is no preview line today, so this gate reads
+  # every line. See decision 14 in the repository's DECISIONS.md.
   ga-lines-verified:
     if: always()
     needs: lines
@@ -93,9 +95,9 @@ jobs:
   # The live lines are not maintained here: they are the line-* profiles of the POM, which
   # also carry the pins. So the release cannot fall behind the build.
   #
-  # Every line is released, the preview line included. Only the gate above leaves the
-  # preview out, because nothing has proven it and nothing claims it is proven: its version
-  # says alpha.
+  # Every line is released, a preview line included. Only the gate above leaves such a line
+  # out, because nothing has proven it and nothing claims it is proven: its version says
+  # alpha.
   discover:
     needs: ga-lines-verified
     runs-on: ubuntu-latest

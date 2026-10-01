@@ -102,16 +102,21 @@ core and gets the Camunda client through it, so a build of this repository inher
 cluster version of the adapter build it was compiled against. A line here means the same thing it
 means there:
 
-|   Channel   |        Version        | Camunda 8 adapter line |  Client pin  | Tested against |
-|-------------|-----------------------|------------------------|--------------|----------------|
-| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.40`     | `8.8.40`       |
-| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.21`     | `8.9.21`       |
-| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-rc3` | `8.10.0-rc3`   |
+|  Channel   |   Version    | Camunda 8 adapter line | Client pin | Tested against |
+|------------|--------------|------------------------|------------|----------------|
+| bugfix     | `0.x.y-8.8`  | `-8.8`                 | `8.8.40`   | `8.8.40`       |
+| bugfix     | `0.x.y-8.9`  | `-8.9`                 | `8.9.21`   | `8.9.21`       |
+| current GA | `0.x.y-8.10` | `-8.10`                | `8.10.0`   | `8.10.0`       |
+
+There is no preview line at the moment. 8.10 was the preview line until Camunda released
+`8.10.0` on 2026-09-29, and the next preview line is the one built against the first
+pre-release of 8.11. Two bugfix lines instead of one is the adapter's call, and its README
+says why under "How long a line lives".
 
 The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
 Camunda offers, and they move when that repository moves. A cluster version appears in the last
-column only once a build of that line has been proven against it. The preview line is proven
-without the tests which need a user task, for the reason the next section but one gives.
+column only once a build of that line has been proven against it. Every line runs every test it
+has, bar one on 8.10, and a few paragraphs below say which one and why.
 
 The integration tests do not start the cluster this POM pins. The image comes from
 `camunda8-adapter-test-support`: the Camunda 8 adapter filters its own pin into
@@ -138,17 +143,28 @@ GA line it also gets a red check. That check is `client-api-changes.yaml` of
 `vanillabp/camunda8-adapter`, called from `.github/workflows/client-api-changes.yaml` here, so both
 repositories answer the same way.
 
-The preview line is built every night, without the tests which need a user task. The REST gateway
-of `camunda/camunda:8.10.0-alpha5` throws a `NullPointerException` while it converts a task
-listener job whose event carries no user task action, and it drops the whole activate-jobs batch
-(`camunda/camunda#58193`). The two events without an action are `creating` and `canceling`, so a
-Camunda-managed user task is never finished being created on that alpha. The tests which need one
-carry the tag `user-task-listener-jobs`, and the `line-8.10` profile excludes it. Nineteen of the
-thirty integration tests carry it. The eleven which run prove the deployment, the start of a case,
-the execution listeners, the search in the secondary storage, and the two things this line alone
-has, the cancel listener of the process and the job lease. A red preview line holds up no pull
-request and no release, see [decision 14](./DECISIONS.md). The VanillaBP Camunda 8 adapter runs its
-8.10 line the same way, with the same tag.
+Line 8.10 left nineteen of its thirty integration tests out until 2026-10-01, and one of them is
+still out. The REST gateway of the 8.10 pre-releases threw a `NullPointerException` while it
+converted a task listener job whose event carries no user task action, and it dropped the whole
+activate-jobs batch with it (`camunda/camunda#58193`). The two events without an action are
+`creating` and `canceling`, so a Camunda-managed user task was never finished being created there.
+Those tests carried the tag `user-task-listener-jobs` and the `line-8.10` profile excluded it.
+Camunda closed the defect for `8.10.0`, the line was run once without the exclusion to see it, and
+the tag went away with the exclusion. The line runs twenty-nine of its thirty integration tests now
+instead of eleven.
+
+What stayed is one test and one tag, `jobs-handed-out-again`. It needs the cluster to offer a
+listener job whose lock ran out to a second activation, and `camunda/camunda:8.10.0` does not: three
+runs on 2026-10-01 failed on it, twice after waiting about 122 seconds and once in a socket timeout
+of the client, and the cluster log said nothing at all about the job. The old defect explained that
+symptom and no longer does, because the log carries none of its NullPointerExceptions any more. The
+cause is open, and the `line-8.10` profile says what the two candidates are. The lease of an
+activation exists on this line alone, so no other line can answer it.
+
+Which tags a line leaves out is the property `camunda8.line.excluded-test-tags`, which surefire and
+failsafe both read. It is a property and not a setting inside a line profile, because a build
+without a profile is the current GA line and would otherwise run a test the line itself leaves
+out.
 
 Snapshots have no suffix. Until the first release they are `0.9.0-SNAPSHOT` of the current GA line,
 which is what a build without a profile produces, and every line still reads the same
@@ -162,8 +178,8 @@ profile that selects the Camunda 8 adapter and the client pin:
 
 ```bash
 mvn install                                          # current GA line, 0.9.0-SNAPSHOT
-mvn -Pline-8.8 -Drevision=0.9.0-8.8 clean install    # a release of the previous GA line
-mvn -Pline-8.10 -Drevision=0.9.0-8.10-alpha1 clean install
+mvn -Pline-8.8 -Drevision=0.9.0-8.8 clean install    # a release of the oldest line
+mvn -Pline-8.9 -Drevision=0.9.0-8.9 clean install
 ```
 
 Every line reads the same snapshot of the Camunda 8 adapter, so a local repository holds one
@@ -228,23 +244,23 @@ Protobuf refuses a runtime older than the generated code linked against it, and 
 client brings generated code. These are the numbers involved, read on 2026-10-01 from the client
 POM of each line and from the two platform BOMs this repository builds against:
 
-| Line |  Client pin  | Its gencode | Spring Boot 4.1.1 manages | Quarkus 3.39.5 manages |
-|------|--------------|-------------|---------------------------|------------------------|
-| 8.8  | `8.8.40`     | `4.31.1`    | `4.35.1`                  | `4.35.0`               |
-| 8.9  | `8.9.21`     | `4.33.6`    | `4.35.1`                  | `4.35.0`               |
-| 8.10 | `8.10.0-rc3` | `4.36.2`    | `4.35.1`                  | `4.35.0`               |
+| Line | Client pin | Its gencode | Spring Boot 4.1.1 manages | Quarkus 3.40.0 manages |
+|------|------------|-------------|---------------------------|------------------------|
+| 8.8  | `8.8.40`   | `4.31.1`    | `4.35.1`                  | `4.35.0`               |
+| 8.9  | `8.9.21`   | `4.33.6`    | `4.35.1`                  | `4.35.0`               |
+| 8.10 | `8.10.0`   | `4.36.2`    | `4.35.1`                  | `4.35.0`               |
 
-An imported BOM beats a transitive version. So on both GA lines the application runs a protobuf
-newer than its client asks for, which is what protobuf allows. On the preview line both platforms
+An imported BOM beats a transitive version. So on the two bugfix lines the application runs a
+protobuf newer than its client asks for, which is what protobuf allows. On line 8.10 both platforms
 hand it an older one. The VanillaBP Camunda 8 adapter asks protobuf that question while it builds
 its client, so the boot stops there and the message names both versions and the entry to add.
 Before that check the answer came at the first command touching the protocol, an
 `ExceptionInInitializerError` out of whichever part of the application had sent it.
 
-An application on the preview line therefore pins `protobuf-java` itself, to the gencode of that
-line's client, in its own `dependencyManagement` and above the platform BOM. Nothing published
-here can do it for the application: its own BOM wins over anything arriving through us. The GA
-lines need no pin. Read the number of a client rather than guess it:
+An application on line 8.10 therefore pins `protobuf-java` itself, to the gencode of that line's
+client, in its own `dependencyManagement` and above the platform BOM. Nothing published here can do
+it for the application: its own BOM wins over anything arriving through us. The two older lines need
+no pin. Read the number of a client rather than guess it:
 
 ```bash
 mvn -Pline-8.10 -pl spring-boot dependency:tree -Dincludes=com.google.protobuf
@@ -283,9 +299,10 @@ read the version suffix to find out which methods exist.
 
 An old line therefore holds up a release and not a pull request, and two rules pay for that. A
 release runs only while every current line is green in the full matrix: `release.yaml` calls
-`line-matrix.yaml` as its first job and publishes nothing until it is green. The preview line is
-left out of that gate the same way the night leaves it out, and it is released all the same,
-because its version says alpha. And a line which breaks in the night opens a GitHub issue, written
+`line-matrix.yaml` as its first job and publishes nothing until it is green. Every line is a GA line
+today, so the gate waits for all of them. A preview line would be left out of it the same way the
+night leaves it out, and released all the same, because its version says alpha. And a line which
+breaks in the night opens a GitHub issue, written
 by `release-lines-issue.yaml` and labelled `release-lines`, with the line, the commit and what the
 log said. A line which is still red the next night gets a comment on that issue rather than a
 second issue. See [decision 9](./DECISIONS.md).
@@ -306,9 +323,9 @@ in your own application:
 }
 ```
 
-A pre-release of the preview line is `0.9.0-8.10-alpha1`: the qualifier comes after the line, so
-the line always sits in the same place, and Maven sorts `0.9.0-8.10-alpha1 < 0.9.0-8.10-alpha2 <
-0.9.0-8.10`.
+A pre-release of a preview line is `0.9.0-8.11-alpha1`: the qualifier comes after the line, so the
+line always sits in the same place, and Maven sorts `0.9.0-8.11-alpha1 < 0.9.0-8.11-alpha2 <
+0.9.0-8.11`.
 
 ## Building
 
