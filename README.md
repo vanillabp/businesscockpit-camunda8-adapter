@@ -102,11 +102,11 @@ core and gets the Camunda client through it, so a build of this repository inher
 cluster version of the adapter build it was compiled against. A line here means the same thing it
 means there:
 
-|   Channel   |        Version        | Camunda 8 adapter line |   Client pin    | Tested against  |
-|-------------|-----------------------|------------------------|-----------------|-----------------|
-| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.39`        | `8.8.39`        |
-| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.21`        | `8.9.21`        |
-| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-alpha5` | `8.10.0-alpha5` |
+|   Channel   |        Version        | Camunda 8 adapter line |  Client pin  | Tested against |
+|-------------|-----------------------|------------------------|--------------|----------------|
+| previous GA | `0.x.y-8.8`           | `-8.8`                 | `8.8.40`     | `8.8.40`       |
+| current GA  | `0.x.y-8.9`           | `-8.9`                 | `8.9.21`     | `8.9.21`       |
+| preview     | `0.x.y-8.10-alpha<n>` | `-8.10-alpha<n>`       | `8.10.0-rc3` | `8.10.0-rc3`   |
 
 The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
 Camunda offers, and they move when that repository moves. A cluster version appears in the last
@@ -225,14 +225,14 @@ the Camunda client when nothing of its own manages it. There is one case where t
 enough.
 
 Protobuf refuses a runtime older than the generated code linked against it, and the Camunda
-client brings generated code. These are the numbers involved, read on 2026-09-23 from the client
+client brings generated code. These are the numbers involved, read on 2026-10-01 from the client
 POM of each line and from the two platform BOMs this repository builds against:
 
-| Line |   Client pin    | Its gencode | Spring Boot 4.1.1 manages | Quarkus 3.39.3 manages |
-|------|-----------------|-------------|---------------------------|------------------------|
-| 8.8  | `8.8.39`        | `4.31.1`    | `4.35.1`                  | `4.35.0`               |
-| 8.9  | `8.9.21`        | `4.33.6`    | `4.35.1`                  | `4.35.0`               |
-| 8.10 | `8.10.0-alpha5` | `4.36.0`    | `4.35.1`                  | `4.35.0`               |
+| Line |  Client pin  | Its gencode | Spring Boot 4.1.1 manages | Quarkus 3.39.5 manages |
+|------|--------------|-------------|---------------------------|------------------------|
+| 8.8  | `8.8.40`     | `4.31.1`    | `4.35.1`                  | `4.35.0`               |
+| 8.9  | `8.9.21`     | `4.33.6`    | `4.35.1`                  | `4.35.0`               |
+| 8.10 | `8.10.0-rc3` | `4.36.2`    | `4.35.1`                  | `4.35.0`               |
 
 An imported BOM beats a transitive version. So on both GA lines the application runs a protobuf
 newer than its client asks for, which is what protobuf allows. On the preview line both platforms
