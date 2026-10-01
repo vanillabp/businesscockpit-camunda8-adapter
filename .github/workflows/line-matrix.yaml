@@ -1,8 +1,8 @@
 name: Release lines
 # Every release line, built and tested against the cluster its own pin names. A pull
-# request builds the current GA line alone, because the Camunda 8 integration tests are
-# the slowest thing in this repository and a story would otherwise pay for every line.
-# What a story does not prove is proven here, once a night.
+# request runs this matrix as well, so a line which breaks is seen while whoever wrote the
+# change is still there. It runs here once a night on top of that, which is what answers a
+# line broken by something outside the repository, an alpha rewritten under us for example.
 "on":
   schedule:
     # Early enough to be green or red before anybody starts working. GitHub queues a
@@ -15,11 +15,22 @@ name: Release lines
     # hour, and it is not the 23rd, so the two repositories do not ask at the same moment.
     - cron: "47 23 * * *"
   workflow_dispatch:
-  # Two callers. The pull-request checks run the matrix when a pin moves, and the release
-  # runs it as its gate, because no GA line of a release may be red. Both read the output
-  # below, which leaves the preview line out. See decisions 9 and 14 in the repository's
-  # DECISIONS.md.
+  # Two callers. The pull-request checks run the matrix on every pull request, and the
+  # release runs it as its gate, because no GA line of a release may be red. Both read the
+  # output below, which leaves the preview line out, and both call without the input below,
+  # so the job 'lines-verified' asks the GA lines alone for them. A red preview line leaves
+  # their run green too, and that is the 'continue-on-error' of the matrix job rather than
+  # anything a caller does. See decisions 9 and 14 in the repository's DECISIONS.md.
   workflow_call:
+    inputs:
+      preview-line-counts:
+        description: Whether a red preview line makes the job 'lines-verified' red, and
+          with it the run of the caller. Off by default, because a defect of the alpha
+          the preview line is built against may cost a night and may not cost a pull
+          request or a release. See decision 14 in the repository's DECISIONS.md.
+        type: boolean
+        required: false
+        default: false
     outputs:
       broken-ga-lines:
         description: The GA lines which did not build, separated by blanks, or 'none'.
@@ -44,8 +55,22 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       lines: "${{ steps.list.outputs.lines }}"
+      # Which line is the preview line, and it has to be known BEFORE the matrix starts:
+      # the job below is allowed to break for that line alone, and GitHub reads
+      # 'continue-on-error' when it creates the job and not when the job ends.
+      preview: "${{ steps.list.outputs.preview }}"
     steps:
       - uses: actions/checkout@v7
+      # Which line is the preview line is the 'camunda8.line.preview' property of its
+      # profile, and bin/line-preview.sh of the Camunda 8 adapter is what reads that
+      # property out of a POM. It is checked out rather than copied: the script is tested
+      # there, it is what the client API check of this repository already uses, and a second
+      # reader of the same property would be a second opinion about it.
+      - uses: actions/checkout@v7
+        with:
+          repository: vanillabp/camunda8-adapter
+          ref: main
+          path: camunda8-adapter
       - id: list
         name: Collect the release lines
         # Every line the POM defines is built, the preview line included. What one cluster
@@ -55,15 +80,40 @@ jobs:
         # prove nothing at all, and the two things which exist on 8.10 alone, the cancel
         # listener of the process and the job lease, would have no automatic proof anywhere.
         run: |
+          set -euo pipefail
           list=$(sed -n 's|.*<id>line-\([0-9][^<]*\)</id>.*|\1|p' pom.xml \
             | jq -R -s -c 'split("\n")[:-1]')
           echo "lines=${list}" >> "$GITHUB_OUTPUT"
           echo "Building lines: ${list}"
+          # Asked here and nowhere else, so no two jobs can answer it differently: the
+          # matrix below reads this to know which line may break, and the job 'ga-lines'
+          # reads it to know which lines a caller waits for.
+          preview=""
+          for line in $(echo "${list}" | jq -r '.[]'); do
+            answer="$(camunda8-adapter/bin/line-preview.sh "$line" pom.xml)"
+            [ "${answer}" != "true" ] || preview="${line}"
+          done
+          echo "preview=${preview}" >> "$GITHUB_OUTPUT"
+          echo "Preview line: ${preview:-none}"
 
   # One build per line, against the cluster that line pins, with its own version string.
   line:
     needs: discover
     runs-on: ubuntu-latest
+    # The preview line may break without colouring the run, and no other line may. A failed
+    # job of a called workflow fails the job of the caller, and a failed job makes the whole
+    # run red, so a broken preview line made every pull request red while its gate was
+    # green. With this the preview line hands a success to everything which reads a job
+    # result, and the run stays green. Stephan decided that on the 1st of October 2026. See
+    # decision 14 in the repository's DECISIONS.md.
+    #
+    # The night therefore does NOT learn of a broken preview line from the job result any
+    # more. It reads 'broken-all' of the job 'ga-lines', which is built from the file each
+    # line writes about itself, and that file still says 'failure': 'continue-on-error'
+    # changes the result the job hands out, it does not change 'job.status' inside the job.
+    # So do not turn 'lines-verified' back to 'needs.line.result'. That reads 'success' now
+    # whatever the preview line did, and the night would stop seeing the break.
+    continue-on-error: "${{ matrix.line == needs.discover.outputs.preview }}"
     strategy:
       fail-fast: false
       matrix:
@@ -178,6 +228,11 @@ jobs:
       # one result per line to another job: every job of it writes the same output and the
       # last one to finish overwrites the rest. So each line leaves a file named after
       # itself. The same shape as in vanillabp/camunda8-adapter.
+      #
+      # This file is also the only place which still tells the truth about the preview
+      # line. That line runs with 'continue-on-error', so the result it hands to another
+      # job is a success even when it broke, while 'job.status' read here inside the job is
+      # 'failure'. Everything which has to see the break reads these files.
       - name: What this line did
         if: always()
         run: |
@@ -190,28 +245,69 @@ jobs:
           name: line-result-${{ matrix.line }}
           path: "${{ runner.temp }}/line-result/${{ matrix.line }}"
 
-  # One name that never changes, so branch protection, the pull-request checks and the
-  # release gate have something to require while the matrix grows and shrinks with the
-  # lines.
+  # One name that never changes while the matrix grows and shrinks with the lines. The night
+  # is who reads it, and there it means every line of the matrix, the preview line included.
+  #
+  # A caller does not read it: build.yaml requires 'line-pins-verified' and the release
+  # requires 'ga-lines-verified', and both of those read the GA lines alone. But a red job of
+  # a called workflow colours the whole run of its caller, so this job made every pull
+  # request red while the gate of that pull request was green. That is what the input is for.
+  # A caller leaves it at 'false' and this job then asks the GA lines only; the night has no
+  # input at all and asks every line. A defect of the alpha may cost a night, it may not cost
+  # a pull request or a release. See decision 14 in the repository's DECISIONS.md.
+  #
+  # Both answers come from the job 'ga-lines' below, which reads the file every line wrote
+  # about itself. Neither reads a job result: the preview line runs with
+  # 'continue-on-error', so its result is a success even when it broke, and the night would
+  # see nothing. The file it wrote is what still says 'failure'.
   #
   # A red night is answered by release-lines-issue.yaml, which opens an issue for the line
   # that broke. It is a workflow of its own and not a step here, and that file says why.
   lines-verified:
     if: always()
-    needs: line
+    needs: ga-lines
     runs-on: ubuntu-latest
     steps:
       - name: Every line built
+        env:
+          # The night and a dispatch ARE this workflow, they do not call it, so there is no
+          # input and this is empty. Empty therefore has to mean that the preview line
+          # counts, and only the word 'false' from a caller turns it off.
+          COUNT_PREVIEW: "${{ inputs.preview-line-counts }}"
+          BROKEN_ALL: "${{ needs.ga-lines.outputs.broken-all }}"
+          BROKEN: "${{ needs.ga-lines.outputs.broken }}"
         run: |
-          echo "lines: ${{ needs.line.result }}"
-          [ "${{ needs.line.result }}" = "success" ]
+          set -euo pipefail
+          if [ "${COUNT_PREVIEW}" != "false" ]; then
+            broken="${BROKEN_ALL}"
+            echo "every line counts here, and these did not build:" \
+              "${broken:-nothing was said}"
+          else
+            broken="${BROKEN}"
+            echo "GA lines only, and these did not build: ${broken:-nothing was said}"
+          fi
+          case "${broken}" in
+            none)
+              echo "Every line this run waits for built." ;;
+            "")
+              echo "The job 'ga-lines' said nothing, so this run cannot tell which line" >&2
+              echo "broke. Read the jobs above." >&2
+              exit 1 ;;
+            *)
+              echo "These lines did not build: ${broken}" >&2
+              exit 1 ;;
+          esac
 
   # The same matrix, read without the preview line, for the callers which need that answer.
   # Both of them do: the preview line is built against an alpha which is rewritten under us,
   # and a defect of that alpha may cost a night, it may not cost a pull request or a release.
   # The preview line still builds here, its job is there to read, and a red one still gets its
   # issue in the night. That is decision 14 in the repository's DECISIONS.md, and
-  # 'lines-verified' above is the name the night reads.
+  # 'lines-verified' above is the name the night reads. Both answers are read here, out of
+  # the files the lines wrote, and the job above reads them from this one.
+  #
+  # Which line is the preview line is not asked here: the job 'discover' asks it, because
+  # the matrix needs that answer before it starts.
   #
   # This job reports what it found, it does not fail on it. A failed job hands no output to
   # the caller, so failing here would leave the caller with an empty answer instead of the
@@ -222,18 +318,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       broken: "${{ steps.read.outputs.broken }}"
+      # Every line which did not build, the preview line included. This is what the night
+      # reads, and it exists because the job result of the preview line is a success even
+      # when that line broke.
+      broken-all: "${{ steps.read.outputs.broken-all }}"
+    # Nothing is read from the working tree here, so this job checks nothing out. The lines
+    # arrive as artifacts, and which of them is the preview line arrives from 'discover'.
     steps:
-      - uses: actions/checkout@v7
-      # Which line is the preview line is the 'camunda8.line.preview' property of its profile,
-      # and bin/line-preview.sh of the Camunda 8 adapter is what reads that property out of a
-      # POM. It is checked out rather than copied: the script is tested there, it is what the
-      # client API check of this repository already uses, and a second reader of the same
-      # property would be a second opinion about it.
-      - uses: actions/checkout@v7
-        with:
-          repository: vanillabp/camunda8-adapter
-          ref: main
-          path: camunda8-adapter
       - uses: actions/download-artifact@v8
         with:
           pattern: line-result-*
@@ -243,9 +334,11 @@ jobs:
         name: Which lines did not build, and which of them a caller waits for
         env:
           LINES: "${{ needs.discover.outputs.lines }}"
+          PREVIEW: "${{ needs.discover.outputs.preview }}"
         run: |
           set -euo pipefail
           broken=""
+          broken_all=""
           counted=0
           for line in $(echo "${LINES:-[]}" | jq -r '.[]'); do
             counted=$((counted + 1))
@@ -253,9 +346,11 @@ jobs:
             # which did not build
             result=nothing
             [ ! -f "line-results/${line}" ] || result="$(cat "line-results/${line}")"
-            preview="$(camunda8-adapter/bin/line-preview.sh "$line" pom.xml)"
+            preview=false
+            [ "${line}" != "${PREVIEW}" ] || preview=true
             echo "line ${line}: ${result}, preview line: ${preview}"
             [ "$result" != "success" ] || continue
+            broken_all="${broken_all}${broken_all:+ }${line}"
             [ "$preview" != "true" ] || continue
             broken="${broken}${broken:+ }${line}"
           done
@@ -264,3 +359,4 @@ jobs:
             exit 1
           fi
           echo "broken=${broken:-none}" >> "$GITHUB_OUTPUT"
+          echo "broken-all=${broken_all:-none}" >> "$GITHUB_OUTPUT"

@@ -71,8 +71,8 @@ jobs:
 
   # The ground rule of the release lines: a user must never read the version suffix of an
   # artifact to find out which methods exist. This job keeps that true, and it needs no
-  # cluster, so it runs on every pull request while the integration tests of the other
-  # lines wait for the nightly matrix.
+  # cluster, so it answers in a few minutes while the matrix below is still building the
+  # lines it tests.
   api-identity:
     runs-on: ubuntu-latest
     permissions:
@@ -122,10 +122,9 @@ jobs:
       - name: A consumer of one line is never offered another
         run: node renovate/verify-line-gating.js
 
-  # A pull request builds the current GA line alone, which is enough for a story: the other
-  # lines are proven by the nightly matrix. It is not enough for a pin: the pin of line 8.8
-  # is not compiled by a build of line 8.9, so an update of it would be merged unbuilt and
-  # show up in the night. When a pull request moves a pin, the whole matrix runs here.
+  # Every pull request builds every line now, so this job gates nothing any more. It stays
+  # because a moved pin is worth a sentence in the run: a client patch which merges itself
+  # looks like every other pull request, and this says which one it was.
   #
   # Which properties count is in bin/pin-change.sh, together with what each of them
   # decides. The script compares their VALUES between the merge base and this branch, so a
@@ -150,14 +149,36 @@ jobs:
           pins="$(bin/pin-change.sh "origin/${{ github.base_ref || 'main' }}")"
           echo "pins=${pins}" >> "$GITHUB_OUTPUT"
 
+  # A pull request used to build the current GA line alone and leave the rest to the night.
+  # That made sense while every story had a pull request of its own: the matrix once per
+  # story would have been unpayable, and what a story did not prove, the night did. Stories
+  # arrive as a wave in ONE pull request since 2026-09-22, so the matrix runs here for every
+  # pull request. It runs once per wave instead of once per story, and a broken line shows
+  # up in the pull request rather than in the night after it was merged.
+  #
+  # The lines build beside each other, so the matrix costs the wall clock of its slowest
+  # line and not the sum of them. Measured over three lines on the nights of 2026-09-22, 24
+  # and 25: between 7m47s and 8m16s in total, with line 8.8 the slowest at 7m24s to 7m56s. A
+  # pull-request build on its own took between 5m03s and 8m16s in the same days. The 42
+  # minutes the comment in line-matrix.yaml names as its worst run are older than that: they
+  # are from the time the 8.10 tests sat out their deadlines, before the tag which leaves
+  # them out. A line added later costs another runner, and it costs this job nothing as long
+  # as it is not the slowest one.
+  #
+  # The release calls the matrix itself, so what happens here does not touch it.
+  #
+  # Called without 'preview-line-counts', so the job the night reads asks the GA lines alone
+  # here. That input is half of what keeps a red preview line out of this run. The other
+  # half is in the matrix itself: the job of the preview line carries 'continue-on-error',
+  # because a red job of a called workflow makes the run of the caller red whatever the gate
+  # below says. See decision 14 in the repository's DECISIONS.md.
   lines:
-    needs: pin-change
-    if: needs.pin-change.outputs.pins == 'true'
     uses: ./.github/workflows/line-matrix.yaml
     secrets: inherit
 
-  # One name that reports on every pull request, whether the matrix ran or not, so branch
-  # protection can require it without blocking the pull requests which do not need it.
+  # One name for branch protection to require. The name is older than the rule above: it was
+  # given while a moved pin was what bought the matrix. It stays, because branch protection
+  # stores the name, and a renamed check is one nobody requires any more.
   #
   # It reads the GA lines of the matrix and not the matrix as a whole. The preview line
   # builds there like every other line and its job is on this pull request to read, but it
@@ -166,24 +187,22 @@ jobs:
   # still opens an issue for it. See decision 14 in the repository's DECISIONS.md.
   line-pins-verified:
     if: always()
-    needs: [pin-change, lines]
+    needs: lines
     runs-on: ubuntu-latest
     steps:
-      - name: The lines a moved pin affects were built
+      - name: Every GA line built
         env:
           BROKEN: "${{ needs.lines.outputs.broken-ga-lines }}"
         run: |
-          echo "pins: ${{ needs.pin-change.outputs.pins }}, lines: ${{ needs.lines.result }}"
-          [ "${{ needs.pin-change.outputs.pins }}" = "true" ] \
-            || { echo "No pin moved."; exit 0; }
+          echo "lines: ${{ needs.lines.result }}"
           case "$BROKEN" in
             none)
-              echo "Every GA line built with the moved pin." ;;
+              echo "Every GA line built." ;;
             "")
               echo "The matrix did not get far enough to say which lines built, so this" >&2
-              echo "pull request has no answer about its pin. Read the jobs above." >&2
+              echo "pull request has no answer at all. Read the jobs above." >&2
               exit 1 ;;
             *)
-              echo "These GA lines did not build with the moved pin: ${BROKEN}" >&2
+              echo "These GA lines did not build: ${BROKEN}" >&2
               exit 1 ;;
           esac

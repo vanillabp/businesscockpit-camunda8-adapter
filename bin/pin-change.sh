@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
 # Says whether this branch changes what a release line IS. It prints "true" or "false"
-# on stdout, and the reason on stderr. The pull-request checks read the answer and run
-# the whole line matrix when it is "true".
+# on stdout, and the reason on stderr. The pull-request checks write the answer into
+# their log.
 #
-# A pull request builds the current GA line alone, which is enough for a story: the other
-# lines are proven by the nightly matrix. It is not enough for a property which decides
-# what another line is. A build of line 8.9 never compiles the pin of line 8.8, so a
-# change to it would be merged unbuilt and break in the night.
+# It used to decide whether the whole line matrix ran. It decides nothing any more: every
+# pull request builds every line. The answer is still worth printing, because a client
+# patch which merges itself looks like every other pull request, and this says which one
+# it was.
 #
 # The answer comes from the VALUES of the properties listed below, taken from the merge
 # base and from the working tree and compared. A property, not a line of the diff: a

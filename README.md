@@ -252,12 +252,15 @@ mvn -Pline-8.10 -pl spring-boot dependency:tree -Dincludes=com.google.protobuf
 
 ### What proves a line
 
-Every line is built and tested once a night by `line-matrix.yaml`, which reads the live lines out of
-the `line-*` profiles, so the matrix cannot fall behind the build. A pull request builds the current
-GA line alone, because the Camunda 8 integration tests are the slowest thing here and a story would
-otherwise pay for every line. When a pull request moves a pin, the matrix runs on that pull request
-as well: a pin of line 8.8 is not compiled by a build of line 8.9, so it would otherwise be merged
-unbuilt.
+Every line is built and tested by `line-matrix.yaml`, which reads the live lines out of the `line-*`
+profiles, so the matrix cannot fall behind the build. It runs once a night, and it runs on every
+pull request. The lines build beside each other, so a pull request waits for the slowest line and
+not for the sum of them.
+
+A pull request used to build the current GA line alone and leave the rest to the night. That was
+right while every story had a pull request of its own. Stories arrive as a wave in one pull request
+now, so the matrix runs once per wave, and a line which breaks is read by whoever wrote the change
+instead of by whoever opens the repository the next morning.
 
 A line of this repository needs the adapter of the same line underneath it, and the VanillaBP
 Camunda 8 adapter publishes one snapshot, built against the current GA client. So the nightly job
@@ -369,15 +372,17 @@ spaces between two words, or two words a line continuation glued into one.
 
 ## What CI runs
 
-`build.yaml` builds and tests a pull request, on the current GA line alone, which includes the
-integration tests against a cluster of that line's client. It runs in a group per pull request, so
-an open pull request never takes the waiting run of another one out. Three checks beside it are
-about the lines: `api-identity` proves that every line offers the same API, `renovate-configuration`
-validates the Renovate files and runs the gating check, and `pin-change` starts the whole line
-matrix when a pull request moves a pin, because a pin of another line is not compiled by a build of
-the current one.
-`line-matrix.yaml` builds and tests every line once a night, and it is what the section
-[Release lines](#release-lines) is proven by.
+`build.yaml` builds and tests a pull request on the current GA line, which includes the integration
+tests against a cluster of that line's client, and it calls the line matrix beside that, so every
+line is built before a wave is merged. It runs in a group per pull request, so an open pull request
+never takes the waiting run of another one out. Three checks beside it are about the lines:
+`api-identity` proves that every line offers the same API, `renovate-configuration` validates the
+Renovate files and runs the gating check, and `line-pins-verified` reads which GA lines of the
+matrix built. `pin-change` writes into the log whether a pull request moves a pin. It decides
+nothing, and it is there because a client patch which merges itself looks like every other pull
+request.
+`line-matrix.yaml` builds and tests every line, once a night and once per pull request, and it is
+what the section [Release lines](#release-lines) is proven by.
 `deploy-to-github-packages.yaml` publishes the snapshot, and only for a push to `main`. The
 snapshot artifacts share their coordinates, so what the other repositories compile against has to
 be what `main` holds. It runs in a group of its own, one publish at a time, and a publish which is
