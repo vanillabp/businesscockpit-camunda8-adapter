@@ -181,7 +181,7 @@ case said when the event happened rather than what it said when the report went 
 whole point. And a report which cannot be built never goes out at all, where it used to go out
 late.
 
-## 9. An old line holds up a release, not a pull request - which lines a release waits for narrowed by decision 14
+## 9. An old line holds up a release, not a pull request - which lines a release waits for narrowed by decision 14, which lines a pull request builds replaced by decision 15
 
 A pull request builds the current GA line and tests it against that line's cluster. Every other
 line waits for the nightly matrix. Only a pull request which moves a pin runs the matrix itself,
@@ -533,3 +533,56 @@ somebody has to decide whether it is the alpha's defect or ours. Answering that 
 asks for at every pin move: deploy a user task with a `creating` listener, start an instance and
 see whether the job arrives. Once one does, the tag and the exclusion go away together and the line
 is proven whole.
+
+## 15. A pull request waits for every line, the same as the night does
+
+`build.yaml` calls `line-matrix.yaml` without a condition, so a pull request builds and tests
+every line against that line's cluster. The check `line-pins-verified` reads the GA lines of the
+matrix, and `pin-change` stays as a job which writes into the log whether a pin moved.
+
+Decision 9 let a pull request build the current GA line alone and left the other lines to the
+night. What paid for that was the runtime, and the way we work changed under it. The gate came
+when every story was its own pull request, and the matrix once per story would have been
+unpayable. Stories arrive as a wave in one pull request since 2026-09-22, so the matrix runs once
+per wave.
+
+The lines build beside each other, so a pull request waits for the slowest of them and not for
+their sum. Measured over three lines on the nights of 2026-09-22, 24 and 25: between 7m47s and
+8m16s in total, with line 8.8 the slowest at 7m24s to 7m56s, while a pull-request build on its
+own took between 5m03s and 8m16s in the same days. So the matrix costs about the time the pull
+request had anyway, plus two more runners. The 42 minutes which the comment in
+`line-matrix.yaml` names as its worst run are from before the tag which leaves the 8.10 tests
+out, and nobody should plan with that number.
+
+What the old rule cost was harder to see. A pull request was green on one line and the night
+found the same code red on another, and by then whoever wrote it had moved on. Waiting for the
+night also means reading the night, and a red night belongs to whoever merged the day before.
+That is a hand-over no rule can make.
+
+One duty comes with the change. Whoever opens the wave watches it, and a line which goes red is
+looked at while the other lines are still running.
+
+The pin guard of a line now speaks on every pull request, and it stays red rather than warning.
+Stephan decided that on 2026-10-01, when story 1392 raised the pin of line 8.8 and asked the
+question. The cost is visible: the client pin of a line is raised by hand, the adapter moves its
+own pins by Renovate, so a pin which fell behind turns a pull request red which has nothing to do
+with it, until somebody raises it. A warning would buy that pull request its green run back and
+give up what decision 10 is for. An older client against a newer cluster breaks nothing and
+proves less, and a warning is exactly how that stayed unseen on two lines at once.
+
+Two things stayed. The release calls the matrix itself, before anything is built for publication,
+which is the other half of decision 9 and is untouched. And the check counts the GA lines rather
+than reading the matrix as a whole, so a line which never ran, or which was cancelled, is a line
+which did not build. The old step left itself green whenever no pin had moved, which was almost
+always, and a broken GA line would have been built, counted and still invisible.
+
+A red preview line does not colour the run of a pull request either. The job of that line in
+the matrix carries `continue-on-error`, so the result it hands out is a success and the job of
+the caller stays green with it. The preview line is the only line which gets that. The night
+still sees a break: every line writes down what it did, the job which sorts them reports all
+broken lines in its `broken-all` output, and that is what the night reads instead of the job
+result. `continue-on-error` changes the result a job hands out, it does not change
+`job.status` inside the job, so the file that line wrote still says `failure`. For the same
+reason `release-lines-issue.yaml` reads the steps of a line job as well as its conclusion,
+because the API reports that forced success too. Stephan decided this on 2026-10-01, after
+pull request 78 was red while its required check was green and could not be merged.
