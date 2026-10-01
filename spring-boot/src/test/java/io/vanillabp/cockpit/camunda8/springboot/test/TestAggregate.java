@@ -18,6 +18,11 @@ import jakarta.persistence.Version;
  * answers it, it never writes this case, and the report of an event is built while that event is
  * being observed rather than hours later. The attribute is here so that a provider which
  * accidentally wrote would read a conflict instead of overwriting the application without a word.
+ * <p>
+ * The workflow shares this whole case with the BPMS, and only a plain boolean and a text mean the
+ * same in every expression language. So every other value needs a line in
+ * <code>declared-aggregate-values</code> of the test application before it may travel, and
+ * <code>signers</code> and <code>version</code> have one.
  */
 @Entity
 public class TestAggregate {

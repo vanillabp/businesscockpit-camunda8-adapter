@@ -9,6 +9,11 @@ import java.util.List;
  * need one: {@link TestAggregatePersistence} is a map which hands out the very object it holds,
  * so a details provider changing the case changes the one copy there is. There is no older
  * reading anybody could write back over a newer one.
+ * <p>
+ * The workflow shares this whole case with the BPMS, and only a plain boolean and a text mean the
+ * same in every expression language. So every other value needs a line in
+ * <code>declared-aggregate-values</code> of the test application before it may travel, and
+ * <code>signers</code> has one.
  */
 public class TestAggregate {
 
