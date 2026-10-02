@@ -64,22 +64,22 @@ timer instead (`waiting-process.bpmn`).
 **What would close it** was the cluster fix. It shipped, the tag and the exclusion went away, and the
 test which holds a user task proves the same thing on this line as on the others.
 
-## 3. Nobody is named as the initiator of a workflow
+## 3. Nobody is named as the initiator of a workflow - not a gap of this adapter, closed on 2026-10-02
 
-**The cockpit needs** to show who started a case, which is a column of its workflow list.
+**Closed because it was never Camunda 8's question.** The initiator is the user who caused what is
+reported, and no workflow system records it. Camunda 8 names nobody, the Process-Engine-API names
+nobody, and Camunda 7 only holds the user of a process-instance creation where the application set an
+identity context of its own, which says nothing about who changed a user task. So the initiator is
+the application's answer everywhere, on every engine, and it is not something this adapter is missing.
 
-**Camunda 8 offers** nothing this extension can read. A listener job does not carry the user who
-started the instance, and the cluster's searchable storage does not hold it either.
+The cockpit forces that answer now. A new key without a default,
+`vanillabp.cockpit.initiator-source`, says whether the application sets the initiator itself or
+whether a workflow module knows no action a user causes, and a report which names nobody under the
+first setting fails. See `An initiator is always set, and the application is the only one who knows
+it` in the `DECISIONS.md` of `business-cockpit`.
 
-**Where it can be read:** the `ActivatedJob` of the Camunda client, and the process-instance records
-of the search API. Neither names a user.
-
-**What it costs:** a report of a workflow leaves the initiator empty, so the cockpit shows the column
-empty for every Camunda 8 case. An application which knows who started the case can still fill it
-from its own `@WorkflowDetailsProvider`.
-
-**What would close it** is the engine recording the authenticated user of a process-instance creation
-and handing it out with the instance.
+What stays true for this adapter is that it prefills nothing here, and that is correct: prefilling
+`system` would hand the application's provider a value nobody said.
 
 ## 4. A user task says nothing at all on the 8.10 pre-releases - closed on 2026-10-01
 

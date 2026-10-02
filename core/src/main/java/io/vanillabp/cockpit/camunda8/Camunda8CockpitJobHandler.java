@@ -356,8 +356,10 @@ public class Camunda8CockpitJobHandler implements JobHandler {
    * holds beside it. The answer is therefore the same on every release line and on every way a
    * report is built. See decision 8 in the repository's DECISIONS.md.
    * <p>
-   * Nobody is named as the initiator. Camunda 8 records who started an instance nowhere this
-   * extension can read it.
+   * Nobody is named as the initiator, and every workflow system answers the same way. The
+   * initiator is the user who caused what is reported, and only the application knows that. So
+   * the cockpit asks the application for it and refuses a report which names nobody. Prefilling
+   * anything here would hand a provider a value nobody said.
    *
    * @param job The listener job
    * @param listener Where the listener sits, which is what carries the BPMN name of the process
