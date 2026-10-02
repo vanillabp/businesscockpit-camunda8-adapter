@@ -34,11 +34,17 @@ import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
  * behind the engine, so the event being reported has not reached it while the job waits.</li>
  * <li><b>What is true now.</b> <code>BusinessCockpitService.getUserTask</code> and
  * <code>aggregateChanged</code> ask about a task or a case the application names, at the moment
- * it asks. Nothing is being reported then, so the answer comes from the searchable storage, and
- * a record it holds none of means there is nothing to show.</li>
+ * it asks. Nothing is being reported then, so the answer comes from the searchable storage.</li>
  * </ul>
  * The three <code>…OfAggregate</code> methods only ever serve the second kind, so they search the
  * storage without asking.
+ * <p>
+ * <b>A record the storage holds none of.</b> That is silence and not an ending. The exporter which
+ * writes the storage runs behind the engine, so a task or a case born a moment ago is missing from
+ * a search in the same way one which ended is, and nothing here can tell the two apart. So an
+ * empty result travels on with a line in the log naming both readings, which is what decision 8
+ * asks for, and no caller may read the end of a task into it. An end reaches the cockpit through
+ * this extension's own listeners.
  * <p>
  * One bridge serves one adapter id, because during a migration each cluster holds workflows of
  * its own and the cockpit addresses a workflow by the cluster holding it.
@@ -193,7 +199,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
 
     final var found = searchWorkflows(workflowModuleId, bpmnProcessId, workflowAggregateId);
     if (found.isEmpty()) {
-      reportNothingToSee("workflow", workflowModuleId, bpmnProcessId, workflowAggregateId);
+      sayTheStorageHoldsNoRecord("workflow", workflowModuleId, bpmnProcessId, workflowAggregateId);
     }
     return found
         .stream()
@@ -214,22 +220,32 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       final List<String> userTaskIds) {
 
     if ((userTaskIds == null) || userTaskIds.isEmpty()) {
-      return searchUserTasks(workflowModuleId, bpmnProcessId, workflowAggregateId, null, true)
+      final var found = searchUserTasks(
+          workflowModuleId, bpmnProcessId, workflowAggregateId, null, true);
+      if (found.isEmpty()) {
+        sayTheStorageHoldsNoRecord(
+            "active user tasks", workflowModuleId, bpmnProcessId, workflowAggregateId);
+      }
+      return found
           .stream()
           .map(task -> referenceOf(workflowModuleId, bpmnProcessId, workflowAggregateId, task))
           .toList();
     }
 
     final var references = new LinkedList<UserTaskReference>();
+    // the public method says the same thing about an empty answer, so this branch searches
+    // instead of calling it. Going through it would log every missing task twice
     userTaskIds
         .forEach(
-            userTaskId -> userTaskOfAggregate(
-                workflowModuleId, bpmnProcessId, workflowAggregateId, userTaskId)
-                .ifPresentOrElse(
-                    references::add,
-                    () -> reportNothingToSee(
-                        "user task '%s'".formatted(userTaskId), workflowModuleId, bpmnProcessId,
-                        workflowAggregateId)));
+            userTaskId -> userTaskKeyOf(userTaskId)
+                .ifPresent(
+                    userTaskKey -> searchUserTaskOfAggregate(
+                        workflowModuleId, bpmnProcessId, workflowAggregateId, userTaskKey)
+                        .ifPresentOrElse(
+                            references::add,
+                            () -> sayTheStorageHoldsNoRecord(
+                                "user task '%s'".formatted(userTaskId), workflowModuleId,
+                                bpmnProcessId, workflowAggregateId))));
     return references;
 
   }
@@ -241,24 +257,66 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       final String workflowAggregateId,
       final String userTaskId) {
 
-    final Long userTaskKey;
-    try {
-      userTaskKey = Long.valueOf(userTaskId);
-    } catch (final NumberFormatException e) {
-      // an id of another BPMS: during a migration the application may still hold ids the
-      // cluster never handed out, and none of them is a task of this one
-      logger
-          .debug(
-              "Camunda8[{}]: '{}' is not a Camunda 8 user-task key, so this cluster holds no such task",
-              adapterId(), userTaskId, e);
+    final var userTaskKey = userTaskKeyOf(userTaskId);
+    if (userTaskKey.isEmpty()) {
+      // no key of this cluster, so this is a clear answer and not a silence worth a warning
       return Optional.empty();
     }
+
+    final var found = searchUserTaskOfAggregate(
+        workflowModuleId, bpmnProcessId, workflowAggregateId, userTaskKey.get());
+    if (found.isEmpty()) {
+      sayTheStorageHoldsNoRecord(
+          "user task '%s'".formatted(userTaskId), workflowModuleId, bpmnProcessId,
+          workflowAggregateId);
+    }
+    return found;
+
+  }
+
+  /**
+   * One task of one aggregate as the searchable storage holds it, and nothing said about an empty
+   * answer. Each caller says that itself, because saying it here would say it twice for the ids a
+   * caller named.
+   *
+   * @param userTaskKey The task's key as the cluster counts it
+   * @return The task, or empty where the storage holds no such task of that aggregate
+   */
+  private Optional<UserTaskReference> searchUserTaskOfAggregate(
+      final String workflowModuleId,
+      final String bpmnProcessId,
+      final String workflowAggregateId,
+      final Long userTaskKey) {
 
     return searchUserTasks(
         workflowModuleId, bpmnProcessId, workflowAggregateId, userTaskKey, false)
         .stream()
         .findFirst()
         .map(task -> referenceOf(workflowModuleId, bpmnProcessId, workflowAggregateId, task));
+
+  }
+
+  /**
+   * The key Camunda 8 would know a user task by, read off the id the application named.
+   *
+   * @param userTaskId The id the caller asked about
+   * @return The key, or empty where that id is no key of this BPMS
+   */
+  private Optional<Long> userTaskKeyOf(
+      final String userTaskId) {
+
+    try {
+      return Optional.of(Long.valueOf(userTaskId));
+    } catch (final NumberFormatException e) {
+      // an id of another BPMS: during a migration the application may still hold ids the
+      // cluster never handed out, and none of them is a task of this one. That is a clear
+      // answer, so it stays a debug line and gets none of the warning an empty search gets
+      logger
+          .debug(
+              "Camunda8[{}]: '{}' is not a Camunda 8 user-task key, so this cluster holds no such task",
+              adapterId(), userTaskId, e);
+      return Optional.empty();
+    }
 
   }
 
@@ -408,16 +466,25 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   }
 
   /**
-   * Says out loud that a change the application reported reaches nobody.
+   * Says out loud that a search of one aggregate found nothing, and that this reads two ways.
    * <p>
-   * The application called this inside its own transaction, and a workflow started by that very
-   * transaction is not searchable yet. Camunda 8 receives the start command after the commit,
-   * and its searchable storage learns about it later still. Waiting here would hold the business
-   * transaction open for an exporter. So the change is not reported, and the reason is said
-   * instead. The workflow's own start is reported by this extension's start-event listener
-   * either way, with whatever the aggregate holds at that moment.
+   * Both ways into this class ask about now. The application reports a change inside its own
+   * transaction, and a workflow started by that very transaction is not searchable yet: Camunda 8
+   * receives the start command after the commit, and its searchable storage learns about it later
+   * still. The application also reads a task through
+   * <code>BusinessCockpitService.getUserTask</code>, where the same lag hides a task which is
+   * wide awake. Waiting for the exporter would hold a business transaction or a web request open
+   * for it, so neither way waits.
+   * <p>
+   * What is left is to say both readings, because nothing here can tell them apart. Decision 8
+   * asks for exactly that: an empty result and a line in the log naming what it may mean. A
+   * report is dropped, a read is answered with nothing, the cockpit keeps what it stored before,
+   * and no task ends because of it. The start of a workflow and the end of a task are reported by
+   * this extension's own listeners either way.
+   *
+   * @param what What was searched for, for the message
    */
-  private void reportNothingToSee(
+  private void sayTheStorageHoldsNoRecord(
       final String what,
       final String workflowModuleId,
       final String bpmnProcessId,
@@ -425,8 +492,8 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
 
     logger
         .warn(
-            "Camunda8[{}]: the Business Cockpit was told that aggregate '{}' of '{}/{}' changed, but the cluster's searchable storage holds no {} of it. Nothing was reported, so the cockpit keeps showing the older state until something else happens to that workflow. A workflow started in the very transaction which reported the change is not searchable yet - its start is reported by the cockpit's own start-event listener anyway, so a call right after starting a workflow is superfluous.",
-            adapterId(), workflowAggregateId, workflowModuleId, bpmnProcessId, what);
+            "Camunda8[{}]: the Business Cockpit asked about the {} of aggregate '{}' of '{}/{}', and the cluster's searchable storage holds no record of that. There are two readings of this and nothing here can tell them apart. Either there is no such record any more. Or the exporter which writes that storage has not caught up with it yet, which is what a workflow or a task born in the very transaction asking here looks like. So the cockpit was told nothing and keeps showing what it stored before, and no task of this case ends because of it. The start of a workflow and the end of a task are reported by this extension's own listeners anyway, so a call right after starting a workflow is superfluous.",
+            adapterId(), what, workflowAggregateId, workflowModuleId, bpmnProcessId);
 
   }
 
