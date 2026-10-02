@@ -21,6 +21,7 @@ vanillabp:
   prioritized-adapters:
     - c8
   cockpit:
+    initiator-source: system
     rest:
       base-url: replaced-by-the-test
   workflow-modules:

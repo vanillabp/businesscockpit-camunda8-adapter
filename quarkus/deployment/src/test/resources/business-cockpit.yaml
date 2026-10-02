@@ -15,6 +15,8 @@ vanillabp:
       job-timeout: PT30S
   prioritized-adapters:
     - c8
+  cockpit:
+    initiator-source: system
   workflow-modules:
     c8-cockpit:
       adapters:
