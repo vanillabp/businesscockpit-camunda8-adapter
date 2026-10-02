@@ -18,11 +18,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.camunda.client.api.command.ClientHttpException;
 import io.camunda.client.api.search.filter.ProcessInstanceFilter;
 import io.camunda.client.api.search.response.ProcessInstance;
@@ -81,6 +88,51 @@ public class Camunda8CockpitBridgeTest {
 
   private static final String USER_TASK_ID = "2251799813685350";
 
+  /**
+   * What the bridge wrote while a test ran.
+   * <p>
+   * An empty answer of the searchable storage is answered with a line in the log and nothing else,
+   * which decision 8 asks for, so the log is the only place a test can read that answer from.
+   */
+  private final ListAppender<ILoggingEvent> linesTheBridgeWrote = new ListAppender<>();
+
+  @BeforeEach
+  public void listenToTheBridge() {
+
+    linesTheBridgeWrote.start();
+    theLoggerOfTheBridge().addAppender(linesTheBridgeWrote);
+
+  }
+
+  @AfterEach
+  public void stopListening() {
+
+    theLoggerOfTheBridge().detachAppender(linesTheBridgeWrote);
+    linesTheBridgeWrote.stop();
+
+  }
+
+  private static Logger theLoggerOfTheBridge() {
+
+    return (Logger) LoggerFactory.getLogger(Camunda8CockpitBridge.class);
+
+  }
+
+  /**
+   * @param level Which kind of line is meant
+   * @return What the bridge wrote at that level while this test ran
+   */
+  private List<String> whatTheBridgeSaid(
+      final Level level) {
+
+    return linesTheBridgeWrote.list
+        .stream()
+        .filter(event -> event.getLevel() == level)
+        .map(ILoggingEvent::getFormattedMessage)
+        .toList();
+
+  }
+
   private Camunda8CockpitBridge bridge() {
 
     final var clients = new Camunda8Clients(clientFactories, null);
@@ -122,6 +174,30 @@ public class Camunda8CockpitBridgeTest {
     when(search.send().join().items()).thenReturn(found);
     // the stubbing above called 'filter' itself. What the test asserts is the one call the
     // bridge makes, because a second call would replace the first rather than add to it
+    clearInvocations(search);
+    final var clients = new Camunda8Clients(clientFactories, scoping);
+    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring);
+
+  }
+
+  /**
+   * A bridge of a cluster whose searchable storage answers the user-task search with what a test
+   * says, and nothing else.
+   *
+   * @param found The tasks the search answers
+   * @return The bridge
+   */
+  private Camunda8CockpitBridge bridgeSearchingUserTasks(
+      final List<UserTask> found) {
+
+    when(scoping.scopedProcessId(MODULE_ID, PROCESS_ID, "c8")).thenReturn(SCOPED_PROCESS_ID);
+    when(workflowTaskWiring.resolveWorkflowAggregateIdName(MODULE_ID, PROCESS_ID))
+        .thenReturn(AGGREGATE_ID_NAME);
+    final var search = clientFactories.getFactory("c8").getClient().newUserTaskSearchRequest();
+    // a search request answers itself, like the workflow search above, so what the cluster
+    // answers is stubbed once instead of through the deep stub of one particular call
+    when(search.filter(any(Consumer.class))).thenReturn(search);
+    when(search.send().join().items()).thenReturn(found);
     clearInvocations(search);
     final var clients = new Camunda8Clients(clientFactories, scoping);
     return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring);
@@ -359,6 +435,67 @@ public class Camunda8CockpitBridgeTest {
     // no version, rather than the text 'null'. Both lose against every version range, and only
     // one of them reads like a version somebody deployed
     assertNull(found.getFirst().processVersion());
+
+  }
+
+  @Test
+  @DisplayName("A read of one task the storage holds no record of names both readings of it")
+  public void aReadOfATaskTheStorageDoesNotHoldIsExplained() {
+
+    final var found = bridgeSearchingUserTasks(List.of())
+        .userTaskOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, USER_TASK_ID);
+
+    assertTrue(found.isEmpty());
+    // the answer is empty and the log is where it is explained, which is what decision 8 asks
+    // for. A caller may not read the end of the task into it, so both readings are named
+    final var said = whatTheBridgeSaid(Level.WARN);
+    assertEquals(1, said.size(), said.toString());
+    assertTrue(said.getFirst().contains("two readings"), said.getFirst());
+    assertTrue(said.getFirst().contains("exporter"), said.getFirst());
+    assertTrue(said.getFirst().contains(USER_TASK_ID), said.getFirst());
+
+  }
+
+  @Test
+  @DisplayName("The active tasks of an aggregate the storage holds none of are explained as well")
+  public void anEmptyListOfActiveTasksIsExplained() {
+
+    final var found = bridgeSearchingUserTasks(List.of())
+        .userTasksOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, List.of());
+
+    assertTrue(found.isEmpty());
+    final var said = whatTheBridgeSaid(Level.WARN);
+    assertEquals(1, said.size(), said.toString());
+    assertTrue(said.getFirst().contains("two readings"), said.getFirst());
+
+  }
+
+  @Test
+  @DisplayName("A task named by its id and not held is explained once, not twice")
+  public void aNamedTaskWhichIsMissingIsExplainedOnce() {
+
+    final var found = bridgeSearchingUserTasks(List.of())
+        .userTasksOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, List.of(USER_TASK_ID));
+
+    assertTrue(found.isEmpty());
+    // this branch searches instead of going through userTaskOfAggregate, which says the same
+    // thing itself. Going through it would explain every missing task twice
+    assertEquals(1, whatTheBridgeSaid(Level.WARN).size(), whatTheBridgeSaid(Level.WARN).toString());
+
+  }
+
+  @Test
+  @DisplayName("An id no Camunda 8 cluster handed out is a clear answer and gets no warning")
+  public void anIdOfAnotherBpmsIsNoSilence() {
+
+    final var found = bridge()
+        .userTasksOfAggregate(
+            MODULE_ID, PROCESS_ID, AGGREGATE_ID, List.of("a-camunda-7-task-id"));
+
+    assertTrue(found.isEmpty());
+    // nothing was searched and nothing is ambiguous here, so there is nothing to warn about
+    assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
+    verifyNoInteractions(workflowTaskWiring);
 
   }
 

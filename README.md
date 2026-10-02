@@ -83,6 +83,16 @@ adapter id and the workflow module of the run, so the workers of a module are op
 identifiers in a model are read as the ones that cluster will know. Neither is worked out here by trying
 what every configured adapter would call a process.
 
+A search which finds nothing is silence and not an ending. The searchable storage is written by an
+exporter running behind the engine, so a task or a case born a moment ago is missing from a search in
+the same way one which ended is, and nothing in the bridge can tell the two apart. Every empty
+answer of the three `…OfAggregate` methods therefore carries a line in the log naming both readings,
+which is what [decision 8](./DECISIONS.md) asks for. A report is dropped, a read is answered with
+nothing, the cockpit keeps what it stored before, and no task of that case ends because of it. Ends
+reach the cockpit through this extension's own listeners. A user-task id which is no key this cluster
+could ever have handed out is the one clear answer among them: nothing is searched for it, and it
+gets a debug line rather than a warning.
+
 What the extension writes into a model, what its workers do with the jobs that produces and what it
 reads back is documented for users in the
 [wiki](https://github.com/vanillabp/businesscockpit-camunda8-adapter/wiki).
