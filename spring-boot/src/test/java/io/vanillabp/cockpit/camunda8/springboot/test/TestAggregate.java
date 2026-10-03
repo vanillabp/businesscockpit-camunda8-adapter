@@ -2,6 +2,7 @@ package io.vanillabp.cockpit.camunda8.springboot.test;
 
 import java.util.List;
 
+import io.vanillabp.spi.service.NoSyncWithBPMS;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -19,10 +20,16 @@ import jakarta.persistence.Version;
  * being observed rather than hours later. The attribute is here so that a provider which
  * accidentally wrote would read a conflict instead of overwriting the application without a word.
  * <p>
- * The workflow shares this whole case with the BPMS, and only a plain boolean and a text mean the
- * same in every expression language. So every other value needs a line in
- * <code>declared-aggregate-values</code> of the test application before it may travel, and
- * <code>signers</code> and <code>version</code> have one.
+ * Two of its values never reach the BPMS. The version counter belongs to the persistence of this
+ * application, and the signers belong to the case the application keeps. No model of this
+ * repository reads a value of the aggregate at all, so sending these two would cost a process
+ * variable and buy nothing. That is what {@link NoSyncWithBPMS} says below.
+ * <p>
+ * The customer still travels, so that the test application also shows a workflow which shares
+ * everything it has. The <code>allow-full-sync-with-bpms</code> line of this workflow stays as
+ * well, although the two annotations already make the permission unnecessary here. Taking it out
+ * would prove nothing, and the five other workflows of the test application need their own line,
+ * because the permission is not inherited.
  */
 @Entity
 public class TestAggregate {
@@ -33,11 +40,14 @@ public class TestAggregate {
 
   /** What the persistence increments per write, and what a second writer runs into. */
   @Version
+  @NoSyncWithBPMS
   private Long version;
 
   private String customer;
 
+  /** Who has to sign the case, kept by this application and read by no model. */
   @ElementCollection
+  @NoSyncWithBPMS
   private List<String> signers;
 
   public Long getId() {

@@ -11,13 +11,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +31,6 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import io.camunda.client.CamundaClient;
-import io.camunda.client.api.response.ActivatedJob;
 import io.camunda.client.api.search.enums.UserTaskState;
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
@@ -43,7 +42,6 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListeners;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListener;
 import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeTaskListeners;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
-import io.vanillabp.camunda8.client.Camunda8JobLease;
 import io.vanillabp.camunda8.test.ClusterUnderTest;
 import io.vanillabp.camunda8.wiring.Camunda8CancelListeners;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitListeners;
@@ -78,26 +76,6 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 public class Camunda8CockpitIT {
 
   private static final String MODULE_ID = "c8-cockpit";
-
-  /**
-   * Tests which need the cluster to hand a job out a second time. Line 8.10 does not do it: the
-   * job whose lock ran out is never offered to a second activation, and a test which waits for
-   * that waits until its own deadline.
-   * <p>
-   * Measured on 2026-10-01 against <code>camunda/camunda:8.10.0</code>, three runs: twice about
-   * 122 seconds of waiting and once a socket timeout of the client after 41 seconds. The cluster
-   * log says nothing at all about the job. The defect which used
-   * to explain it, a whole activate-jobs batch dropped over a listener job carrying no user task
-   * action, is closed for this release and its own tag is gone with it. What is left has no
-   * measured cause. The lease of an activation exists on this line alone, so a lease which
-   * changes when a job comes back is one candidate, and the client which stops asking while a
-   * handler of the same worker runs is the other. No other line can answer either.
-   * <p>
-   * The <code>line-8.10</code> profile of the parent POM excludes this tag, in failsafe and in
-   * surefire, and says the same thing from the build's side. Whoever measures the cause takes
-   * both away together.
-   */
-  private static final String JOBS_HANDED_OUT_AGAIN = "jobs-handed-out-again";
 
   /**
    * How long a wait for the cluster's searchable storage keeps hoping. It is the slowest thing
@@ -870,9 +848,8 @@ public class Camunda8CockpitIT {
 
   }
 
-  @Tag(JOBS_HANDED_OUT_AGAIN)
   @Test
-  @DisplayName("The answer of a run whose lock expired is refused, and the case is reported once")
+  @DisplayName("The answer of the run whose lock expired is refused, and the case is reported twice")
   public void theAnswerOfTheRunWhoseLockExpiredIsRefused(
       final CapturedOutput output) {
 
@@ -881,104 +858,111 @@ public class Camunda8CockpitIT {
         "this build activates its jobs without a lease, so the cluster takes the answer of whichever run sends one first");
 
     waitingWorkflowService.forgetWhatWasReported();
-    final var aggregate = aStartedWaitingWorkflowWhoseReportIsHeld("Leonie");
-    // the report of the started case is inside the details provider now, and the lock of its
-    // listener job is running out under it
-    waitingWorkflowService.awaitTheHeldReport();
+    final var aggregate = aStartedWaitingWorkflowWhoseReportsAreHeld("Leonie");
+    try {
+      // the report of the started case is inside the details provider now, and the lock of its
+      // listener job is running out under it
+      awaitHeldReports(1, "the details provider to reach the held call");
 
-    // the second activation is this test's own rather than a redelivery. What is under test is
-    // the ORDER of the two answers, and a redelivery cannot carry that order. On the preview
-    // line this test runs on, the held run sits in the handler of the very worker the job came
-    // from, which is the one place the job does not show up again; a repaired client does hand
-    // it back there, but then the moment belongs to the cluster (see decision 13). The cluster
-    // hands the job out again about a second after the lock ran out, measured by story 1346.
-    // So the test takes the job the way another worker would
-    final var takenOver = theListenerJobHandedOutAgain();
-    assertNotNull(
-        Camunda8JobLease.tokenOf(takenOver),
-        "the activation which holds the listener job now carries a token of its own");
+      // the second run needs nobody but this application. A client of this line keeps asking for
+      // jobs while a handler of the same worker runs, so the worker which holds the listener job
+      // is the one the cluster serves when the lock runs out. That run is held as well, which is
+      // what the first run needs: the cluster refuses its answer BECAUSE another activation holds
+      // the job, and a job nobody holds any more is a different answer
+      awaitHeldReports(
+          2,
+          "the worker to be handed its own listener job again, which happens once the lock of the first run ran out");
+      final var jobKey = theJobTheHeldReportsAreAbout();
 
-    waitingWorkflowService.letTheHeldReportAnswer();
+      waitingWorkflowService.letTheOldestHeldReportAnswer();
 
-    // the held run answers a job somebody else holds now. The lease is what makes the cluster
-    // say so, and the adapter's protocol drops that answer instead of failing the job
-    awaitValue(
-        () -> aLineAboutTheJobSays(output, takenOver.getKey(), "another activation holds the job")
-            ? Boolean.TRUE
-            : null,
-        () -> "the cluster to refuse the answer of the run whose lock had expired. The log so far: "
-            + logOf(output));
+      // the run whose lock expired answers a job the newer run holds now. The lease is what makes
+      // the cluster say so, and the adapter's protocol drops that answer instead of failing the job
+      awaitValue(
+          () -> aLineAboutTheJobSays(output, jobKey, "another activation holds the job")
+              ? Boolean.TRUE
+              : null,
+          () -> "the cluster to refuse the answer of the run whose lock had expired. The log so far: "
+              + logOf(output));
 
-    // the one thing which must not happen: the refused answer turning into a failure. The
-    // listeners of this extension carry no retries, so a failure IS the incident, and it would
-    // be an incident about a report which was written and is fine. See decision 13 in the
-    // repository's DECISIONS.md
-    assertFalse(
-        aLineAboutTheJobSays(output, takenOver.getKey(), "failing the job"),
-        "the refused answer was reported to the cluster as a failure of the job");
+      // the one thing which must not happen: the refused answer turning into a failure. The
+      // listeners of this extension carry no retries, so a failure IS the incident, and it would
+      // be an incident about a report which was written and is fine. See decision 13 in the
+      // repository's DECISIONS.md
+      assertFalse(
+          aLineAboutTheJobSays(output, jobKey, "failing the job"),
+          "the refused answer was reported to the cluster as a failure of the job");
 
-    // and the report itself went out. It was written before the answer was sent, so the case
-    // reaches the cockpit although the cluster refused the run which reported it
-    final var workflowId = workflowIdOf(WaitingWorkflowService.BPMN_PROCESS_ID, aggregate.getId());
-    assertNotNull(
-        CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Leonie\""));
-    assertEquals(
-        1,
-        waitingWorkflowService.reportsBuilt(),
-        "the report was built by the held run and by nobody else in this test");
+      // and the report itself went out. It was written before the answer was sent, so the case
+      // reaches the cockpit although the cluster refused the run which reported it
+      final var workflowId = workflowIdOf(WaitingWorkflowService.BPMN_PROCESS_ID, aggregate.getId());
+      assertNotNull(
+          CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Leonie\""));
 
-    // the activation which holds the job answers, and that is what the workflow goes on with
-    Camunda8JobLease
-        .withToken(
-            client().newCompleteCommand(takenOver.getKey()),
-            Camunda8JobLease.tokenOf(takenOver))
-        .send()
-        .join();
-    CockpitServer.awaitQuiet();
-    assertFalse(
-        client()
-            .newProcessInstanceGetRequest(Long.parseLong(workflowId))
-            .send()
-            .join()
-            .getHasIncident(),
-        "the workflow whose listener job was answered twice carries an incident");
+      // the newer run answers, and that is what the workflow goes on with
+      waitingWorkflowService.letTheOldestHeldReportAnswer();
+      awaitValue(
+          () -> waitingWorkflowService.reportsBuilt() == 2
+              ? Boolean.TRUE
+              : null,
+          () -> "the report of the case to have been built twice, once by the run whose lock expired and once by the run which was handed the job again. It was built %d time(s)"
+              .formatted(Integer.valueOf(waitingWorkflowService.reportsBuilt())));
+      CockpitServer.awaitQuiet();
+      assertFalse(
+          client()
+              .newProcessInstanceGetRequest(Long.parseLong(workflowId))
+              .send()
+              .join()
+              .getHasIncident(),
+          "the workflow whose listener job was answered twice carries an incident");
+    } finally {
+      // a report still waiting would give up minutes from here and fail its job, which would be
+      // an incident in the middle of another test
+      waitingWorkflowService.stopHoldingReports();
+    }
 
   }
 
   /**
-   * The listener job of the started waiting case, activated once more and with a lease.
-   * <p>
-   * With a lease, because a job which was leased once is handed to nobody who does not lease.
-   * With a long timeout, so that the run holding it keeps it until this test answers.
+   * Waits until this many reports of the held case wait inside the details provider.
    *
-   * @return The job, as another worker would receive it
+   * @param count How many reports have to be waiting
+   * @param what What a failure says is missing
    */
-  private ActivatedJob theListenerJobHandedOutAgain() {
+  private void awaitHeldReports(
+      final int count,
+      final String what) {
 
-    final var jobType = Camunda8CockpitListeners
-        .listenerTypeOf(
-            "%s__%s".formatted(MODULE_ID, WaitingWorkflowService.BPMN_PROCESS_ID));
-    return awaitValue(
-        () -> Camunda8JobLease
-            .leaseTheActivation(
-                client()
-                    .newActivateJobsCommand()
-                    .jobType(jobType)
-                    .maxJobsToActivate(1)
-                    .timeout(Duration.ofMinutes(5))
-                    .workerName("the-pod-which-took-over"))
-            .requestTimeout(Duration.ofSeconds(2))
-            .send()
-            .join()
-            .getJobs()
-            .stream()
-            .findFirst()
-            .orElse(null),
-        () -> "the listener job of type '%s' to be handed out a second time, which happens once the lock of the first run ran out"
-            .formatted(jobType),
-        // shorter than the usual wait on this cluster, and it has to be: the run holding the
-        // report gives up after three minutes, and this test has to answer before that
+    awaitValue(
+        () -> waitingWorkflowService.reportsHeld() >= count
+            ? Boolean.TRUE
+            : null,
+        () -> what,
+        // shorter than the usual wait on this cluster, and it has to be: a held run gives up
+        // after three minutes, and this test has to let it answer before that
         Duration.ofMinutes(2));
+
+  }
+
+  /**
+   * The listener job the waiting reports of the held case are about.
+   * <p>
+   * The job key is read off the reports themselves, because this test activates nothing: the
+   * cockpit names a workflow event by the key of the listener job the report was built in, and
+   * the details provider is handed that name. Two reports naming one key are the one job, handed
+   * out to this application a second time.
+   *
+   * @return The key both waiting reports carry
+   */
+  private long theJobTheHeldReportsAreAbout() {
+
+    final var eventIds = waitingWorkflowService.eventIdsOfTheHeldReports();
+    assertEquals(
+        1,
+        Set.copyOf(eventIds).size(),
+        "the waiting reports are about one listener job which was handed out twice, and they name "
+            + eventIds);
+    return Long.parseLong(eventIds.get(0));
 
   }
 
@@ -993,7 +977,7 @@ public class Camunda8CockpitIT {
   }
 
   /**
-   * Starts a waiting workflow whose report of the start is held inside its listener job.
+   * Starts a waiting workflow whose reports are held inside the listener jobs which build them.
    * <p>
    * The hold is armed while the starting transaction is still open, for the reason
    * {@link #aStartedWorkflowWhoseDetailsProviderIsHeld(String)} gives: the workflow reaches the
@@ -1002,7 +986,7 @@ public class Camunda8CockpitIT {
    * @param customer What the case is about
    * @return The started case
    */
-  private WaitingAggregate aStartedWaitingWorkflowWhoseReportIsHeld(
+  private WaitingAggregate aStartedWaitingWorkflowWhoseReportsAreHeld(
       final String customer) {
 
     return transactions
@@ -1010,7 +994,7 @@ public class Camunda8CockpitIT {
           final var fresh = new WaitingAggregate();
           fresh.setCustomer(customer);
           final var started = waitingWorkflowService.processes().startWorkflow(fresh);
-          waitingWorkflowService.holdTheNextReportOf(started.getId());
+          waitingWorkflowService.holdTheReportsOf(started.getId());
           return started;
         });
 
