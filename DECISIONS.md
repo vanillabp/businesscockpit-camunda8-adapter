@@ -751,18 +751,23 @@ VanillaBP now writes down the key of a workflow when it starts it, and
 `WorkflowElection#workflowIdOf` reads that note. It asks no BPMS, waits for nothing and throws
 nothing. The bridge asks it first.
 
-A key means VanillaBP started exactly this workflow. `workflowsOfAggregate` names the workflow by that
-key and does not search. It reads the workflow by its key once, for the version, because the version
-picks between details providers. If the storage does not hold the workflow yet, the reference carries
-no version. That is expected right after a start, so it is no warning.
+A key means VanillaBP started exactly this workflow. `workflowsOfAggregate` reads that one workflow
+by its key and does not search. The read is needed for the version, because the version picks the
+application's details provider for the report.
 
-`prefilledWorkflowDetails` reads the workflow by its key, as before. If the storage holds no record of
-it, and VanillaBP wrote down that very key for the aggregate, the missing record is the exporter
-running behind. The report then goes out with what is known without the record. The business id is the
-aggregate's id, as on every other way (decision 8). The process name is the one the wiring read out of
-the model. The version stays empty, so a details provider which names no version serves the report.
-That is the same rule which already holds for a record whose process definition the storage has not
-written yet.
+If the storage does not hold the workflow yet, the change is NOT reported. Only the storage knows the
+version a workflow runs on. A report without it is served by a details provider which names no
+version, and an application whose providers all name one gets a report without details. The cockpit
+replaces what it shows with that report, so the customer it showed is gone. A first version of this
+entry sent such a report, and on cluster 8.8 it arrived with `"details":{}` while the case held its
+customer. A report the cockpit never gets leaves the old details in place, which is the smaller harm.
+The log says it with a warning of its own: VanillaBP started the workflow, so the exporter running
+behind is the one reading left. A change reported once the storage holds the workflow reaches the
+cockpit.
+
+So the key does not yet make a report possible while the exporter is behind. That needs the version
+from somewhere else than the storage. The platform's note of the start would be the place, because
+Camunda 8 answers the create command with the version, but the note carries no version today.
 
 An empty answer covers every case where VanillaBP does not know. Nobody started the workflow, it
 started before VanillaBP wrote such notes, the note is older than
@@ -800,6 +805,7 @@ existed, because the engine forgets an instance which ended.
 
 Decision 8 says that the bridge searches the storage for the tasks and the workflows of a case
 whenever the application asks. For a workflow whose key VanillaBP wrote down that no longer holds:
-the key is taken and nothing is searched. The rest of decision 8 stands, the empty result with a line
-naming both readings included. So decision 8 is narrowed by this entry and not replaced, and its
+the workflow is read by that key and nothing is searched. The rest of decision 8 stands. An empty
+result still comes with a line in the log, which names the one reading left where VanillaBP knows the
+key and both readings everywhere else. So decision 8 is narrowed by this entry and not replaced, and its
 headline says so.

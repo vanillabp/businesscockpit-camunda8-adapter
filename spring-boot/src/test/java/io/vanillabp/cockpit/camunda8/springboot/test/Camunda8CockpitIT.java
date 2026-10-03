@@ -1135,8 +1135,8 @@ public class Camunda8CockpitIT {
   }
 
   @Test
-  @DisplayName("A change reported right after the start reaches the cockpit under the key VanillaBP wrote down")
-  public void aggregateChangedRightAfterTheStartUpdatesTheWorkflow() {
+  @DisplayName("A change reported right after the start reaches the cockpit complete or not at all")
+  public void aggregateChangedRightAfterTheStartIsNeverReportedWithoutItsVersion() {
 
     final var aggregate = aStartedWorkflow("Ida");
     // VanillaBP writes the key down once phase two started the workflow. Nothing here waits for
@@ -1154,8 +1154,22 @@ public class Camunda8CockpitIT {
           attached.setCustomer("Ida the second");
           workflowService.businessCockpit().aggregateChanged(attached);
         });
+    CockpitServer.awaitQuiet();
 
-    awaitReportCarrying("/workflow/%s/updated".formatted(workflowId), "Ida the second", aggregate);
+    // whether the storage had written the workflow by then is a race this test does not decide,
+    // and both outcomes are legal. Where it had, the change is reported. Where it had not, the
+    // change is not reported at all, because only the storage knows the version, and every
+    // details provider of this application names a version. A report without it would carry no
+    // details, and the cockpit would replace the customer it shows with nothing. On cluster 8.8
+    // that report went out once, which is what this test is here for
+    CockpitServer
+        .matching("/workflow/%s/updated".formatted(workflowId))
+        .forEach(updated -> {
+          assertTrue(
+              Pattern.compile("\"bpmnProcessVersion\"\\s*:\\s*\"[^\"]+\"").matcher(updated.body()).find(),
+              updated.body());
+          assertTrue(updated.body().contains("Ida the second"), updated.body());
+        });
     // the key VanillaBP wrote down is the one the cluster knows the workflow by
     assertEquals(workflowIdOf(aggregate), workflowId);
 

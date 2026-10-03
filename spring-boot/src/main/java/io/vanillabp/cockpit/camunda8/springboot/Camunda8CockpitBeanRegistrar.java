@@ -7,7 +7,6 @@ import org.springframework.core.env.Environment;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
-import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.integration.adapter.AdapterBeanRegistrarSupport;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
@@ -52,8 +51,7 @@ public class Camunda8CockpitBeanRegistrar implements BeanRegistrar {
                                 supplierContext
                                     .bean(Camunda8Clients.class)
                                     .of(adapterId), supplierContext.bean(WorkflowTaskWiring.class), supplierContext
-                                        .bean(WorkflowElection.class), supplierContext
-                                            .bean(Camunda8CockpitDeployments.class)))));
+                                        .bean(WorkflowElection.class)))));
 
   }
 

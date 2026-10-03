@@ -151,7 +151,6 @@ public class Camunda8CockpitProducer {
    * @param properties VanillaBP's resolved configuration, which names the configured adapters
    * @param workflowTaskWiring VanillaBP's registry
    * @param election VanillaBP's election, which knows the key of a workflow it started
-   * @param deployments What this extension read out of the models while wiring them
    * @return One bridge per configured Camunda 8 adapter id
    */
   @Produces
@@ -161,15 +160,14 @@ public class Camunda8CockpitProducer {
       final Camunda8Clients clients,
       final MigrationAdapterProperties properties,
       final WorkflowTaskWiring workflowTaskWiring,
-      final WorkflowElection election,
-      final Camunda8CockpitDeployments deployments) {
+      final WorkflowElection election) {
 
     return properties
         .adapterIdsOfType(Camunda8DeploymentService.ADAPTER_TYPE)
         .stream()
         .<BusinessCockpitBpmsBridge>map(
             adapterId -> new Camunda8CockpitBridge(
-                clients.of(adapterId), workflowTaskWiring, election, deployments))
+                clients.of(adapterId), workflowTaskWiring, election))
         .toList();
 
   }
