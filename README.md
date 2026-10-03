@@ -125,8 +125,8 @@ says why under "How long a line lives".
 
 The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
 Camunda offers, and they move when that repository moves. A cluster version appears in the last
-column only once a build of that line has been proven against it. Every line runs every test it
-has, bar one on 8.10, and a few paragraphs below say which one and why.
+column only once a build of that line has been proven against it, and every line runs every test
+it has.
 
 The integration tests do not start the cluster this POM pins. The image comes from
 `camunda8-adapter-test-support`: the Camunda 8 adapter filters its own pin into
@@ -153,28 +153,31 @@ GA line it also gets a red check. That check is `client-api-changes.yaml` of
 `vanillabp/camunda8-adapter`, called from `.github/workflows/client-api-changes.yaml` here, so both
 repositories answer the same way.
 
-Line 8.10 left nineteen of its thirty integration tests out until 2026-10-01, and one of them is
-still out. The REST gateway of the 8.10 pre-releases threw a `NullPointerException` while it
+Line 8.10 left nineteen of its thirty integration tests out until 2026-10-01, and it leaves none
+out now. The REST gateway of the 8.10 pre-releases threw a `NullPointerException` while it
 converted a task listener job whose event carries no user task action, and it dropped the whole
 activate-jobs batch with it (`camunda/camunda#58193`). The two events without an action are
 `creating` and `canceling`, so a Camunda-managed user task was never finished being created there.
-Those tests carried the tag `user-task-listener-jobs` and the `line-8.10` profile excluded it.
-Camunda closed the defect for `8.10.0`, the line was run once without the exclusion to see it, and
-the tag went away with the exclusion. The line runs twenty-nine of its thirty integration tests now
-instead of eleven.
+Eighteen of those tests carried the tag `user-task-listener-jobs` and the `line-8.10` profile
+excluded it. Camunda closed the defect for `8.10.0`, the line was run once without the exclusion to
+see it, and the tag went away with the exclusion.
 
-What stayed is one test and one tag, `jobs-handed-out-again`. It needs the cluster to offer a
-listener job whose lock ran out to a second activation, and `camunda/camunda:8.10.0` does not: three
-runs on 2026-10-01 failed on it, twice after waiting about 122 seconds and once in a socket timeout
-of the client, and the cluster log said nothing at all about the job. The old defect explained that
-symptom and no longer does, because the log carries none of its NullPointerExceptions any more. The
-cause is open, and the `line-8.10` profile says what the two candidates are. The lease of an
-activation exists on this line alone, so no other line can answer it.
+The nineteenth test carried the tag `jobs-handed-out-again`, and that tag went on 2026-10-03. The
+reason written here for it was wrong, and the measurement which replaced it says the opposite. The
+cluster does hand a job whose lock ran out to a second activation, within a second of the lock. On
+`8.10.0` it hands it back to the worker which already holds it, because a client of that release
+keeps asking for jobs while a handler of the same worker runs, which Camunda fixed in it
+(`SUPPORT-34723`). So the test lost a race it had written for itself: it activated the job from
+outside and waited for a turn the holding worker never gave it. It needs no second participant now.
+The worker of this extension is handed its own listener job again, the run whose lock expired
+answers after that, and the cluster refuses that answer. That refusal is what
+[decision 13](./DECISIONS.md) rests on, and it is unchanged. The test skips itself on 8.8 and on
+8.9, where neither the cluster nor the client has a lease.
 
 Which tags a line leaves out is the property `camunda8.line.excluded-test-tags`, which surefire and
 failsafe both read. It is a property and not a setting inside a line profile, because a build
 without a profile is the current GA line and would otherwise run a test the line itself leaves
-out.
+out. No line leaves a test out today, and the property stays empty everywhere until one does.
 
 Snapshots have no suffix. Until the first release they are `0.9.0-SNAPSHOT` of the current GA line,
 which is what a build without a profile produces, and every line still reads the same
