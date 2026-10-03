@@ -132,7 +132,7 @@ This is the shape every later gap of this kind takes. The per-line source direct
 line finds something out, never what it then reports. A line which cannot answer at all is what would
 end a line, and a field which arrived one minor later is not that.
 
-## 8. A report is built from the listener job, and the searchable storage answers what is true now
+## 8. A report is built from the listener job, and the searchable storage answers what is true now - narrowed by decision 19, which takes the key VanillaBP wrote down at the start
 
 The Business Cockpit builds a report at the moment of the event and lets it travel with its outbox
 entry (decision 26 in the DECISIONS.md of vanillabp/business-cockpit). On Camunda 8 that moment is
@@ -737,3 +737,69 @@ cites a decision number for it:
 - `quarkus/deployment/src/test/java/io/vanillabp/cockpit/camunda8/quarkus/it/TestAggregate.java`,
   class javadoc and the javadoc of `signers`
 
+## 19. The key of a workflow comes from VanillaBP before the storage is searched
+
+Decided on 2026-10-03, while story 1326 was built.
+
+`BusinessCockpitService.aggregateChanged` names a case by its aggregate id. The bridge needs the key
+of the workflow for the report. Until now it searched the cluster's searchable storage by the
+aggregate id variable. That storage is written by an exporter which runs behind the engine. So a
+change reported right after a start, from the first service task of a workflow for example, found
+nothing, and the report was dropped with a warning.
+
+VanillaBP now writes down the key of a workflow when it starts it, and
+`WorkflowElection#workflowIdOf` reads that note. It asks no BPMS, waits for nothing and throws
+nothing. The bridge asks it first.
+
+A key means VanillaBP started exactly this workflow. `workflowsOfAggregate` names the workflow by that
+key and does not search. It reads the workflow by its key once, for the version, because the version
+picks between details providers. If the storage does not hold the workflow yet, the reference carries
+no version. That is expected right after a start, so it is no warning.
+
+`prefilledWorkflowDetails` reads the workflow by its key, as before. If the storage holds no record of
+it, and VanillaBP wrote down that very key for the aggregate, the missing record is the exporter
+running behind. The report then goes out with what is known without the record. The business id is the
+aggregate's id, as on every other way (decision 8). The process name is the one the wiring read out of
+the model. The version stays empty, so a details provider which names no version serves the report.
+That is the same rule which already holds for a record whose process definition the storage has not
+written yet.
+
+An empty answer covers every case where VanillaBP does not know. Nobody started the workflow, it
+started before VanillaBP wrote such notes, the note is older than
+`vanillabp.delivery.workflow-start-retention`, the process does not belong to this application. These
+cannot be told apart, so the bridge reads nothing into an empty answer. It searches the storage the way
+it always did and says both readings in the log when that finds nothing. A key which is not a number is
+no key of this cluster, and it is treated like an empty answer.
+
+A key says what was true at the start. It does not say that the workflow still runs. The bridge uses it
+to name the workflow in a report and never sends it to the cluster as a command.
+
+`userTasksOfAggregate` and `userTaskOfAggregate` still search. The key of a workflow names no task, and
+a task the storage has not written yet cannot be found by any key VanillaBP holds.
+
+Camunda 8.10 can assign a business id to a running process instance, and sending the same id again is
+documented as a no-op the broker answers itself. That looked like a way to check a workflow without the
+storage. It replaces none of the three places where the cockpit waited for the storage, as they stood
+on 2026-09-19:
+
+1. `workflowsOfAggregate` and `userTasksOfAggregate` search by aggregate id. Their input is the
+   aggregate id, not a key. The command needs the key of the instance, which is exactly what the
+   search looks for. The note VanillaBP writes at the start answers this place for workflows.
+2. `prefilledUserTaskDetails` and `prefilledWorkflowDetails` read a record while a report is built.
+   They need values, such as the assignee or the version, and not a yes or a no. For a case which just
+   ended the broker answers `404` while the storage still holds the record. Since decision 8 a report
+   of an event is built from its listener job, so these reads only serve `aggregateChanged` and
+   `getUserTask`.
+3. On line 8.8 `Camunda8CallHierarchy` waits inside the listener job for the storage to name the root
+   of a called process, for up to `workflow-visibility-timeout`. It needs the root key, which the
+   no-op does not give. Lines 8.9 and 8.10 read the root from the job.
+
+Two more facts against it. The platform assigns no business id when it starts an instance, so the
+first call would be an assignment and not a no-op. And a `404` does not mean that an instance never
+existed, because the engine forgets an instance which ended.
+
+Decision 8 says that the bridge searches the storage for the tasks and the workflows of a case
+whenever the application asks. For a workflow whose key VanillaBP wrote down that no longer holds:
+the key is taken and nothing is searched. The rest of decision 8 stands, the empty result with a line
+naming both readings included. So decision 8 is narrowed by this entry and not replaced, and its
+headline says so.
