@@ -49,6 +49,7 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.cockpit.extension.test.support.CockpitServer;
+import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 import io.vanillabp.integration.test.utils.CapturedOutput;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
@@ -137,6 +138,10 @@ public class Camunda8CockpitIT {
 
   @Autowired
   private DetailsProviderGate gate;
+
+  /** VanillaBP's election, which says what key it wrote down when it started a workflow. */
+  @Autowired
+  private WorkflowElection election;
 
   /**
    * What the cockpit's neutral half asks about this cluster. One is registered per configured
@@ -1126,6 +1131,33 @@ public class Camunda8CockpitIT {
     // what keeps that dispatch from writing the older reading back
     awaitReportCarrying(
         "/workflow/%s/updated".formatted(workflowId), "Emil the second", aggregate);
+
+  }
+
+  @Test
+  @DisplayName("A change reported right after the start reaches the cockpit under the key VanillaBP wrote down")
+  public void aggregateChangedRightAfterTheStartUpdatesTheWorkflow() {
+
+    final var aggregate = aStartedWorkflow("Ida");
+    // VanillaBP writes the key down once phase two started the workflow. Nothing here waits for
+    // the cluster's searchable storage, so the change below is reported while the exporter may
+    // still be behind, which is what a first service task of a workflow sees
+    final var workflowId = awaitValue(
+        () -> election
+            .workflowIdOf(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, aggregate.getId())
+            .orElse(null),
+        "the key VanillaBP wrote down for aggregate %s".formatted(aggregate.getId()));
+
+    changeTheCase(
+        aggregate.getId(),
+        attached -> {
+          attached.setCustomer("Ida the second");
+          workflowService.businessCockpit().aggregateChanged(attached);
+        });
+
+    awaitReportCarrying("/workflow/%s/updated".formatted(workflowId), "Ida the second", aggregate);
+    // the key VanillaBP wrote down is the one the cluster knows the workflow by
+    assertEquals(workflowIdOf(aggregate), workflowId);
 
   }
 

@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 import org.junit.jupiter.api.AfterEach;
@@ -37,11 +38,14 @@ import io.camunda.client.api.search.response.UserTask;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
+import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
+import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidance;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidanceSupport;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
+import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -66,6 +70,15 @@ public class Camunda8CockpitBridgeTest {
       Camunda8ClientFactoryRegistry.class, RETURNS_DEEP_STUBS);
 
   private final WorkflowTaskWiring workflowTaskWiring = mock(WorkflowTaskWiring.class);
+
+  /**
+   * What VanillaBP wrote down when it started a workflow. Unless a test says otherwise it knows
+   * nothing, which is the answer for every workflow started before VanillaBP wrote such notes.
+   */
+  private final WorkflowElection election = mock(WorkflowElection.class);
+
+  /** What the wiring read out of the models, which names the process for a report. */
+  private final Camunda8CockpitDeployments deployments = new Camunda8CockpitDeployments();
 
   /**
    * How the cluster of this test spells what the application wrote: the workflow module runs
@@ -136,7 +149,7 @@ public class Camunda8CockpitBridgeTest {
   private Camunda8CockpitBridge bridge() {
 
     final var clients = new Camunda8Clients(clientFactories, null);
-    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring);
+    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring, election, deployments);
 
   }
 
@@ -176,7 +189,7 @@ public class Camunda8CockpitBridgeTest {
     // bridge makes, because a second call would replace the first rather than add to it
     clearInvocations(search);
     final var clients = new Camunda8Clients(clientFactories, scoping);
-    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring);
+    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring, election, deployments);
 
   }
 
@@ -200,7 +213,7 @@ public class Camunda8CockpitBridgeTest {
     when(search.send().join().items()).thenReturn(found);
     clearInvocations(search);
     final var clients = new Camunda8Clients(clientFactories, scoping);
-    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring);
+    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring, election, deployments);
 
   }
 
@@ -508,6 +521,137 @@ public class Camunda8CockpitBridgeTest {
     bridgeOfAScopedModule().workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
 
     verify(theFilterOfTheSearch()).tenantId(MODULE_ID);
+
+  }
+
+  /**
+   * The cluster's searchable storage, asked by key for the workflow of this test, holds no record
+   * of it yet. That is how a workflow looks a moment after it started.
+   */
+  private void theStorageHasNotWrittenTheWorkflowYet() {
+
+    when(
+        clientFactories
+            .getFactory("c8")
+            .getClient()
+            .newProcessInstanceGetRequest(Long.parseLong(CALLING_INSTANCE))
+            .send()
+            .join())
+        .thenThrow(new ClientHttpException(404, "Not Found"));
+
+  }
+
+  /** VanillaBP wrote down the key of the workflow of this test when it started it. */
+  private void vanillaBpStartedTheWorkflow(
+      final String workflowId) {
+
+    when(election.workflowIdOf(MODULE_ID, PROCESS_ID, AGGREGATE_ID)).thenReturn(Optional.of(workflowId));
+
+  }
+
+  @Test
+  @DisplayName("A workflow the storage has not written yet is reported by the key VanillaBP wrote down, with no search and no warning")
+  public void aWorkflowStartedAMomentAgoReachesTheCockpit() {
+
+    vanillaBpStartedTheWorkflow(CALLING_INSTANCE);
+    theStorageHasNotWrittenTheWorkflowYet();
+    deployments
+        .register(
+            "c8", MODULE_ID, new WiredListener(
+                "cockpit-listener", SCOPED_PROCESS_ID, PROCESS_ID, SCOPED_PROCESS_ID, "The cockpit process", "The cockpit process", AGGREGATE_ID_NAME));
+    final var bridge = bridge();
+
+    // what BusinessCockpitService.aggregateChanged asks, for instance from the first service task
+    // of the workflow, while the exporter has not written that workflow yet
+    final var found = bridge.workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
+
+    assertEquals(1, found.size(), found.toString());
+    assertEquals(CALLING_INSTANCE, found.getFirst().workflowId());
+    // only the record says which version the workflow runs on
+    assertNull(found.getFirst().processVersion());
+    verify(clientFactories.getFactory("c8").getClient(), never()).newProcessInstanceSearchRequest();
+
+    // and what the cockpit asks next, while it builds the report
+    final var prefill = bridge.prefilledWorkflowDetails(found.getFirst()).orElseThrow();
+
+    assertEquals(AGGREGATE_ID, prefill.businessId());
+    assertEquals("The cockpit process", prefill.bpmnProcessName());
+    assertNull(prefill.bpmnProcessVersion());
+    assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
+
+  }
+
+  @Test
+  @DisplayName("A workflow VanillaBP started is referenced with its version where the storage holds it")
+  public void aWorkflowVanillaBpStartedCarriesItsVersion() {
+
+    vanillaBpStartedTheWorkflow(CALLING_INSTANCE);
+    final var instance = aWorkflowOnVersion(3);
+    when(
+        clientFactories
+            .getFactory("c8")
+            .getClient()
+            .newProcessInstanceGetRequest(Long.parseLong(CALLING_INSTANCE))
+            .send()
+            .join())
+        .thenReturn(instance);
+
+    final var found = bridge().workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
+
+    // read by key, so the version still picks between details providers the way a search did
+    assertEquals("3", found.getFirst().processVersion());
+    assertEquals(CALLING_INSTANCE, found.getFirst().workflowId());
+    verify(clientFactories.getFactory("c8").getClient(), never()).newProcessInstanceSearchRequest();
+
+  }
+
+  @Test
+  @DisplayName("Where VanillaBP knows no key, the storage is searched and its silence is explained as before")
+  public void anUnknownKeyFallsBackToTheSearch() {
+
+    // the election's mock answers empty: never started, started before VanillaBP wrote such
+    // notes, or the note is too old. Nobody can tell these apart, so the search decides
+    final var found = bridgeOfAScopedModule()
+        .workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
+
+    assertTrue(found.isEmpty());
+    verify(theFilterOfTheSearch()).processDefinitionId(SCOPED_PROCESS_ID);
+    final var said = whatTheBridgeSaid(Level.WARN);
+    assertEquals(1, said.size(), said.toString());
+    assertTrue(said.getFirst().contains("two readings"), said.getFirst());
+
+  }
+
+  @Test
+  @DisplayName("A key no Camunda 8 cluster handed out is not taken, the storage is searched instead")
+  public void aKeyOfAnotherBpmsFallsBackToTheSearch() {
+
+    vanillaBpStartedTheWorkflow("a-camunda-7-process-instance-id");
+
+    final var found = bridgeOfAScopedModule(List.of(aWorkflowOnVersion(2)))
+        .workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
+
+    assertEquals(CALLING_INSTANCE, found.getFirst().workflowId());
+    verify(theFilterOfTheSearch()).processDefinitionId(SCOPED_PROCESS_ID);
+
+  }
+
+  @Test
+  @DisplayName("The silence of the storage about another workflow than the one written down is explained as before")
+  public void aKeyOfAnotherWorkflowDoesNotHideTheSilence() {
+
+    vanillaBpStartedTheWorkflow("2251799813685999");
+    theStorageHasNotWrittenTheWorkflowYet();
+
+    final var prefill = bridge()
+        .prefilledWorkflowDetails(
+            new WorkflowReference(
+                "c8", MODULE_ID, PROCESS_ID, "1", AGGREGATE_ID, CALLING_INSTANCE));
+
+    assertTrue(prefill.isEmpty());
+    final var said = whatTheBridgeSaid(Level.WARN);
+    assertEquals(1, said.size(), said.toString());
+    assertTrue(said.getFirst().contains("two readings"), said.getFirst());
 
   }
 

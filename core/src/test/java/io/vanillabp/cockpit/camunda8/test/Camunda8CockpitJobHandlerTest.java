@@ -43,6 +43,7 @@ import io.vanillabp.cockpit.extension.spi.UserTaskEventKind;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowEventKind;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
+import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -95,6 +96,16 @@ public class Camunda8CockpitJobHandlerTest {
   private static final int DEPLOYED_VERSION = 3;
 
   private final Camunda8CockpitDeployments deployments = new Camunda8CockpitDeployments();
+
+  /**
+   * An election which knows no workflow, so the bridge reads only what the job and the cluster
+   * say. That is what an application looks like whose workflows started before VanillaBP wrote
+   * down their keys.
+   */
+  private static final WorkflowElection NOTHING_WRITTEN_DOWN = (
+      workflowModuleId,
+      bpmnProcessId,
+      workflowAggregateId) -> ADAPTER_ID;
 
   private final RecordingPublisher publisher = new RecordingPublisher();
 
@@ -206,7 +217,8 @@ public class Camunda8CockpitJobHandlerTest {
 
     final var clients = new Camunda8Clients(clientFactories, null);
     final var asked = new RecordingPublisher(
-        new Camunda8CockpitBridge(clients.of(ADAPTER_ID), workflowTaskWiring));
+        new Camunda8CockpitBridge(
+            clients.of(ADAPTER_ID), workflowTaskWiring, NOTHING_WRITTEN_DOWN, deployments));
     handler = new Camunda8CockpitJobHandler(
         clients.of(ADAPTER_ID), MODULE_ID, deployments, () -> asked);
     return asked;
@@ -335,7 +347,8 @@ public class Camunda8CockpitJobHandlerTest {
   public void theValuesOfAnEventDoNotOutliveTheirJob() {
 
     final var clients = new Camunda8Clients(clientFactories, null);
-    final var bridge = new Camunda8CockpitBridge(clients.of(ADAPTER_ID), workflowTaskWiring);
+    final var bridge = new Camunda8CockpitBridge(
+        clients.of(ADAPTER_ID), workflowTaskWiring, NOTHING_WRITTEN_DOWN, deployments);
     handler = new Camunda8CockpitJobHandler(
         clients.of(ADAPTER_ID), MODULE_ID, deployments, () -> publisher);
 
