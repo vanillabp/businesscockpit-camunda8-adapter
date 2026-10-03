@@ -363,7 +363,7 @@ client to surefire instead, see the configuration in `core/pom.xml`.
 
 See [What an application pins itself](./README.md#what-an-application-pins-itself).
 
-## 13. The cockpit's workers lease what the adapter leases
+## 13. The cockpit's workers lease what the adapter leases - extended by decision 17, which closes the question it left open
 
 Camunda 8.10 gave a job activation a lease. A worker which asks for one gets a token with every
 job, and the cluster takes an answer to that job only from whoever holds the newest token.
@@ -587,7 +587,7 @@ reason `release-lines-issue.yaml` reads the steps of a line job as well as its c
 because the API reports that forced success too. Stephan decided this on 2026-10-01, after
 pull request 78 was red while its required check was green and could not be merged.
 
-## 16. Every line is GA, so every line counts
+## 16. Every line is GA, so every line counts - extended by decision 17, which corrects what it says about a job handed out again
 
 No line of this repository is a preview line. Camunda released `8.10.0` on 2026-09-29, so 8.8
 and 8.9 are bugfix lines, 8.10 is the current GA line and a build without a profile is that
@@ -637,3 +637,103 @@ carry, and the alternative would be a line nobody has to believe. A pre-release 
 under us and a GA release is not, which is the whole difference between the two cases.
 
 Stephan decided this on 2026-10-01, with the GA of 8.10 and the adapter's own move behind it.
+
+## 17. One worker is both runs of a job whose lock ran out
+
+A lock which runs out under a running handler gives the same job back to the worker which holds
+it. The cluster offers it about a second after the lock, and the client of 8.10.0 is asking at
+that moment, because it keeps polling while a handler of the same worker runs. So the race two
+runs have over one answer needs nobody but one application, and the newer run of the pair is the
+extension's own handler.
+
+This closes the question decision 13 left open. There was no release carrying both halves while
+that entry was written: 8.9 had the repaired client and no lease, and the 8.10 pre-releases had
+the lease and a client which went quiet. `8.10.0` carries both, Camunda fixed the client in it
+(`SUPPORT-34723`), and the answer is that the lease settles the race the same way for one worker
+as for two. The run which holds the job wins. The run whose lock expired is refused with
+`409 INVALID_STATE`, "the supplied lease token does not match", and the adapter drops that answer
+instead of failing the job.
+
+What the cluster does was never the open part. It hands a job whose lock ran out to a second
+activation within a second of the lock, with a lease and without one. An earlier version of
+decision 13 said it does not, and story `1346` already corrected that. What stayed wrong was the
+sentence about the holding worker being the one place the job does not come back. That was a
+client which had stopped asking, and it is gone.
+
+The test is built on this and needs no second participant. It holds the report of a started case
+inside its listener job, waits for the worker to be handed that same job again, and holds the
+second report too. Then it lets the first one answer: the log says another activation holds the
+job, nothing says the job was failed, the case reaches the cockpit as created, and the instance
+carries no incident once the second run answers. The report of that case is built twice, once per
+run, which is what the hold lets happen on purpose.
+
+The job key comes out of the reports rather than out of an activation. The cockpit names a
+workflow event by the key of the listener job the report was built in, so a details provider is
+handed that name. Two held reports naming one key are one job which was handed out twice, and
+that is the proof the test used to buy with an activation of its own.
+
+Line 8.10 therefore leaves no test out, and no line of this repository does. The property
+`camunda8.line.excluded-test-tags` is empty everywhere and stays, because the next line which
+needs an exclusion needs it in three places at once. The test skips itself on 8.8 and on 8.9
+through its assumption about the lease, which is unchanged.
+
+Measured on 2026-10-01 in six cluster runs against `camunda/camunda:8.10.0`, one of them a pair
+which changed nothing but the client: with `8.10.0` the holding worker had the job back after
+5798 ms, with `8.10.0-alpha5` an outsider took it after 5243 ms.
+
+## 18. The test application sends the BPMS only what a model reads
+
+Story 1389 made this repository build again by declaring aggregate values under
+`declared-aggregate-values`: the `signers` list and the JPA `version` counter of the Spring Boot
+test aggregate, and `signers` alone in the Quarkus one. A declaration says that somebody looked at
+a value and knows what their BPMS makes of it. Here there was nothing to look at, because no model
+of this repository reads a value of the aggregate at all.
+
+Measured on 2026-10-03 against `origin/main`. The repository holds six BPMN models and no DMN
+model. A search for `conditionExpression`, `zeebe:input`, `zeebe:output`, `zeebe:ioMapping` and
+`zeebe:calledDecision` answers nothing, and so does a search for `loopCharacteristics`,
+`inputCollection`, `inputElement` and `signers`. What the models do carry is `zeebe:userTask`,
+`zeebe:formDefinition` and, in `calling-process.bpmn`, a `zeebe:calledElement` with
+`propagateAllParentVariables="true"`. There is no condition and no mapping anywhere in them.
+Zero of six models read a value.
+
+So the values are held back instead of declared. `version` and `signers` of the Spring Boot
+aggregate and `signers` of the Quarkus aggregate carry `@NoSyncWithBPMS`, and the three
+`declared-aggregate-values` blocks are gone. The counter belongs to the persistence of the test
+application, the signers belong to the case it keeps, and the BPMS has nothing to do with either.
+A test application gets read as an example, so what it shares should be what an application would
+share.
+
+The question is asked per repository, because the models differ. In
+`businesscockpit-camunda7-adapter` a multi-instance task reads `signers` through
+`camunda:collection="${signers}"`, in the Spring Boot model and in the Quarkus one, so the
+declaration is the right answer there and only `version` is held back. In
+`businesscockpit-process-engine-api-adapter` no model reads a value either, and nothing had to
+change: that repository declares nothing, and its `version` already carries the annotation.
+
+Two things stay as they are. The customer of the test aggregate still travels, so that the test
+application also shows a workflow which shares everything it has. And `allow-full-sync-with-bpms`
+stays on `CockpitProcess`, although the permission has no effect there any more: `FullSyncCheck`
+returns as soon as the aggregate holds something back, so the startup runs with the line and
+without it. The other workflows of the test application need their own line, because the
+permission is not inherited, and one switch fewer in a test proves nothing. The same line is
+without effect in the PEA test application since 1389, for the same reason, and it stays there for
+the same reason.
+
+One question is left for Stephan. Following the rule all the way would keep the customer out of
+the BPMS as well, and then the annotation belongs on the class. The test application would stop
+showing the full sync case, and six workflows carry the permission for it, which looks like
+intent rather than an oversight.
+
+Decided while story 1391 was built, on 2026-10-03.
+
+Where this is referred to, each in its own words rather than by number:
+
+The reasoning is written in its own words where a reader meets it, so no source, test or document
+cites a decision number for it:
+
+- `spring-boot/src/test/java/io/vanillabp/cockpit/camunda8/springboot/test/TestAggregate.java`,
+  class javadoc and the javadoc of `version` and `signers`
+- `quarkus/deployment/src/test/java/io/vanillabp/cockpit/camunda8/quarkus/it/TestAggregate.java`,
+  class javadoc and the javadoc of `signers`
+
