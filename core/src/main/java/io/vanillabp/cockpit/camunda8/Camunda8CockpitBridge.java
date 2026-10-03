@@ -20,6 +20,7 @@ import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowDetailsPrefill;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
+import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 
 /**
  * What one configured Camunda 8 cluster answers the Business Cockpit.
@@ -46,6 +47,19 @@ import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
  * asks for, and no caller may read the end of a task into it. An end reaches the cockpit through
  * this extension's own listeners.
  * <p>
+ * <b>Which workflow a case is.</b> VanillaBP writes down the key of a workflow when it starts it,
+ * and {@link WorkflowElection#workflowIdOf} reads that note without asking any BPMS. Where it
+ * answers, the bridge reads that one workflow by its key instead of searching the storage by the
+ * aggregate's id. An empty answer means that VanillaBP does not know, for one of several reasons
+ * nobody can tell apart. So nothing is read into it, and the bridge searches the storage the way
+ * it always did.
+ * <p>
+ * The key does not make a report possible while the storage has not written the workflow yet.
+ * A report needs the version the workflow runs on, because the version picks the application's
+ * details provider, and only the storage knows it. A report without it would be served by the
+ * wrong provider, or by none, and the cockpit would replace the details it shows with that. So a
+ * workflow the storage does not hold yet is not reported, and the log says why.
+ * <p>
  * One bridge serves one adapter id, because during a migration each cluster holds workflows of
  * its own and the cockpit addresses a workflow by the cluster holding it.
  */
@@ -57,17 +71,23 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
 
   private final WorkflowTaskWiring workflowTaskWiring;
 
+  private final WorkflowElection election;
+
   /**
    * @param cluster The cluster this bridge reads
    * @param workflowTaskWiring VanillaBP's registry, which names the workflow aggregate's id
    *          variable of a BPMN process
+   * @param election VanillaBP's election, asked only for the key it wrote down when a workflow
+   *          started
    */
   public Camunda8CockpitBridge(
       final Camunda8Clients.Cluster cluster,
-      final WorkflowTaskWiring workflowTaskWiring) {
+      final WorkflowTaskWiring workflowTaskWiring,
+      final WorkflowElection election) {
 
     this.cluster = cluster;
     this.workflowTaskWiring = workflowTaskWiring;
+    this.election = election;
 
   }
 
@@ -197,6 +217,17 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       final String bpmnProcessId,
       final String workflowAggregateId) {
 
+    // the key VanillaBP wrote down when it started the workflow comes first, so the workflow is
+    // read by its key and not searched for by the aggregate's id
+    final var started = startedByVanillaBp(workflowModuleId, bpmnProcessId, workflowAggregateId)
+        .flatMap(this::workflowKeyOf);
+    if (started.isPresent()) {
+      return aWorkflowVanillaBpStarted(
+          workflowModuleId, bpmnProcessId, workflowAggregateId, started.get())
+          .stream()
+          .toList();
+    }
+
     final var found = searchWorkflows(workflowModuleId, bpmnProcessId, workflowAggregateId);
     if (found.isEmpty()) {
       sayTheStorageHoldsNoRecord("workflow", workflowModuleId, bpmnProcessId, workflowAggregateId);
@@ -315,6 +346,91 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
           .debug(
               "Camunda8[{}]: '{}' is not a Camunda 8 user-task key, so this cluster holds no such task",
               adapterId(), userTaskId, e);
+      return Optional.empty();
+    }
+
+  }
+
+  /**
+   * The key of the workflow VanillaBP started for one aggregate, as VanillaBP wrote it down.
+   * <p>
+   * The answer says what was true at the start. It does not say that the workflow still runs, so
+   * it is used to read that workflow and to name it in a report, and never sent to the cluster as
+   * a command.
+   *
+   * @return The key, or empty where VanillaBP does not know it. That covers a workflow nobody
+   *         started, one started before VanillaBP wrote such notes, one whose note is too old to
+   *         be kept, and a process this application does not serve. Nobody can tell these apart,
+   *         so nothing is read into an empty answer
+   */
+  private Optional<String> startedByVanillaBp(
+      final String workflowModuleId,
+      final String bpmnProcessId,
+      final String workflowAggregateId) {
+
+    return election.workflowIdOf(workflowModuleId, bpmnProcessId, workflowAggregateId);
+
+  }
+
+  /**
+   * The key Camunda 8 would know a workflow by, read off the id VanillaBP wrote down.
+   *
+   * @param workflowId The id VanillaBP wrote down
+   * @return The key, or empty where that id is no key of this BPMS. During a migration the id
+   *         may come from another BPMS, and then the search decides
+   */
+  private Optional<Long> workflowKeyOf(
+      final String workflowId) {
+
+    try {
+      return Optional.of(Long.valueOf(workflowId));
+    } catch (final NumberFormatException e) {
+      logger
+          .debug(
+              "Camunda8[{}]: '{}' is not a Camunda 8 process instance key, so the storage is searched instead",
+              adapterId(), workflowId, e);
+      return Optional.empty();
+    }
+
+  }
+
+  /**
+   * The workflow VanillaBP started for one aggregate, read from the storage by its key.
+   * <p>
+   * A workflow which started a moment ago is not in the storage yet. Then it is not referenced,
+   * because the report would go out without the version, and the version is what picks the
+   * application's details provider. The log says that this is the exporter running behind,
+   * which is the one reading left when VanillaBP knows the key.
+   *
+   * @param workflowKey The key VanillaBP wrote down
+   * @return The workflow, or empty where the storage does not hold it yet
+   */
+  private Optional<WorkflowReference> aWorkflowVanillaBpStarted(
+      final String workflowModuleId,
+      final String bpmnProcessId,
+      final String workflowAggregateId,
+      final Long workflowKey) {
+
+    try {
+      final var instance = cluster
+          .client()
+          .newProcessInstanceGetRequest(workflowKey)
+          .send()
+          .join();
+      return Optional
+          .of(
+              new WorkflowReference(
+                  adapterId(), workflowModuleId, bpmnProcessId, processVersionOf(
+                      instance.getProcessDefinitionVersion()), workflowAggregateId, String
+                          .valueOf(workflowKey)));
+    } catch (final RuntimeException e) {
+      if (!Camunda8Errors.notFound(e)) {
+        throw e;
+      }
+      logger
+          .warn(
+              "Camunda8[{}]: the Business Cockpit asked about the workflow of aggregate '{}' of '{}/{}'. VanillaBP started it as workflow '{}', and the cluster's searchable storage has not written it yet. Only that storage knows the version the workflow runs on, and the version picks the details provider of a report. So this change is not reported, and the cockpit keeps showing what it stored before. A change reported once that storage holds the workflow reaches the cockpit.",
+              adapterId(), workflowAggregateId, workflowModuleId, bpmnProcessId, workflowKey);
       return Optional.empty();
     }
 

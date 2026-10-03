@@ -21,6 +21,7 @@ import io.vanillabp.integration.adapter.migration.config.MigrationAdapterPropert
 import io.vanillabp.integration.adapter.spi.NameClashAvoidanceSupport;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 import io.vanillabp.integration.extension.spi.ExtensionWiringService;
+import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.Produces;
@@ -149,6 +150,7 @@ public class Camunda8CockpitProducer {
    * @param clients The clusters
    * @param properties VanillaBP's resolved configuration, which names the configured adapters
    * @param workflowTaskWiring VanillaBP's registry
+   * @param election VanillaBP's election, which knows the key of a workflow it started
    * @return One bridge per configured Camunda 8 adapter id
    */
   @Produces
@@ -157,13 +159,15 @@ public class Camunda8CockpitProducer {
   public List<BusinessCockpitBpmsBridge> businessCockpitCamunda8Bridges(
       final Camunda8Clients clients,
       final MigrationAdapterProperties properties,
-      final WorkflowTaskWiring workflowTaskWiring) {
+      final WorkflowTaskWiring workflowTaskWiring,
+      final WorkflowElection election) {
 
     return properties
         .adapterIdsOfType(Camunda8DeploymentService.ADAPTER_TYPE)
         .stream()
         .<BusinessCockpitBpmsBridge>map(
-            adapterId -> new Camunda8CockpitBridge(clients.of(adapterId), workflowTaskWiring))
+            adapterId -> new Camunda8CockpitBridge(
+                clients.of(adapterId), workflowTaskWiring, election))
         .toList();
 
   }

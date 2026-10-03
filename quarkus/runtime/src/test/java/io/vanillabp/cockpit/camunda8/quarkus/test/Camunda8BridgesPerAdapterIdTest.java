@@ -18,6 +18,7 @@ import io.vanillabp.cockpit.camunda8.quarkus.Camunda8CockpitProducer;
 import io.vanillabp.integration.adapter.migration.config.AdapterConfigProperties;
 import io.vanillabp.integration.adapter.migration.config.MigrationAdapterProperties;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
+import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -46,7 +47,8 @@ public class Camunda8BridgesPerAdapterIdTest {
 
     return new Camunda8CockpitProducer()
         .businessCockpitCamunda8Bridges(
-            new Camunda8Clients(clientFactories, null), properties, workflowTaskWiring)
+            new Camunda8Clients(clientFactories, null), properties, workflowTaskWiring, mock(
+                WorkflowElection.class))
         .stream()
         .map(bridge -> bridge.adapterId())
         .toList();

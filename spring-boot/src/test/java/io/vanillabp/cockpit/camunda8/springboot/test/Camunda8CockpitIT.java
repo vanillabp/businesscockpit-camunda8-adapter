@@ -49,6 +49,7 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.cockpit.extension.test.support.CockpitServer;
+import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 import io.vanillabp.integration.test.utils.CapturedOutput;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
@@ -137,6 +138,10 @@ public class Camunda8CockpitIT {
 
   @Autowired
   private DetailsProviderGate gate;
+
+  /** VanillaBP's election, which says what key it wrote down when it started a workflow. */
+  @Autowired
+  private WorkflowElection election;
 
   /**
    * What the cockpit's neutral half asks about this cluster. One is registered per configured
@@ -1126,6 +1131,47 @@ public class Camunda8CockpitIT {
     // what keeps that dispatch from writing the older reading back
     awaitReportCarrying(
         "/workflow/%s/updated".formatted(workflowId), "Emil the second", aggregate);
+
+  }
+
+  @Test
+  @DisplayName("A change reported right after the start reaches the cockpit complete or not at all")
+  public void aggregateChangedRightAfterTheStartIsNeverReportedWithoutItsVersion() {
+
+    final var aggregate = aStartedWorkflow("Ida");
+    // VanillaBP writes the key down once phase two started the workflow. Nothing here waits for
+    // the cluster's searchable storage, so the change below is reported while the exporter may
+    // still be behind, which is what a first service task of a workflow sees
+    final var workflowId = awaitValue(
+        () -> election
+            .workflowIdOf(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, aggregate.getId())
+            .orElse(null),
+        "the key VanillaBP wrote down for aggregate %s".formatted(aggregate.getId()));
+
+    changeTheCase(
+        aggregate.getId(),
+        attached -> {
+          attached.setCustomer("Ida the second");
+          workflowService.businessCockpit().aggregateChanged(attached);
+        });
+    CockpitServer.awaitQuiet();
+
+    // whether the storage had written the workflow by then is a race this test does not decide,
+    // and both outcomes are legal. Where it had, the change is reported. Where it had not, the
+    // change is not reported at all, because only the storage knows the version, and every
+    // details provider of this application names a version. A report without it would carry no
+    // details, and the cockpit would replace the customer it shows with nothing. On cluster 8.8
+    // that report went out once, which is what this test is here for
+    CockpitServer
+        .matching("/workflow/%s/updated".formatted(workflowId))
+        .forEach(updated -> {
+          assertTrue(
+              Pattern.compile("\"bpmnProcessVersion\"\\s*:\\s*\"[^\"]+\"").matcher(updated.body()).find(),
+              updated.body());
+          assertTrue(updated.body().contains("Ida the second"), updated.body());
+        });
+    // the key VanillaBP wrote down is the one the cluster knows the workflow by
+    assertEquals(workflowIdOf(aggregate), workflowId);
 
   }
 
