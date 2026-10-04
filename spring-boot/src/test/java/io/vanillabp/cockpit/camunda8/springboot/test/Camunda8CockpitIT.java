@@ -1157,12 +1157,13 @@ public class Camunda8CockpitIT {
         });
     CockpitServer.awaitQuiet();
 
-    // whether the storage had written the workflow by then is a race this test does not decide,
-    // and both outcomes are legal. Where it had, the change is reported. Where it had not, the
-    // change is not reported at all, because only the storage knows the version, and every
-    // details provider of this application names a version. A report without it would carry no
-    // details, and the cockpit would replace the customer it shows with nothing. On cluster 8.8
-    // that report went out once, which is what this test is here for
+    // whether VanillaBP had written down the version by then is a race this test does not decide.
+    // Where it had, the change is reported right away. Where it had not, the change is resolved
+    // when its entry is dispatched, and the dispatch asks again while the storage has not written
+    // the workflow. Either way no report goes out without the version, because every details
+    // provider of this application names one. A report without it would carry no details, and the
+    // cockpit would replace the customer it shows with nothing. On cluster 8.8 that report went
+    // out once, which is what this test is here for
     CockpitServer
         .matching("/workflow/%s/updated".formatted(workflowId))
         .forEach(updated -> {
