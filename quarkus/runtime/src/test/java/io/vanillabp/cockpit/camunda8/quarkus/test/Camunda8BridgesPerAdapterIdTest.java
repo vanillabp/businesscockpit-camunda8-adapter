@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
+import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
 import io.vanillabp.cockpit.camunda8.quarkus.Camunda8CockpitProducer;
 import io.vanillabp.integration.adapter.migration.config.AdapterConfigProperties;
 import io.vanillabp.integration.adapter.migration.config.MigrationAdapterProperties;
@@ -48,7 +49,8 @@ public class Camunda8BridgesPerAdapterIdTest {
     return new Camunda8CockpitProducer()
         .businessCockpitCamunda8Bridges(
             new Camunda8Clients(clientFactories, null), properties, workflowTaskWiring, mock(
-                WorkflowElection.class))
+                WorkflowElection.class),
+            new Camunda8CockpitDeployments())
         .stream()
         .map(bridge -> bridge.adapterId())
         .toList();
