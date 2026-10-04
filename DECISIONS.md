@@ -737,7 +737,7 @@ cites a decision number for it:
 - `quarkus/deployment/src/test/java/io/vanillabp/cockpit/camunda8/quarkus/it/TestAggregate.java`,
   class javadoc and the javadoc of `signers`
 
-## 19. The key of a workflow comes from VanillaBP before the storage is searched
+## 19. The key of a workflow comes from VanillaBP before the storage is searched - what a start written down with its version reports narrowed by decision 20
 
 Decided on 2026-10-03, while story 1326 was built.
 
@@ -809,3 +809,55 @@ the workflow is read by that key and nothing is searched. The rest of decision 8
 result still comes with a line in the log, which names the one reading left where VanillaBP knows the
 key and both readings everywhere else. So decision 8 is narrowed by this entry and not replaced, and its
 headline says so.
+
+## 20. A workflow VanillaBP wrote down with its version is reported without the storage
+
+Decided on 2026-10-04, while story 1415 was built.
+
+This entry narrows decision 19. Once it has its number, the headline of decision 19 gets the
+addition "- narrowed by decision NN, which takes the version from VanillaBP's note of the start".
+
+Decision 19 left one gap open. VanillaBP wrote down the key of a workflow at its start, but not the
+version, and only the cluster's searchable storage knew the version. So a change reported while the
+exporter was behind was not reported at all. Since `adapter-platform-integration` decision 110 the note
+of the start carries the version as well, and `WorkflowElection#workflowStartOf` reads key, version and
+adapter together. The bridge asks that instead of `workflowIdOf`, once per question.
+
+Where the note names a key of this cluster AND a version, `workflowsOfAggregate` references the
+workflow with them and asks the cluster nothing. This is the case decision 19 could not serve: a
+change reported a moment after the start, while the exporter is behind, reaches the cockpit with its
+version.
+
+`prefilledWorkflowDetails` still reads the workflow by its key first, because the storage names the
+process as it was deployed. Where the storage holds no record, and the reference names a version, the
+report is built from the reference. The version is the one of the reference, which is the one that
+picked the details provider. The business id is the aggregate's id (decision 8). The process name is
+the one this extension read out of the model while wiring it. A reference without a version gets no
+such report, and the storage's silence is answered as before.
+
+Where the note has a key and no version, the bridge does what decision 19 says. It reads the workflow by
+its key, takes the version from the storage, and reports nothing while the storage does not hold the
+workflow yet, with the warning of decision 19.
+
+`WorkflowStart#versionsAreReported` tells "not yet" (true) from "never" (false). The story asked to
+report without a version for "never", but only if no details provider which names a version can be
+meant then. That cannot be shown on Camunda 8. The cluster counts a version for every workflow, and the
+Camunda 8 adapter keeps a catalog, so its notes always say "not yet". The platform answers "never" in
+two more cases: for a note which names no adapter, and for an adapter which said nothing about versions
+at all. In both the storage still knows the version, and every details provider of the application may
+name one. A report without a version would then empty the details the cockpit shows, which is the harm
+decision 19 is about. So an empty version is read the same way whatever the flag says: by the key, from
+the storage.
+
+A note which names another adapter is left out, and the storage is searched as if there were no note.
+During a migration between two clusters that is a workflow of the other cluster, and its key would be
+read on this one. A note which names no adapter is still taken, because the key itself still has to be
+one of this BPMS, which `workflowKeyOf` checks.
+
+Since `adapter-platform-integration` decision 111, `adapterIdOfWorkflow` reads the note of the start
+first and no longer throws after a workflow ended, for as long as the note lives. So
+`BusinessCockpitService.aggregateChanged` now reaches this bridge after the end as well, where it threw
+before. The bridge answers it like any other change. The note names the workflow, the storage still
+holds the history of the ended workflow, and the cockpit gets an update of the ended case. Nothing is
+sent to the cluster: the bridge only reads, and the key is never used for a command (decision 19). That
+is what an application asks for when it changes a case after its end, so it stays this way.
