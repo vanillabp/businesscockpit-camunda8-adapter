@@ -31,6 +31,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import io.camunda.client.CamundaClient;
+import io.camunda.client.api.search.enums.ProcessInstanceState;
 import io.camunda.client.api.search.enums.UserTaskState;
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
@@ -1172,6 +1173,84 @@ public class Camunda8CockpitIT {
         });
     // the key VanillaBP wrote down is the one the cluster knows the workflow by
     assertEquals(workflowIdOf(aggregate), workflowId);
+
+  }
+
+  @Test
+  @DisplayName("A change reported once VanillaBP wrote down the version reaches the cockpit with that version")
+  public void aggregateChangedWithTheVersionWrittenDownIsReported() {
+
+    final var aggregate = aStartedWorkflow("Jakob");
+    // VanillaBP writes the version down with the start or once the start job ran. From then on
+    // the bridge needs nothing of the cluster's searchable storage to name the workflow
+    final var start = awaitValue(
+        () -> election
+            .workflowStartOf(MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, aggregate.getId())
+            .filter(written -> written.processVersion() != null)
+            .orElse(null),
+        "the version VanillaBP wrote down for aggregate %s".formatted(aggregate.getId()));
+
+    changeTheCase(
+        aggregate.getId(),
+        attached -> {
+          attached.setCustomer("Jakob the second");
+          workflowService.businessCockpit().aggregateChanged(attached);
+        });
+
+    final var updated = awaitReportCarrying(
+        "/workflow/%s/updated".formatted(start.workflowId()), "Jakob the second", aggregate);
+    assertTrue(
+        Pattern
+            .compile(
+                "\"bpmnProcessVersion\"\\s*:\\s*\"%s\"".formatted(Pattern.quote(start.processVersion())))
+            .matcher(updated.body())
+            .find(),
+        updated.body());
+    assertEquals(workflowIdOf(aggregate), start.workflowId());
+
+  }
+
+  @Test
+  @DisplayName("A change reported after the workflow ended reaches the cockpit, and the workflow stays ended")
+  public void aggregateChangedAfterTheEndIsReported() {
+
+    final var aggregate = aStartedWorkflow("Karla");
+    final var userTaskId = userTaskIdOf(aggregate);
+    final var workflowId = workflowIdOf(aggregate);
+    CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Karla\"");
+    transactions
+        .executeWithoutResult(
+            status -> workflowService
+                .processes()
+                .completeUserTask(aggregates.findById(aggregate.getId()).orElseThrow(), userTaskId));
+    assertNotNull(CockpitServer.awaitAnyRequest("/workflow/%s/completed".formatted(workflowId)));
+    CockpitServer.forgetRequests();
+
+    // the election names the adapter which started the workflow out of the note of the start,
+    // so this finds the bridge after the end as well, for as long as that note lives
+    changeTheCase(
+        aggregate.getId(),
+        attached -> {
+          attached.setCustomer("Karla the second");
+          workflowService.businessCockpit().aggregateChanged(attached);
+        });
+
+    awaitReportCarrying(
+        "/workflow/%s/updated".formatted(workflowId), "Karla the second", aggregate);
+    // a report is all it is: the cluster holds the workflow as completed. The storage says so once
+    // the exporter caught up with the end, which may come after the report
+    assertEquals(
+        ProcessInstanceState.COMPLETED,
+        awaitValue(
+            () -> {
+              final var state = client()
+                  .newProcessInstanceGetRequest(Long.parseLong(workflowId))
+                  .send()
+                  .join()
+                  .getState();
+              return state == ProcessInstanceState.ACTIVE ? null : state;
+            },
+            "the end of workflow %s in the searchable storage".formatted(workflowId)));
 
   }
 

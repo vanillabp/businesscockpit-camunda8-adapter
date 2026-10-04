@@ -155,6 +155,30 @@ public class Camunda8CockpitDeployments {
 
   }
 
+  /**
+   * The BPMN name of one process, as this extension read it out of the model while wiring it.
+   * <p>
+   * A report about a workflow the cluster's searchable storage has not written yet takes its
+   * fallback title from here, because there is no record to read the name from.
+   *
+   * @param adapterId The configured adapter id whose models were wired
+   * @param workflowModuleId The workflow module
+   * @param bpmnProcessId The BPMN process id as the application wrote it
+   * @return The name, or empty where this extension wired no listener into that process
+   */
+  public Optional<String> bpmnProcessNameOf(
+      final String adapterId,
+      final String workflowModuleId,
+      final String bpmnProcessId) {
+
+    return of(adapterId, workflowModuleId)
+        .stream()
+        .filter(listener -> listener.bpmnProcessId().equals(bpmnProcessId))
+        .map(WiredListener::bpmnProcessName)
+        .findFirst();
+
+  }
+
   private List<WiredListener> of(
       final String adapterId,
       final String workflowModuleId) {
