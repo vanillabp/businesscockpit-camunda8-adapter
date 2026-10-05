@@ -104,8 +104,8 @@ technology, so users sit on different minors at the same time. Camunda promises 
 clusters of its own version and newer, and says nothing about the other direction. So the client a
 build was compiled against IS the lowest cluster version that build accepts. One artifact cannot
 serve every minor. That is why the
-[VanillaBP Camunda 8 adapter](https://github.com/vanillabp/camunda8-adapter) is published once per
-Camunda 8 minor, with the minor in the version.
+[VanillaBP Camunda 8 adapter](https://github.com/camunda-community-hub/vanillabp-camunda8-adapter)
+is published once per Camunda 8 minor, with the minor in the version.
 
 This repository follows that scheme, and it has to. The extension compiles against the adapter's
 core and gets the Camunda client through it, so a build of this repository inherits the minimum
@@ -123,10 +123,10 @@ There is no preview line at the moment. 8.10 was the preview line until Camunda 
 pre-release of 8.11. Two bugfix lines instead of one is the adapter's call, and its README
 says why under "How long a line lives".
 
-The client pins in the POM follow `vanillabp/camunda8-adapter` rather than the newest release
-Camunda offers, and they move when that repository moves. A cluster version appears in the last
-column only once a build of that line has been proven against it, and every line runs every test
-it has.
+The client pins in the POM follow `camunda-community-hub/vanillabp-camunda8-adapter` rather than the
+newest release Camunda offers, and they move when that repository moves. A cluster version appears
+in the last column only once a build of that line has been proven against it, and every line runs
+every test it has.
 
 The integration tests do not start the cluster this POM pins. The image comes from
 `camunda8-adapter-test-support`: the Camunda 8 adapter filters its own pin into
@@ -150,8 +150,8 @@ near the downgrade. Move the pin forward instead, or move to the line whose pin 
 The same habit is why a moved pin is read rather than trusted. Every pull request which raises one
 gets a comment naming the enum literals and the interface methods the new version added, and on a
 GA line it also gets a red check. That check is `client-api-changes.yaml` of
-`vanillabp/camunda8-adapter`, called from `.github/workflows/client-api-changes.yaml` here, so both
-repositories answer the same way.
+`camunda-community-hub/vanillabp-camunda8-adapter`, called from
+`.github/workflows/client-api-changes.yaml` here, so both repositories answer the same way.
 
 Line 8.10 left nineteen of its thirty integration tests out until 2026-10-01, and it leaves none
 out now. The REST gateway of the 8.10 pre-releases threw a `NullPointerException` while it

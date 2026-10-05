@@ -9,10 +9,11 @@ name: Release lines
     # scheduled run rather than starting it at the given time, and the wait is hours long:
     # asked for 01:37 UTC, the run of the 16th of September 2026 started at 06:38, which is
     # half past eight in Berlin and right when somebody is pushing to this repository. The
-    # matrix of vanillabp/camunda8-adapter answers that the same way, by asking hours before
-    # the hour it wants, and its runs start between 04:45 and 05:10 UTC. So this one asks
-    # the night before. The minute is a crooked one because GitHub's queue is longest on the
-    # hour, and it is not the 23rd, so the two repositories do not ask at the same moment.
+    # matrix of camunda-community-hub/vanillabp-camunda8-adapter answers that the same way,
+    # by asking hours before the hour it wants, and its runs start between 04:45 and 05:10
+    # UTC. So this one asks the night before. The minute is a crooked one because GitHub's
+    # queue is longest on the hour, and it is not the 23rd, so the two repositories do not
+    # ask at the same moment.
     - cron: "47 23 * * *"
   workflow_dispatch:
   # Two callers. The pull-request checks run the matrix on every pull request, and the
@@ -74,7 +75,7 @@ jobs:
       # about it.
       - uses: actions/checkout@v7
         with:
-          repository: vanillabp/camunda8-adapter
+          repository: camunda-community-hub/vanillabp-camunda8-adapter
           ref: main
           path: camunda8-adapter
       - id: list
@@ -138,7 +139,7 @@ jobs:
       # not a test run: what the adapter does is proven by the adapter's own matrix.
       - uses: actions/checkout@v7
         with:
-          repository: vanillabp/camunda8-adapter
+          repository: camunda-community-hub/vanillabp-camunda8-adapter
           ref: main
           path: camunda8-adapter
       - uses: actions/setup-java@v6
@@ -230,14 +231,14 @@ jobs:
           # the tag rather than the whole name, so a renamed image is still compared
           if [ "${image##*:}" != "${pinned}" ]; then
             echo "Line ${{ matrix.line }} ran ${image} against the client ${pinned}." >&2
-            echo "The cluster follows the pin of vanillabp/camunda8-adapter, so raise" >&2
-            echo "camunda8.version.line-${{ matrix.line }} in pom.xml to what that image names." >&2
+            echo "The cluster follows the pin of camunda-community-hub/vanillabp-camunda8-adapter, so" >&2
+            echo "raise camunda8.version.line-${{ matrix.line }} in pom.xml to what that image names." >&2
             exit 1
           fi
       # What this line did, written down for the job 'ga-lines' below. A matrix cannot hand
       # one result per line to another job: every job of it writes the same output and the
       # last one to finish overwrites the rest. So each line leaves a file named after
-      # itself. The same shape as in vanillabp/camunda8-adapter.
+      # itself. The same shape as in camunda-community-hub/vanillabp-camunda8-adapter.
       #
       # This file is also the only place which tells the truth about a preview line. Such a
       # line runs with 'continue-on-error', so the result it hands to another job is a

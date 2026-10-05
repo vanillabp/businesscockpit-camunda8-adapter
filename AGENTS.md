@@ -30,7 +30,7 @@ error read like an error of the cockpit, down to an HTTP 400 from the search API
 So build the adapter for the line you want, and give that build the version of the line:
 
 ```bash
-# in the clone of vanillabp/camunda8-adapter
+# in the clone of camunda-community-hub/vanillabp-camunda8-adapter
 mvn -Pline-8.8 -Drevision=2.0.0-8.8-SNAPSHOT -Dmaven.test.skip=true \
   -pl core,spring-boot,quarkus/runtime,quarkus/deployment,test-support -am \
   clean install

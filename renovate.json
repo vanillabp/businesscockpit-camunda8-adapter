@@ -2,7 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>vanillabp/renovate-config",
-    "github>vanillabp/camunda8-adapter//renovate/camunda8-lines.json",
+    "github>camunda-community-hub/vanillabp-camunda8-adapter//renovate/camunda8-lines.json",
     "github>vanillabp/businesscockpit-camunda8-adapter//renovate/camunda8-lines.json"
   ],
   "timezone": "Europe/Vienna",
@@ -13,7 +13,7 @@
       "enabled": false
     },
     {
-      "description": "Camunda stays manual. Client and cluster are only guaranteed compatible at equal versions, and a cluster upgrade in a customer project takes its time, so a library must never force one. The client pins here follow the pins of vanillabp/camunda8-adapter rather than the newest release.",
+      "description": "Camunda stays manual. Client and cluster are only guaranteed compatible at equal versions, and a cluster upgrade in a customer project takes its time, so a library must never force one. The client pins here follow the pins of camunda-community-hub/vanillabp-camunda8-adapter rather than the newest release.",
       "matchPackageNames": ["/^io\\.camunda/"],
       "enabled": false
     },
