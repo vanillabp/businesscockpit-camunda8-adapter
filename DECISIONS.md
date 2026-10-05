@@ -737,7 +737,7 @@ cites a decision number for it:
 - `quarkus/deployment/src/test/java/io/vanillabp/cockpit/camunda8/quarkus/it/TestAggregate.java`,
   class javadoc and the javadoc of `signers`
 
-## 19. The key of a workflow comes from VanillaBP before the storage is searched - what a start written down with its version reports narrowed by decision 20
+## 19. The key of a workflow comes from VanillaBP before the storage is searched - what a start written down with its version reports narrowed by decision 20 and by decision 21, which reports a change the note cannot name later instead of dropping it
 
 Decided on 2026-10-03, while story 1326 was built.
 
@@ -810,7 +810,7 @@ result still comes with a line in the log, which names the one reading left wher
 key and both readings everywhere else. So decision 8 is narrowed by this entry and not replaced, and its
 headline says so.
 
-## 20. A workflow VanillaBP wrote down with its version is reported without the storage
+## 20. A workflow VanillaBP wrote down with its version is reported without the storage - narrowed by decision 21, which leaves every change the note cannot name to the dispatch
 
 Decided on 2026-10-04, while story 1415 was built.
 
@@ -861,3 +861,51 @@ before. The bridge answers it like any other change. The note names the workflow
 holds the history of the ended workflow, and the cockpit gets an update of the ended case. Nothing is
 sent to the cluster: the bridge only reads, and the key is never used for a command (decision 19). That
 is what an application asks for when it changes a case after its end, so it stays this way.
+
+## 21. A change of a case reads nothing in the application's transaction, and the process name comes from the model
+
+Decided on 2026-10-05, while story 1443 was built.
+
+This entry narrows decisions 19 and 20.
+
+## What changes
+
+`BusinessCockpitService.aggregateChanged(aggregate)` runs in the application's transaction. Before
+this entry the bridge read the cluster's searchable storage there whenever VanillaBP's note of the
+start lacked a key or a version. While the exporter was behind, the change was dropped with a
+warning, which is what decision 19 says. And where the storage was down, the read failed the
+application's transaction.
+
+The Business Cockpit extension now asks the bridge `workflowsOfAggregateRightAway` first. The bridge
+answers it out of the note alone. A note with a key of this cluster and a version is the answer, as
+decision 20 says. Everything else answers nothing, and the bridge reads nothing. The extension then
+writes an outbox entry without a report, and its dispatch calls `workflowsOfAggregate`, which reads
+the storage by key or searches it, the way decisions 19 and 20 describe. Where the storage holds no
+record yet, the answer is empty, and the extension asks again a little later, for up to ten minutes.
+After that the extension logs an error and leaves the entry blocked in the outbox. So the change of decision 19 is no longer dropped while the exporter is behind. It is reported once
+the storage holds the workflow.
+
+The bridge throws no `PhaseTwoRetryLater` itself. An empty answer at the dispatch is what tells the
+extension to try again, and the window is the extension's. A record the storage does not hold is
+said with a debug line and no longer with a warning. The extension says it once at the first attempt
+and once more where it gives up, so a warning per attempt would only repeat it.
+
+## The process name comes from the model
+
+`prefilledWorkflowDetails` no longer reads the storage for a reference which names its version. The
+version is the one of the reference, the business id is the aggregate's id (decision 8), and the
+process name is the one this extension read out of the model while wiring it. Decision 20 read the
+workflow by its key for the name, as it was deployed, and used the model only where the storage held
+no record. The two names are the same attribute of the same model, except where a model was renamed
+while a workflow of an older version still runs. A report then shows the name of the model wired
+now. That is accepted, because it lets the main way build a report without any read.
+
+A reference without a version is still read by its key, for the version, and the name comes from
+the model there as well. Where the storage holds no record of it, the answer is empty.
+
+## What stays
+
+The note of the start is still never sent to the cluster as a command (decision 19). A note of
+another adapter is still left out. User tasks are not touched: `userTasksOfAggregate` and
+`userTaskOfAggregate` still search the storage in the application's transaction, and their warnings
+stay.
