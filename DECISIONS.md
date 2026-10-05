@@ -224,9 +224,9 @@ several. The person who merged the fix is the one who closes it.
 
 ## 10. The client pin of a line is the adapter's pin, raised by hand
 
-The Camunda client this repository pins per line is the one `vanillabp/camunda8-adapter` pins for
-the same line. The value is copied into `pom.xml` in a commit of its own. Nothing reads the other
-repository while building.
+The Camunda client this repository pins per line is the one
+`camunda-community-hub/vanillabp-camunda8-adapter` pins for the same line. The value is copied into
+`pom.xml` in a commit of its own. Nothing reads the other repository while building.
 
 By hand and not by build, because the pin is what the client API check of a pull request works on.
 That check names the enum literals and the interface methods a new client added, and what calls it
@@ -259,10 +259,10 @@ job, and the case is reported as cancelled.
 
 Whether the line has the construct is the adapter's answer, not a second rule here.
 `Camunda8CancelListeners` of the VanillaBP Camunda 8 adapter answers it and writes the listener
-(decision 28 in the DECISIONS.md of vanillabp/camunda8-adapter). Asking it first matters. A cluster
-of 8.8 or 8.9 refuses a model which carries the listener, and that fails the deployment of the
-whole workflow module. A second copy of the rule is a rule which will be wrong in one of the two
-places.
+(decision 28 in the DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter). Asking it
+first matters. A cluster of 8.8 or 8.9 refuses a model which carries the listener, and that fails
+the deployment of the whole workflow module. A second copy of the rule is a rule which will be wrong
+in one of the two places.
 
 An upgrading application deploys a new process version on 8.10. A listener added to the process
 changes the bytes of the process, and a cluster counts a version per set of bytes. Decision 4
@@ -389,7 +389,7 @@ again, and no command takes the lease off it. The job types of this extension ar
 identifiers the cluster knows and carry no adapter id, so a second application which deployed the
 same models under the same prefix and the same tenant subscribes to exactly these types. One
 value per cluster is the only answer which cannot starve anybody. See decision 36 in the
-DECISIONS.md of vanillabp/camunda8-adapter.
+DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter.
 
 A refused answer is not an incident. `Camunda8ListenerJobs.completeOrFail` of the adapter carries
 the token and recognises the refusal, drops the answer with one line, and lets the handler return
@@ -473,8 +473,8 @@ The client would build itself one job worker execution thread, and an applicatio
 run on it. The VanillaBP Camunda 8 adapter hands the client an executor of its own, which schedules
 the polls on threads nothing else uses. So a handler never sits on the thread a poll needs, and
 only an adapter whose execution slots are all busy stops asking for more. See decision 18 in the
-DECISIONS.md of vanillabp/camunda8-adapter. That is why the measurement ran eight handler threads
-rather than the client's one.
+DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter. That is why the measurement ran
+eight handler threads rather than the client's one.
 
 What cannot be measured today is whether a lease settles the race a worker has with itself. No
 release carries both halves: 8.9 has the repaired worker and no lease, and 8.10 has the lease and
@@ -506,9 +506,10 @@ behaves like the night. And it goes away in one place, because the tag and the e
 other and both say what they cost. A variable in a workflow would be found by whoever already knew
 it was there.
 
-The tag has the same name and the same meaning in `vanillabp/camunda8-adapter`, whose 8.10 line
-runs green with it. Two repositories doing the same thing two ways would make every reader learn it
-twice. See decision 31 in the DECISIONS.md of that repository.
+The tag has the same name and the same meaning in
+`camunda-community-hub/vanillabp-camunda8-adapter`, whose 8.10 line runs green with it. Two
+repositories doing the same thing two ways would make every reader learn it twice. See decision 31
+in the DECISIONS.md of that repository.
 
 A red preview line holds up no pull request and no release. That line is built against an alpha
 which Camunda rewrites under us, and a defect of the alpha may cost a night, it may not cost a

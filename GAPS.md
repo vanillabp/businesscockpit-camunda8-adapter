@@ -126,8 +126,9 @@ the word `lease` appears nowhere in the client API of either.
 
 **Where it can be read:** the
 [job workers](https://docs.camunda.io/docs/next/components/concepts/job-workers/#job-leasing) page of
-the Camunda documentation, and decision 36 in the DECISIONS.md of vanillabp/camunda8-adapter, which
-holds what was measured on `camunda/camunda:8.10.0-alpha5`.
+the Camunda documentation, and decision 36 in the DECISIONS.md of
+camunda-community-hub/vanillabp-camunda8-adapter, which holds what was measured on
+`camunda/camunda:8.10.0-alpha5`.
 
 **What it costs** a user of line 8.8 or 8.9: the cluster takes whichever answer arrives first, which is
 the answer of the run whose lock had expired. Nothing anywhere says that it happened. What the cockpit
