@@ -862,13 +862,13 @@ holds the history of the ended workflow, and the cockpit gets an update of the e
 sent to the cluster: the bridge only reads, and the key is never used for a command (decision 19). That
 is what an application asks for when it changes a case after its end, so it stays this way.
 
-## 21. A change of a case reads nothing in the application's transaction, and the process name comes from the model
+## 21. A change of a case reads nothing in the application's transaction, and the process name comes from the model - what it says about user tasks narrowed by decision 22
 
 Decided on 2026-10-05, while story 1443 was built.
 
 This entry narrows decisions 19 and 20.
 
-## What changes
+### What changes
 
 `BusinessCockpitService.aggregateChanged(aggregate)` runs in the application's transaction. Before
 this entry the bridge read the cluster's searchable storage there whenever VanillaBP's note of the
@@ -890,7 +890,7 @@ extension to try again, and the window is the extension's. A record the storage 
 said with a debug line and no longer with a warning. The extension says it once at the first attempt
 and once more where it gives up, so a warning per attempt would only repeat it.
 
-## The process name comes from the model
+### The process name comes from the model
 
 `prefilledWorkflowDetails` no longer reads the storage for a reference which names its version. The
 version is the one of the reference, the business id is the aggregate's id (decision 8), and the
@@ -903,9 +903,54 @@ now. That is accepted, because it lets the main way build a report without any r
 A reference without a version is still read by its key, for the version, and the name comes from
 the model there as well. Where the storage holds no record of it, the answer is empty.
 
-## What stays
+### What stays
 
 The note of the start is still never sent to the cluster as a command (decision 19). A note of
 another adapter is still left out. User tasks are not touched: `userTasksOfAggregate` and
 `userTaskOfAggregate` still search the storage in the application's transaction, and their warnings
 stay.
+
+## 22. A changed user task reads nothing in the application's transaction
+
+Decided on 2026-10-05, while story 1443 was built.
+
+This entry narrows decision 21, which left user tasks alone, and decision 8 for the read of one task
+by its key. Whoever moves this entry into the log adds it to the headline of decision 21, in the form
+the log uses already, like "- what it says about user tasks narrowed by decision 22".
+
+### What changes
+
+`BusinessCockpitService.aggregateChanged(aggregate, userTaskIds)` runs in the application's
+transaction. Before this entry the bridge searched the cluster's searchable storage there for the
+tasks, and read each of them by its key for the assignee, the candidates and the dates. A task the
+storage did not hold yet was dropped with a warning. So a task created while the exporter stood
+still got no change report at all, and a storage which was down failed the application's
+transaction.
+
+The bridge answers `false` to `reportsAChangedUserTaskRightAway` now. The Business Cockpit
+extension then asks the bridge nothing in the application's transaction. It names the tasks from
+what VanillaBP wrote down when it delivered them, and it writes an outbox entry without a report for
+each of them. When the entry is dispatched, the extension calls `prefilledUserTaskDetails`, which
+reads the task by its key. A task VanillaBP wrote nothing down about is searched first, with
+`userTaskOfAggregate` or `userTasksOfAggregate`. Where the storage holds no record yet, the answer
+is empty, and the extension asks again a little later, for up to ten minutes. After that the
+extension logs an error and leaves the entry blocked in the outbox.
+
+The workflow of a task from the delivery log is the case: the note of the start names it, also for a
+task of a called process. That is the workflow a listener job reports for the task, so the
+sub-workflow `prefilledUserTaskDetails` reports for a called process stays the same.
+
+### What a read by key says
+
+A read of one task by its key which finds no record is said with a debug line now, not with a
+warning. The extension says it once at the first attempt and once more where it gives up, so a
+warning per attempt would only repeat it. `BusinessCockpitService.getUserTask` reads a task by its
+key only after a search found it, and an empty search still warns with both readings, as decision 8
+asks for.
+
+### What stays
+
+The searches `userTasksOfAggregate` and `userTaskOfAggregate` still warn where they find nothing.
+At the dispatch they are asked only for a task VanillaBP wrote nothing down about, so a warning per
+attempt is possible there. That is a task delivered before VanillaBP wrote such notes, a task named
+by an id of another BPMS, or a task of a called process without a note of the start.

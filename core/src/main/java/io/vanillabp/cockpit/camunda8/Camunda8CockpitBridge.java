@@ -3,7 +3,6 @@ package io.vanillabp.cockpit.camunda8;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +39,8 @@ import io.vanillabp.integration.extension.spi.election.WorkflowStart;
  * </ul>
  * The <code>…OfAggregate</code> methods only ever serve the second kind, so they search the
  * storage without asking, apart from {@link #workflowsOfAggregateRightAway}, which reads nothing.
+ * Most of these questions arrive when the extension dispatches an outbox entry, and only
+ * <code>getUserTask</code> asks in the application's own time.
  * <p>
  * <b>A record the storage holds none of.</b> That is silence and not an ending. The exporter which
  * writes the storage runs behind the engine, so a task or a case born a moment ago is missing from
@@ -62,6 +63,13 @@ import io.vanillabp.integration.extension.spi.election.WorkflowStart;
  * empty answer makes the extension ask again a little later. The version is what picks the
  * application's details provider, so a workflow is never referenced without one it could still
  * get.
+ * <p>
+ * <b>A changed user task.</b> Its report needs the assignee, the candidates and the dates, and
+ * outside a listener job only the storage knows them. So the bridge builds no such report in the
+ * application's transaction ({@link #reportsAChangedUserTaskRightAway}). The extension names the
+ * task from what VanillaBP wrote down when it delivered it, and the bridge reads the task by its
+ * key when the entry is dispatched. An empty answer there makes the extension ask again a little
+ * later.
  * <p>
  * One bridge serves one adapter id, because during a migration each cluster holds workflows of
  * its own and the cockpit addresses a workflow by the cluster holding it.
@@ -124,13 +132,25 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       return ofTheEvent;
     }
 
-    return readFromTheStorage(
-        "the user task '%s'".formatted(userTask.userTaskId()),
-        () -> cluster
-            .client()
-            .newUserTaskGetRequest(Long.parseLong(userTask.userTaskId()))
-            .send()
-            .join())
+    final UserTask read;
+    try {
+      read = cluster
+          .client()
+          .newUserTaskGetRequest(Long.parseLong(userTask.userTaskId()))
+          .send()
+          .join();
+    } catch (final RuntimeException e) {
+      if (!Camunda8Errors.notFound(e)) {
+        throw e;
+      }
+      sayTheStorageHasNotWritten(
+          "user task '%s' of aggregate '%s'"
+              .formatted(userTask.userTaskId(), userTask.workflowAggregateId()),
+          e);
+      return Optional.empty();
+    }
+    return Optional
+        .of(read)
         .map(
             task -> UserTaskDetailsPrefill
                 .builder()
@@ -181,7 +201,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       if (!Camunda8Errors.notFound(e)) {
         throw e;
       }
-      sayTheStorageHasNotWrittenTheWorkflow(
+      sayTheStorageHasNotWritten(
           "workflow '%s' of aggregate '%s'"
               .formatted(workflow.workflowId(), workflow.workflowAggregateId()),
           e);
@@ -216,74 +236,25 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   }
 
   /**
-   * Says that the storage holds no record of a workflow the Business Cockpit asked about.
+   * Says that the storage holds no record of a workflow or a user task the Business Cockpit
+   * asked about by its key.
    * <p>
-   * Only the dispatch of a changed aggregate asks this way, and it asks again a little later
-   * while the answer is empty. The extension says so in its own log, once at the first attempt
-   * and once more where it gives up, so a line per attempt here would only repeat it.
+   * The dispatch of a changed aggregate or a changed user task asks this way, and it asks again a
+   * little later while the answer is empty. The extension says so in its own log, once at the
+   * first attempt and once more where it gives up, so a line per attempt here would only repeat
+   * it. <code>BusinessCockpitService.getUserTask</code> reads a task by its key as well, but only
+   * after a search found it, and an empty search says both readings out loud itself.
    *
    * @param what What was read, for the message
    * @param notFound The cluster's answer, or <code>null</code> for an empty search
    */
-  private void sayTheStorageHasNotWrittenTheWorkflow(
+  private void sayTheStorageHasNotWritten(
       final String what,
       final RuntimeException notFound) {
 
     logger
         .debug(
             "Camunda8[{}]: the cluster's searchable storage holds no record of {} yet. Either the exporter which writes that storage has not caught up with it, or there is no such record. The Business Cockpit asks again a little later.",
-            adapterId(), what, notFound);
-
-  }
-
-  /**
-   * Asks the cluster's searchable storage about one record, for a question about now.
-   * <p>
-   * A record the storage holds none of means there is nothing to show. The application asked
-   * about a task or a case of its own, in its own time, and an empty answer is what it can work
-   * with: the cockpit keeps what it stored before. The reason is said out loud, because the same
-   * answer comes back for a record the exporter has not written yet, and the two cannot be told
-   * apart from here.
-   * <p>
-   * Every other answer travels on unchanged. An outage must not look like an empty result, or a
-   * cockpit would quietly stop showing what is there. WHICH answer means "I do not hold that" is
-   * the adapter's to say ({@code Camunda8Errors#notFound}): the REST gateway says it with HTTP
-   * <code>404</code> and the gRPC gateway with the status <code>NOT_FOUND</code>.
-   *
-   * @param <T> The kind of record
-   * @param what What is being read, for the message
-   * @param read The request to the cluster
-   * @return The record, or empty where the storage holds none
-   */
-  private <T> Optional<T> readFromTheStorage(
-      final String what,
-      final Supplier<T> read) {
-
-    try {
-      return Optional.of(read.get());
-    } catch (final RuntimeException e) {
-      if (!Camunda8Errors.notFound(e)) {
-        throw e;
-      }
-      sayTheStorageHoldsNoRecordOf(what, e);
-      return Optional.empty();
-    }
-
-  }
-
-  /**
-   * Says out loud that a read of one record found nothing, and that this reads two ways.
-   *
-   * @param what What was read, for the message
-   * @param notFound The cluster's answer
-   */
-  private void sayTheStorageHoldsNoRecordOf(
-      final String what,
-      final RuntimeException notFound) {
-
-    logger
-        .warn(
-            "Camunda8[{}]: the cluster's searchable storage holds no record of {}. The Business Cockpit is told nothing about it, so it keeps showing what it stored before. There are two readings of this. Either that record is gone. Or the exporter which writes that storage has not caught up with it yet, which is what a workflow or a task born in the very transaction asking here looks like - the start of such a workflow is reported by this extension's listeners anyway.",
             adapterId(), what, notFound);
 
   }
@@ -318,7 +289,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
 
     final var found = searchWorkflows(workflowModuleId, bpmnProcessId, workflowAggregateId);
     if (found.isEmpty()) {
-      sayTheStorageHasNotWrittenTheWorkflow(
+      sayTheStorageHasNotWritten(
           "a workflow of aggregate '%s' of '%s/%s'"
               .formatted(workflowAggregateId, workflowModuleId, bpmnProcessId),
           null);
@@ -364,6 +335,22 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
                     new WorkflowReference(
                         adapterId(), workflowModuleId, bpmnProcessId, started.get()
                             .processVersion(), workflowAggregateId, String.valueOf(key.get()))));
+
+  }
+
+  /**
+   * <code>false</code>: the report of a changed user task needs its assignee, its candidates and
+   * its dates, and outside a listener job only the searchable storage knows them. That storage
+   * may not hold a task created a moment ago, or any task while the exporter stands still. So the
+   * Business Cockpit extension writes an entry without a report in the application's
+   * transaction, and builds the report when the entry is dispatched. There it calls
+   * {@link #prefilledUserTaskDetails}, which reads the task by its key, and asks again a little
+   * later while the storage has not written the task.
+   */
+  @Override
+  public boolean reportsAChangedUserTaskRightAway() {
+
+    return false;
 
   }
 
@@ -577,7 +564,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       if (!Camunda8Errors.notFound(e)) {
         throw e;
       }
-      sayTheStorageHasNotWrittenTheWorkflow(
+      sayTheStorageHasNotWritten(
           "workflow '%s' of aggregate '%s' of '%s/%s', which VanillaBP started without writing down its version"
               .formatted(workflowKey, workflowAggregateId, workflowModuleId, bpmnProcessId),
           e);

@@ -1,6 +1,7 @@
 package io.vanillabp.cockpit.camunda8.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -378,9 +379,8 @@ public class Camunda8CockpitBridgeTest {
   @DisplayName("A task the searchable storage holds no record of is answered with nothing")
   public void aTaskTheStorageDoesNotHoldIsAnsweredWithNothing() {
 
-    // asked outside an event, which is what BusinessCockpitService.getUserTask does. There is
-    // no entry to hand back and nothing to wait for, so an empty answer is what the caller can
-    // work with: the cockpit keeps what it stored before, and the log says why
+    // asked outside an event, which is what the dispatch of a changed user task and
+    // BusinessCockpitService.getUserTask do. The empty answer is what each of them works with
     when(
         clientFactories
             .getFactory("c8")
@@ -396,6 +396,22 @@ public class Camunda8CockpitBridgeTest {
                 "c8", MODULE_ID, PROCESS_ID, "1", AGGREGATE_ID, CALLING_INSTANCE, USER_TASK_ID, "handle", "Handle"));
 
     assertTrue(prefill.isEmpty());
+    // the dispatch of a changed user task asks this way and asks again a little later, and the
+    // extension says so in its own log. getUserTask reads a task by its key only after a search
+    // found it, and an empty search warns itself. So a warning here would only repeat one
+    assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
+    final var said = whatTheBridgeSaid(Level.DEBUG);
+    assertEquals(1, said.size(), said.toString());
+    assertTrue(said.getFirst().contains(USER_TASK_ID), said.getFirst());
+
+  }
+
+  @Test
+  @DisplayName("A changed user task is left to the dispatch, because only the storage knows its assignee")
+  public void aChangedUserTaskIsLeftToTheDispatch() {
+
+    assertFalse(bridge().reportsAChangedUserTaskRightAway());
+    verifyNoInteractions(client());
 
   }
 
