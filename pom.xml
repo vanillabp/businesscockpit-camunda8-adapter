@@ -75,13 +75,13 @@
          build was compiled against IS the lowest cluster version the build accepts. The
          properties below are what the line-* profiles select, one per line. Renovate
          leaves them alone (see renovate.json): they are raised by hand, and they follow
-         the pins of vanillabp/camunda8-adapter, because the cluster the integration tests
-         start is filtered out of the adapter's pin and not out of these. A pin left behind
-         here does not break anything, which is what makes it worth a sentence: the tests
-         then run an older client against a newer cluster, every literal that cluster
-         gained arrives as UNKNOWN_ENUM_VALUE, and a fallback nobody chose reads like one
-         somebody did. The night is what notices, see decision 10 in the repository's
-         DECISIONS.md. -->
+         the pins of camunda-community-hub/vanillabp-camunda8-adapter, because the cluster
+         the integration tests start is filtered out of the adapter's pin and not out of
+         these. A pin left behind here does not break anything, which is what makes it worth
+         a sentence: the tests then run an older client against a newer cluster, every
+         literal that cluster gained arrives as UNKNOWN_ENUM_VALUE, and a fallback nobody
+         chose reads like one somebody did. The night is what notices, see decision 10 in
+         the repository's DECISIONS.md. -->
     <camunda8.line>8.10</camunda8.line>
     <camunda8.version>${camunda8.version.line-8.10}</camunda8.version>
     <camunda8.version.line-8.8>8.8.40</camunda8.version.line-8.8>
@@ -564,11 +564,12 @@
          without any profile is that line: nothing to remember, and no 'activeByDefault' which
          any other profile on the command line would switch off. Rotating the lines means
          editing these profiles, the pin properties and the line table of the README, and it
-         follows whatever vanillabp/camunda8-adapter does. -->
+         follows whatever camunda-community-hub/vanillabp-camunda8-adapter does. -->
     <profile>
       <!-- a bugfix line: it takes fixes and nothing which needs a newer cluster. It did not
-           end when 8.10 went GA, see the README of vanillabp/camunda8-adapter, section
-           "How long a line lives" -->
+           end when 8.10 went GA, see the README of
+           camunda-community-hub/vanillabp-camunda8-adapter, section "How long a line
+           lives" -->
       <id>line-8.8</id>
       <properties>
         <camunda8.line>8.8</camunda8.line>

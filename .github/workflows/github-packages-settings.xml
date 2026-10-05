@@ -54,7 +54,7 @@
                 <!-- the BPMS adapter this extension plugs into -->
                 <repository>
                     <id>vanillabp-camunda8-adapter</id>
-                    <url>https://maven.pkg.github.com/vanillabp/camunda8-adapter</url>
+                    <url>https://maven.pkg.github.com/camunda-community-hub/vanillabp-camunda8-adapter</url>
                     <releases>
                         <enabled>false</enabled>
                     </releases>
