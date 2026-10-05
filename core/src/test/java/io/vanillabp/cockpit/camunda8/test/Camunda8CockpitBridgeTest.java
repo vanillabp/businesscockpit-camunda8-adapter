@@ -12,7 +12,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -33,7 +32,6 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.client.api.command.ClientHttpException;
-import io.camunda.client.api.search.enums.ProcessInstanceState;
 import io.camunda.client.api.search.filter.ProcessInstanceFilter;
 import io.camunda.client.api.search.response.ProcessInstance;
 import io.camunda.client.api.search.response.UserTask;
@@ -314,9 +312,10 @@ public class Camunda8CockpitBridgeTest {
   @DisplayName("A workflow read from the storage is named by the workflow aggregate's id")
   public void aWorkflowIsNamedByItsAggregateId() {
 
+    theModelIsNamed("The cockpit process");
     final var instance = mock(ProcessInstance.class, RETURNS_DEEP_STUBS);
     when(instance.getProcessDefinitionVersion()).thenReturn(2);
-    when(instance.getProcessDefinitionName()).thenReturn("The cockpit process");
+    when(instance.getProcessDefinitionName()).thenReturn("The name the storage holds");
     when(
         clientFactories
             .getFactory("c8")
@@ -326,10 +325,11 @@ public class Camunda8CockpitBridgeTest {
             .join())
         .thenReturn(instance);
 
+    // a reference without a version, so the storage is read for it
     final var prefill = bridge()
         .prefilledWorkflowDetails(
             new WorkflowReference(
-                "c8", MODULE_ID, PROCESS_ID, "2", AGGREGATE_ID, CALLING_INSTANCE))
+                "c8", MODULE_ID, PROCESS_ID, null, AGGREGATE_ID, CALLING_INSTANCE))
         .orElseThrow();
 
     // to VanillaBP a business key is a business key only where it says what the aggregate's @Id
@@ -337,7 +337,40 @@ public class Camunda8CockpitBridgeTest {
     // names the same one whether it was built from a listener job or read here
     assertEquals(AGGREGATE_ID, prefill.businessId());
     assertEquals("2", prefill.bpmnProcessVersion());
+    // the name of the model this extension wired, on every way, so that no way needs the storage
+    // for it
     assertEquals("The cockpit process", prefill.bpmnProcessName());
+
+  }
+
+  /** The model of the process of this test, as this extension read it while wiring it. */
+  private void theModelIsNamed(
+      final String name) {
+
+    deployments
+        .register(
+            "c8",
+            MODULE_ID,
+            new WiredListener("listener", SCOPED_PROCESS_ID, PROCESS_ID, PROCESS_ID, name, name, AGGREGATE_ID_NAME));
+
+  }
+
+  @Test
+  @DisplayName("A workflow reference with its version is prefilled without asking the cluster")
+  public void aReferenceWithItsVersionIsPrefilledWithoutTheStorage() {
+
+    theModelIsNamed("The cockpit process");
+
+    final var prefill = bridge()
+        .prefilledWorkflowDetails(
+            new WorkflowReference(
+                "c8", MODULE_ID, PROCESS_ID, "2", AGGREGATE_ID, CALLING_INSTANCE))
+        .orElseThrow();
+
+    assertEquals("2", prefill.bpmnProcessVersion());
+    assertEquals(AGGREGATE_ID, prefill.businessId());
+    assertEquals("The cockpit process", prefill.bpmnProcessName());
+    verifyNoInteractions(client());
 
   }
 
@@ -387,9 +420,10 @@ public class Camunda8CockpitBridgeTest {
                 "c8", MODULE_ID, PROCESS_ID, null, AGGREGATE_ID, CALLING_INSTANCE));
 
     assertTrue(prefill.isEmpty());
-    final var said = whatTheBridgeSaid(Level.WARN);
-    assertEquals(1, said.size(), said.toString());
-    assertTrue(said.getFirst().contains("two readings"), said.getFirst());
+    // only the dispatch of a changed aggregate asks this way, and the extension asks again and
+    // says so in its own log. A warning per attempt here would only repeat it
+    assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
+    assertEquals(1, whatTheBridgeSaid(Level.DEBUG).size(), whatTheBridgeSaid(Level.DEBUG).toString());
 
   }
 
@@ -576,25 +610,59 @@ public class Camunda8CockpitBridgeTest {
   }
 
   @Test
-  @DisplayName("A workflow VanillaBP started but the storage has not written yet is not reported, and the log says why")
+  @DisplayName("A workflow VanillaBP started without its version is left to the dispatch, which reads the storage")
   public void aWorkflowStartedAMomentAgoIsNotReportedWithoutItsVersion() {
 
     vanillaBpStartedTheWorkflow(CALLING_INSTANCE);
     theStorageHasNotWrittenTheWorkflowYet();
+    final var bridge = bridge();
+    clearInvocations(client());
 
-    // what BusinessCockpitService.aggregateChanged asks, for instance from the first service task
-    // of the workflow, while the exporter has not written that workflow yet
-    final var found = bridge().workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
+    // what BusinessCockpitService.aggregateChanged asks in the application's transaction, for
+    // instance from the first service task of the workflow: the key alone names no version, so
+    // nothing is read there and the change is resolved when its entry is dispatched
+    assertTrue(bridge.workflowsOfAggregateRightAway(MODULE_ID, PROCESS_ID, AGGREGATE_ID).isEmpty());
+    verifyNoInteractions(client());
+
+    // the dispatch, while the exporter has not written that workflow yet. The cluster answers 404
+    final var found = bridge.workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
 
     // a reference without the version would pick the wrong details provider, or none, and the
-    // cockpit would replace what it shows with that report. So there is no reference at all
+    // cockpit would replace what it shows with that report. So there is no reference, and the
+    // extension asks again a little later
     assertTrue(found.isEmpty(), found.toString());
     // the workflow is read by the key VanillaBP wrote down, and not searched for
     verify(clientFactories.getFactory("c8").getClient(), never()).newProcessInstanceSearchRequest();
-    final var said = whatTheBridgeSaid(Level.WARN);
+    assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
+    final var said = whatTheBridgeSaid(Level.DEBUG);
     assertEquals(1, said.size(), said.toString());
-    assertTrue(said.getFirst().contains("has not written it yet"), said.getFirst());
     assertTrue(said.getFirst().contains(CALLING_INSTANCE), said.getFirst());
+
+  }
+
+  @Test
+  @DisplayName("A workflow VanillaBP wrote down with its version is named in the application's transaction")
+  public void aWorkflowWrittenDownWithItsVersionIsNamedRightAway() {
+
+    vanillaBpStartedTheWorkflow(new WorkflowStart("c8", CALLING_INSTANCE, "5", true));
+
+    final var found = bridge()
+        .workflowsOfAggregateRightAway(MODULE_ID, PROCESS_ID, AGGREGATE_ID)
+        .orElseThrow();
+
+    assertEquals(1, found.size(), found.toString());
+    assertEquals("5", found.getFirst().processVersion());
+    assertEquals(CALLING_INSTANCE, found.getFirst().workflowId());
+    verifyNoInteractions(client());
+
+  }
+
+  @Test
+  @DisplayName("A workflow VanillaBP holds no note of is left to the dispatch, and nothing is searched in the application's transaction")
+  public void aWorkflowWithoutANoteIsLeftToTheDispatch() {
+
+    assertTrue(bridge().workflowsOfAggregateRightAway(MODULE_ID, PROCESS_ID, AGGREGATE_ID).isEmpty());
+    verifyNoInteractions(client());
 
   }
 
@@ -633,9 +701,9 @@ public class Camunda8CockpitBridgeTest {
 
     assertTrue(found.isEmpty());
     verify(theFilterOfTheSearch()).processDefinitionId(SCOPED_PROCESS_ID);
-    final var said = whatTheBridgeSaid(Level.WARN);
-    assertEquals(1, said.size(), said.toString());
-    assertTrue(said.getFirst().contains("two readings"), said.getFirst());
+    // the dispatch of the change asks again, and the extension's log says so
+    assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
+    assertEquals(1, whatTheBridgeSaid(Level.DEBUG).size(), whatTheBridgeSaid(Level.DEBUG).toString());
 
   }
 
@@ -702,9 +770,7 @@ public class Camunda8CockpitBridgeTest {
     // a report without the version would empty the details the cockpit shows, and an application
     // on Camunda 8 may name a version in every details provider
     assertTrue(found.isEmpty(), found.toString());
-    final var said = whatTheBridgeSaid(Level.WARN);
-    assertEquals(1, said.size(), said.toString());
-    assertTrue(said.getFirst().contains("has not written it yet"), said.getFirst());
+    assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
 
   }
 
@@ -756,23 +822,19 @@ public class Camunda8CockpitBridgeTest {
     // since the election reads the note of the start, aggregateChanged finds this bridge after
     // the workflow ended as well, for as long as the note lives
     vanillaBpStartedTheWorkflow(new WorkflowStart("c8", CALLING_INSTANCE, "3", true));
-    final var instance = aWorkflowOnVersion(3);
-    when(instance.getState()).thenReturn(ProcessInstanceState.COMPLETED);
-    when(instance.getProcessDefinitionName()).thenReturn("The cockpit process");
-    when(client().newProcessInstanceGetRequest(Long.parseLong(CALLING_INSTANCE)).send().join())
-        .thenReturn(instance);
-    clearInvocations(client());
+    theModelIsNamed("The cockpit process");
 
     final var bridge = bridge();
-    final var found = bridge.workflowsOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID);
+    final var found = bridge
+        .workflowsOfAggregateRightAway(MODULE_ID, PROCESS_ID, AGGREGATE_ID)
+        .orElseThrow();
     final var prefill = bridge.prefilledWorkflowDetails(found.getFirst()).orElseThrow();
 
-    // the storage keeps the history of an ended workflow, so the report carries what it says
+    // the note of the start and the model say all a report needs
     assertEquals("3", prefill.bpmnProcessVersion());
     assertEquals("The cockpit process", prefill.bpmnProcessName());
-    // one read, and no command: the cockpit hears of the change, the cluster does not
-    verify(client()).newProcessInstanceGetRequest(Long.parseLong(CALLING_INSTANCE));
-    verifyNoMoreInteractions(client());
+    // no read, and no command: the cockpit hears of the change, the cluster does not
+    verifyNoInteractions(client());
 
   }
 
