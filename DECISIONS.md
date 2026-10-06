@@ -259,10 +259,11 @@ job, and the case is reported as cancelled.
 
 Whether the line has the construct is the adapter's answer, not a second rule here.
 `Camunda8CancelListeners` of the VanillaBP Camunda 8 adapter answers it and writes the listener
-(decision 28 in the DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter). Asking it
-first matters. A cluster of 8.8 or 8.9 refuses a model which carries the listener, and that fails
-the deployment of the whole workflow module. A second copy of the rule is a rule which will be wrong
-in one of the two places.
+(decision 32 in the DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter; decision 28
+there says that an extension uses the adapter's own API for this). Asking it first matters. A
+cluster of 8.8 or 8.9 refuses a model which carries the listener, and that fails the deployment of
+the whole workflow module. A second copy of the rule is a rule which will be wrong in one of the two
+places.
 
 An upgrading application deploys a new process version on 8.10. A listener added to the process
 changes the bytes of the process, and a cluster counts a version per set of bytes. Decision 4
