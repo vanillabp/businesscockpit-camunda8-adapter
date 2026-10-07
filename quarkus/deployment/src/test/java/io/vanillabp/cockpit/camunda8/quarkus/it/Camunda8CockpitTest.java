@@ -68,7 +68,10 @@ public class Camunda8CockpitTest {
 
   private static final String MODULE_ID = "c8-cockpit";
 
-  /** The BPMN process of the file which no workflow aggregate of this application claims. */
+  /**
+   * The BPMN process of the file which no workflow aggregate of this application claims. The test
+   * configuration marks it as implemented externally, because the start would end otherwise.
+   */
   private static final String UNCLAIMED_PROCESS_ID = "IncidentDetailsProcess";
 
   /**
@@ -457,14 +460,15 @@ public class Camunda8CockpitTest {
   }
 
   @Test
-  @DisplayName("A BPMN process no workflow aggregate claims gets no listeners")
+  @DisplayName("A BPMN process marked as implemented externally gets no listeners")
   public void anUnclaimedProcessIsLeftAlone() {
 
     final var scopedProcessId = "%s__%s".formatted(MODULE_ID, UNCLAIMED_PROCESS_ID);
     final var model = deployedModelOf(scopedProcessId);
 
     // a listener of this extension carries no retries, so a job nobody serves would stop the
-    // workflow where it sits, and nobody serves a process this application knows no case of
+    // workflow where it sits. The line 'implemented-externally' lets the start go on, but it
+    // makes nobody here serve the process
     assertEquals(List.of(), executionListenerTypesOf(model, scopedProcessId));
     assertEquals(List.of(), executionListenerTypesOf(model, "IncidentStart"));
     assertFalse(

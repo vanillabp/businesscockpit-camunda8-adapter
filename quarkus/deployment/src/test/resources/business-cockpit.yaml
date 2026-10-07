@@ -31,6 +31,7 @@ vanillabp:
           allow-full-sync-with-bpms: true
         IncidentDetailsProcess:
           allow-full-sync-with-bpms: true
+          implemented-externally: true
       cockpit:
         workflow-module-uri: http://localhost:8081/c8-cockpit
         ui-uri-type: WEBPACK_MF_REACT
