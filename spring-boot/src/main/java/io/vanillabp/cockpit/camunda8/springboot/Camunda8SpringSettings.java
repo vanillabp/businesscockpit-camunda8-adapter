@@ -13,6 +13,8 @@ public class Camunda8SpringSettings implements Camunda8CockpitSettings {
   private final VanillaBpCamunda8Properties properties;
 
   /**
+   * Reads the settings from the configuration of the Camunda 8 adapter.
+   *
    * @param properties The Camunda 8 adapter's own overlay of the <code>vanillabp</code>
    *          configuration tree
    */

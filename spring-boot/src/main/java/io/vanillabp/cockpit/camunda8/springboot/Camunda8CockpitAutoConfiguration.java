@@ -40,6 +40,14 @@ import io.vanillabp.integration.extension.spi.ExtensionWiringService;
 public class Camunda8CockpitAutoConfiguration {
 
   /**
+   * Creates the auto-configuration. Spring Boot does that, an application never has to.
+   */
+  public Camunda8CockpitAutoConfiguration() {
+  }
+
+  /**
+   * Registers the clusters this extension watches, one per configured Camunda 8 adapter.
+   *
    * @param clientFactories The clients the Camunda 8 adapter built, one per configured adapter
    *          id
    * @param scoping VanillaBP's name-clash avoidance
@@ -55,6 +63,8 @@ public class Camunda8CockpitAutoConfiguration {
   }
 
   /**
+   * Registers the record of the listeners this extension added.
+   *
    * @return Where the listeners this extension added are remembered, shared by the wiring
    *         service filling it and by every job which arrives later
    */
@@ -66,6 +76,8 @@ public class Camunda8CockpitAutoConfiguration {
   }
 
   /**
+   * Registers the settings of the listener jobs of this extension.
+   *
    * @param properties The Camunda 8 adapter's own configuration
    * @return How long a listener job of this extension stays locked
    */
@@ -78,6 +90,8 @@ public class Camunda8CockpitAutoConfiguration {
   }
 
   /**
+   * Registers the workers which serve the listeners of this extension.
+   *
    * @param clients The clusters
    * @param deployments What was wired
    * @param settings The lock of a listener job
@@ -102,6 +116,8 @@ public class Camunda8CockpitAutoConfiguration {
   }
 
   /**
+   * Registers the step this extension adds to the deployment of a workflow module.
+   *
    * @param clients The clusters
    * @param deployments Where the listeners are remembered
    * @param workers The workers serving them

@@ -132,6 +132,11 @@ public class Camunda8CockpitTest {
   static final QuarkusExtensionTest extensionTest = new QuarkusExtensionTest()
       .withApplicationRoot(
           jar -> jar
+              // names its H2 database 'c8-cockpit-quarkus'. That is safe while this is the only
+              // test class booting the application. A second class using the file would share
+              // the database without anybody noticing, so it should bring a
+              // 'TestApplication.forTestClass' along, the way the Camunda 7 and the Process
+              // Engine API adapters of the cockpit give each test class a database of its own
               .addAsResource("business-cockpit.yaml", "application.yaml")
               .addAsResource("c8-cockpit/processes/cockpit-process.bpmn")
               .addAsResource("c8-cockpit/processes/calling-process.bpmn")

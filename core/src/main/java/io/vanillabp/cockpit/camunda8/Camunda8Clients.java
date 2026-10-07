@@ -41,6 +41,8 @@ public class Camunda8Clients {
     }
 
     /**
+     * Gives the naming rules of this cluster.
+     *
      * @return How this cluster names the things the extension asks it about
      */
     public Camunda8Scope scope() {
@@ -95,6 +97,9 @@ public class Camunda8Clients {
     }
 
     /**
+     * Gives the Camunda 8 client of this cluster. It is the client the adapter built, not a second
+     * one.
+     *
      * @return The client of this adapter, which the adapter hands out by identity
      */
     public CamundaClient client() {
@@ -104,6 +109,8 @@ public class Camunda8Clients {
     }
 
     /**
+     * Gives the configuration of the Camunda 8 adapter behind this cluster.
+     *
      * @return What this adapter was configured with, as the adapter resolved it. The stream
      *         timeout of a worker of this extension comes from there, and it is the one worker
      *         setting the adapter's client does not already carry
@@ -123,6 +130,9 @@ public class Camunda8Clients {
   private final Map<String, Cluster> clusters = new ConcurrentHashMap<>();
 
   /**
+   * Creates an empty registry of clusters. A cluster is set up the first time somebody asks for its
+   * adapter id.
+   *
    * @param clientFactories The adapter's own registry of clients, one per configured adapter
    *          id
    * @param scoping VanillaBP's name-clash avoidance, or <code>null</code> where the platform
@@ -138,6 +148,9 @@ public class Camunda8Clients {
   }
 
   /**
+   * Gives the cluster behind one configured adapter id. The first call for an id sets the cluster
+   * up, and every later call gets the same one.
+   *
    * @param adapterId A configured adapter id of type <code>camunda8</code>
    * @return Its cluster
    */

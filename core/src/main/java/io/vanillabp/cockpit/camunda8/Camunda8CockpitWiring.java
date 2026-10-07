@@ -41,6 +41,8 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
   private final WorkflowTaskWiring workflowTaskWiring;
 
   /**
+   * Creates the step this extension adds to the deployment of a workflow module.
+   *
    * @param clients The clusters of the configured Camunda 8 adapters
    * @param deployments Where what was wired is remembered
    * @param workers The workers serving the listeners

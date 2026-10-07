@@ -83,6 +83,8 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   private final Supplier<BusinessCockpitEventPublisher> publisher;
 
   /**
+   * Creates the handler for the listener jobs of one worker.
+   *
    * @param cluster The cluster this worker listens to
    * @param workflowModuleId The workflow module the worker was opened for
    * @param deployments What this extension wired, to translate the job's identifiers back

@@ -34,6 +34,12 @@ import io.vanillabp.cockpit.extension.spi.WorkflowDetailsPrefill;
 public class Camunda8EventBeingReported {
 
   /**
+   * Creates a handover which holds no event yet.
+   */
+  public Camunda8EventBeingReported() {
+  }
+
+  /**
    * One task the thread is reporting about.
    *
    * @param userTaskId The task's key, as the cluster handed it out
@@ -109,6 +115,8 @@ public class Camunda8EventBeingReported {
   }
 
   /**
+   * Gives what the listener job of this thread said about a user task.
+   *
    * @param userTaskId The task a report is being built for
    * @return What its listener job said, or empty where this thread reports no event about that
    *         task and the cluster has to be asked instead
@@ -124,6 +132,8 @@ public class Camunda8EventBeingReported {
   }
 
   /**
+   * Gives what the listener job of this thread said about a workflow.
+   *
    * @param workflowId The workflow a report is being built for
    * @return What its listener job said, or empty where this thread reports no event about that
    *         workflow and the cluster has to be asked instead

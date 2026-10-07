@@ -29,6 +29,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Camunda8CockpitDeployments {
 
   /**
+   * Creates an empty record. The wiring adds the listeners of each workflow module to it while it
+   * wires the module.
+   */
+  public Camunda8CockpitDeployments() {
+  }
+
+  /**
    * One place a listener of this extension sits at.
    *
    * @param listenerType The job type the listener produces, which is what a worker subscribes
@@ -97,6 +104,8 @@ public class Camunda8CockpitDeployments {
   }
 
   /**
+   * Lists the listeners this extension added to one workflow module on one cluster.
+   *
    * @param adapterId The configured adapter id whose cluster the workers are opened on
    * @param workflowModuleId The workflow module
    * @return Its listeners by job type, in the order they were wired, which is one worker each

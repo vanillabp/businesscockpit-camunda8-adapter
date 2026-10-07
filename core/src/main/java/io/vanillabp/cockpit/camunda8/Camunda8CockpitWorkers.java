@@ -90,6 +90,8 @@ public class Camunda8CockpitWorkers {
   private final Map<Subscription, OpenWorkers> openWorkers = new ConcurrentHashMap<>();
 
   /**
+   * Creates the registry of open workers. It holds none until a workflow module is wired.
+   *
    * @param clients The clusters of the configured Camunda 8 adapters
    * @param deployments What this extension wired
    * @param settings How long a listener job stays locked

@@ -322,6 +322,28 @@
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <configuration>
+            <!-- The parent runs javadoc in every module with doclint 'all', and it lets
+                 warnings pass. Here a warning breaks the build. Nearly every warning is a
+                 comment nobody wrote, and what this repository publishes is read by
+                 somebody wiring the extension into an application. A green build should mean
+                 that nothing they read is missing.
+                 Javadoc reads only the source tree of the line being built. A pull request
+                 builds every line, so each line gets its own check there. Locally, run it
+                 once per line profile. -->
+            <failOnWarnings>true</failOnWarnings>
+            <!-- the Quarkus extension processor writes an accessor class next to every
+                 class with build steps, and generated code has no comments. It is compiled,
+                 never published and read by nobody. Keep this the only exclude: every
+                 further one is a hole in what a green build promises. -->
+            <sourceFileExcludes>
+              <sourceFileExclude>**/*$$accessor.java</sourceFileExclude>
+            </sourceFileExcludes>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
           <version>3.16.0</version>
           <configuration>
@@ -331,8 +353,9 @@
                    a per-line source tree. The javadoc plugin of the parent opens what a
                    release publishes, so it starts at protected, and it never sees the code
                    of the two lines a build does not select. Every group is checked here
-                   except 'missing': a comment which was never written is a warning, not a
-                   broken build. -->
+                   except 'missing', because javac would ask for a comment on every package
+                   private member too. A missing comment on what this repository publishes
+                   breaks the javadoc run instead. -->
               <arg>-Xdoclint:all,-missing</arg>
             </compilerArgs>
             <annotationProcessorPaths>

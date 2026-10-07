@@ -18,6 +18,9 @@
     <maven.install.skip>true</maven.install.skip>
     <maven.deploy.skip>true</maven.deploy.skip>
     <maven.source.skip>true</maven.source.skip>
+    <!-- and no javadoc to check either: the parent runs it in every module, and a module
+         which publishes nothing has nobody to write it for -->
+    <maven.javadoc.skip>true</maven.javadoc.skip>
     <!-- the gate contributes no coverage itself, so it needs no entry in any report;
          the empty agent keeps Surefire's inherited '@{jacoco.agent}' resolvable -->
     <jacoco.skip>true</jacoco.skip>
