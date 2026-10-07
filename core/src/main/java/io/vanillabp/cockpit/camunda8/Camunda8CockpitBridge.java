@@ -87,6 +87,8 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   private final Camunda8CockpitDeployments deployments;
 
   /**
+   * Creates the bridge through which the cockpit reads one cluster.
+   *
    * @param cluster The cluster this bridge reads
    * @param workflowTaskWiring VanillaBP's registry, which names the workflow aggregate's id
    *          variable of a BPMN process

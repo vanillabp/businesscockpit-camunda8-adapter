@@ -33,6 +33,12 @@ import io.vanillabp.integration.extension.spi.election.WorkflowElection;
  */
 public class Camunda8CockpitBeanRegistrar implements BeanRegistrar {
 
+  /**
+   * Creates the registrar. Spring does that because the auto-configuration imports it.
+   */
+  public Camunda8CockpitBeanRegistrar() {
+  }
+
   @Override
   public void register(
       final BeanRegistry registry,

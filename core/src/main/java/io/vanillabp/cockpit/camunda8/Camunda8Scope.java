@@ -23,6 +23,8 @@ public class Camunda8Scope {
   private final String configuredTenantId;
 
   /**
+   * Creates the naming rules of one cluster.
+   *
    * @param adapterId The configured adapter id whose cluster this scope belongs to
    * @param scoping VanillaBP's name-clash avoidance, or <code>null</code> where the platform
    *          offers none
@@ -40,6 +42,8 @@ public class Camunda8Scope {
   }
 
   /**
+   * Gives the adapter id this scope belongs to.
+   *
    * @return The configured adapter id
    */
   public String adapterId() {
@@ -49,6 +53,8 @@ public class Camunda8Scope {
   }
 
   /**
+   * Gives the tenant under which the cluster keeps the processes of a workflow module.
+   *
    * @param workflowModuleId The workflow module
    * @return The Camunda tenant this module's workflows live in, or <code>null</code> where the
    *         configured mode uses none
@@ -61,6 +67,8 @@ public class Camunda8Scope {
   }
 
   /**
+   * Turns a BPMN process id, as the application wrote it, into the id the cluster knows.
+   *
    * @param workflowModuleId The workflow module
    * @param bpmnProcessId The BPMN process id as the application wrote it
    * @return The process id the cluster knows, which differs from the plain one only under
@@ -76,6 +84,8 @@ public class Camunda8Scope {
   }
 
   /**
+   * Turns a task definition, as the cluster knows it, back into the one the application wrote.
+   *
    * @param workflowModuleId The workflow module
    * @param bpmnProcessId The BPMN process id as the application wrote it
    * @param taskDefinition The external form reference as the cluster knows it

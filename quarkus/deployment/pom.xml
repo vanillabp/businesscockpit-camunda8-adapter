@@ -126,6 +126,15 @@
         </executions>
       </plugin>
       <plugin>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <!-- the build step class is package private, as Quarkus allows, and the generated
+               accessor is left out by the parent. Without this, javadoc finds no class to
+               document and stops with an error, here and in the javadoc jar of a release -->
+          <show>package</show>
+        </configuration>
+      </plugin>
+      <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <!-- The tests here boot their application IN this JVM, and Quarkus logs that boot into a

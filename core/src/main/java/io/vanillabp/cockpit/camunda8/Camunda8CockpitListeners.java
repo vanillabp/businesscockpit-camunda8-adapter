@@ -63,6 +63,8 @@ public final class Camunda8CockpitListeners {
   }
 
   /**
+   * Builds the type of the listener this extension adds to a process or to a user task.
+   *
    * @param identifier The BPMN process id respectively the external form reference, both in
    *          the form the CLUSTER knows them
    * @return The listener type, which is also the job type a worker of this extension
@@ -91,6 +93,8 @@ public final class Camunda8CockpitListeners {
   }
 
   /**
+   * Finds one process in the model of a BPMN file.
+   *
    * @param model The model of one BPMN file
    * @param scopedBpmnProcessId The process id as the CLUSTER knows it
    * @return The BPMN process element, or empty where this file holds no such process
