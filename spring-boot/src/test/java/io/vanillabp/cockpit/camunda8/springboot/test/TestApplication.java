@@ -11,6 +11,12 @@ import io.vanillabp.spi.cockpit.workflowmodules.WorkflowModuleDetailsProvider;
  * The application the Camunda 8 half of the Business Cockpit extension is tested inside: a JPA
  * workflow aggregate, a workflow service with details providers, and a real Camunda 8 cluster
  * the VanillaBP Camunda 8 adapter deploys to.
+ * <p>
+ * Each test class gets a database of its own. The test configurations set
+ * <code>spring.datasource.generate-unique-name</code>, so every Spring context gets an in-memory
+ * database with a random name. The Camunda 7 and the Process Engine API adapters of the cockpit
+ * name the database through a <code>ContextCustomizerFactory</code> and a key per test class
+ * instead. Both ways keep test classes apart. The adapters differ here on purpose.
  */
 @SpringBootApplication
 public class TestApplication {
