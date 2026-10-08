@@ -25,10 +25,16 @@ vanillabp:
       workflows:
         CockpitProcess:
           allow-full-sync-with-bpms: true
+          tasks:
+            Approve:
+              implemented-externally: true
         CallingProcess:
           allow-full-sync-with-bpms: true
         CalledProcess:
           allow-full-sync-with-bpms: true
+          tasks:
+            Handle:
+              implemented-externally: true
         IncidentDetailsProcess:
           allow-full-sync-with-bpms: true
       cockpit:
