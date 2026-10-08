@@ -67,6 +67,13 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * The workflow module runs under <code>use-prefix</code>, which is the harder of the two
  * name-clash modes: every identifier the cluster knows carries the module's prefix while
  * everything the cockpit is told has to be spelled the way the application wrote it.
+ * <p>
+ * The configuration marks every user task of the processes this application claims with
+ * <code>implemented-externally: true</code>. No <code>@WorkflowTask</code> method serves these
+ * tasks, because people work them off in the cockpit, and a details provider does not count as
+ * serving a task. Without the mark, VanillaBP ends the start. The mark stands at each task by its
+ * element id, not at the workflow, because that is the narrowest place for it. YAML comments do not
+ * survive the formatter, which is why this is written here.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput

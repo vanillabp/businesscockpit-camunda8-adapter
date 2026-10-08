@@ -58,6 +58,14 @@ import jakarta.transaction.UserTransaction;
  * That initializer is what makes the Docker check a condition of its own here, where the Spring
  * Boot test says {@code @Testcontainers(disabledWithoutDocker = true)} and is done: a machine
  * without Docker has to reach the skip without a container ever being asked for.
+ * <p>
+ * The configuration marks every user task of the processes this application claims with
+ * <code>implemented-externally: true</code>. No <code>@WorkflowTask</code> method serves these
+ * tasks, because people work them off in the cockpit, and a details provider does not count as
+ * serving a task. Without the mark, VanillaBP ends the start. The mark stands at each task by its
+ * element id, not at the workflow, because that is the narrowest place for it. The process nobody
+ * here claims gets no mark: VanillaBP asks nothing of its tasks. YAML comments do not survive the
+ * formatter, which is why this is written here.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput

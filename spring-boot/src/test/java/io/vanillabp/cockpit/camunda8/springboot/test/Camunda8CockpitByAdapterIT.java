@@ -48,6 +48,9 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * What is asserted here and nowhere else: the identifiers stay PLAIN in the model and in every
  * report, and the listener jobs still reach the extension although they are handed out for a
  * tenant. A worker which had not subscribed for it would never see them.
+ * <p>
+ * Its configuration marks the user tasks the same way, for the reason {@link Camunda8CockpitIT}
+ * gives.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput
