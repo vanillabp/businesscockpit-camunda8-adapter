@@ -64,8 +64,9 @@ import jakarta.transaction.UserTransaction;
  * tasks, because people work them off in the cockpit, and a details provider does not count as
  * serving a task. Without the mark, VanillaBP ends the start. The mark stands at each task by its
  * element id, not at the workflow, because that is the narrowest place for it. The process nobody
- * here claims gets no mark: VanillaBP asks nothing of its tasks. YAML comments do not survive the
- * formatter, which is why this is written here.
+ * here claims gets no mark at its tasks, since VanillaBP asks nothing of them. It gets the mark at
+ * the workflow instead, because VanillaBP ends the start for a deployed process nobody claims. YAML
+ * comments do not survive the formatter, which is why this is written here.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput
