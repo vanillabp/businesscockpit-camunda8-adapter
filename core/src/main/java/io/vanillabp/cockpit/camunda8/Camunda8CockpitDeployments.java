@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * serving it are opened and for as long as they are.
  * <p>
  * Three things have to survive the wiring. The workers need to know which job types exist and
- * which variable each of them has to ask the cluster for. Every job arriving later has to be
+ * which variables each of them has to ask the cluster for. Every job arriving later has to be
  * translated back, because it carries the identifiers the CLUSTER knows, while everything the
  * cockpit is told is spelled the way the application wrote it. So is everything the
  * application's own methods are matched by. And a report is built from the job alone, so what
@@ -51,6 +51,10 @@ public class Camunda8CockpitDeployments {
    * @param bpmnProcessName The BPMN name of the process, the other fallback title. It is taken
    *          out of the model for the same reason
    * @param aggregateIdName The process variable the workflow aggregate's id is carried in
+   * @param taskDefinition The task definition of the user task the listener sits on, as the
+   *          application wrote it, which is what a <code>&#64;UserTaskDetailsProvider</code>
+   *          method is matched by. <code>null</code> for a listener at the process or at a start
+   *          event
    */
   public record WiredListener(
                               String listenerType,
@@ -59,7 +63,47 @@ public class Camunda8CockpitDeployments {
                               String elementId,
                               String elementName,
                               String bpmnProcessName,
-                              String aggregateIdName) {
+                              String aggregateIdName,
+                              String taskDefinition) {
+
+    /**
+     * A listener at the process or at a start event, which reports the workflow and not a user
+     * task.
+     *
+     * @param listenerType See the record
+     * @param scopedBpmnProcessId See the record
+     * @param bpmnProcessId See the record
+     * @param elementId See the record
+     * @param elementName See the record
+     * @param bpmnProcessName See the record
+     * @param aggregateIdName See the record
+     */
+    public WiredListener(
+        final String listenerType,
+        final String scopedBpmnProcessId,
+        final String bpmnProcessId,
+        final String elementId,
+        final String elementName,
+        final String bpmnProcessName,
+        final String aggregateIdName) {
+
+      this(
+          listenerType, scopedBpmnProcessId, bpmnProcessId, elementId, elementName, bpmnProcessName, aggregateIdName, null);
+
+    }
+
+    /**
+     * Whether the listener sits on a user task. Only a user task has a details provider which may
+     * read process variables.
+     *
+     * @return Whether the listener sits on a user task
+     */
+    public boolean sitsOnAUserTask() {
+
+      return taskDefinition != null;
+
+    }
+
   }
 
   /**

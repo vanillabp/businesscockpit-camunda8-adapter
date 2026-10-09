@@ -1,10 +1,10 @@
 package io.vanillabp.cockpit.camunda8;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
@@ -15,15 +15,24 @@ import io.camunda.client.api.worker.JobWorker;
 import io.vanillabp.camunda8.client.Camunda8ClientFactory.WorkflowModuleShutdownRegistration;
 import io.vanillabp.camunda8.client.Camunda8Workers;
 import io.vanillabp.camunda8.observability.Camunda8Metrics;
+import io.vanillabp.camunda8.wiring.Camunda8FetchVariables;
+import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 
 /**
  * The workers this extension keeps open, one per job type of a workflow module and per Camunda
  * 8 cluster the module was deployed to.
  * <p>
- * A worker asks the cluster for exactly one variable besides the job: the one the workflow
- * aggregate's id is carried in. Everything else a report needs travels on the job itself, so a
- * job which carries fewer variables is a user task which appears sooner.
+ * A worker asks the cluster for the variables a report needs and for nothing else. Most of what
+ * a report needs travels on the job itself, so a job which carries fewer variables is a user task
+ * which appears sooner. The variables are the one the workflow aggregate's id is carried in and,
+ * for a worker serving user tasks, two more kinds. The first kind is what the details providers
+ * of those tasks read with <code>&#64;TaskParam</code>. The application's Business Cockpit
+ * extension says which names those are, since it noted them while VanillaBP scanned the
+ * providers. The second kind is the multi-instance context of the task, in the variables the
+ * adapter put into the deployed model for its own workers. So a listener job carries what a
+ * provider of this module reads, and not every variable of the workflow. See decision 26 in the
+ * repository's DECISIONS.md.
  * <p>
  * The pipeline starts this extension once per configured Camunda 8 adapter a module was
  * deployed to, and its processing context says which adapter that is. So a start opens the
@@ -118,10 +127,13 @@ public class Camunda8CockpitWorkers {
    *
    * @param adapterId The configured adapter id the module started for
    * @param workflowModuleId The workflow module which started
+   * @param multiInstances Which multi-instance elements enclose an element of that adapter's
+   *          models, as the adapter collected them while it wired them
    */
   public synchronized void open(
       final String adapterId,
-      final String workflowModuleId) {
+      final String workflowModuleId,
+      final Camunda8MultiInstance.Registry multiInstances) {
 
     final var subscription = new Subscription(adapterId, workflowModuleId);
     if (openWorkers.containsKey(subscription)) {
@@ -137,7 +149,8 @@ public class Camunda8CockpitWorkers {
       listenersByType
           .forEach((
               listenerType,
-              listeners) -> opened.add(open(cluster, workflowModuleId, listenerType, listeners)));
+              listeners) -> opened
+                  .add(open(cluster, workflowModuleId, listenerType, listeners, multiInstances)));
     } catch (final RuntimeException e) {
       // a module which is half subscribed is worse than one which is not subscribed at all. It
       // reports some of what happens and lets the rest of its listener jobs run into an
@@ -164,17 +177,17 @@ public class Camunda8CockpitWorkers {
       final Camunda8Clients.Cluster cluster,
       final String workflowModuleId,
       final String listenerType,
-      final List<Camunda8CockpitDeployments.WiredListener> listeners) {
+      final List<Camunda8CockpitDeployments.WiredListener> listeners,
+      final Camunda8MultiInstance.Registry multiInstances) {
 
-    final var variables = new ArrayList<>(
-        Camunda8CockpitDeployments.aggregateIdVariablesOf(listeners));
+    final var variables = variablesOf(listeners, multiInstances);
     var builder = cluster
         .client()
         .newWorker()
         .jobType(listenerType)
         .handler(
             new Camunda8CockpitJobHandler(
-                cluster, workflowModuleId, deployments, publisher))
+                cluster, workflowModuleId, deployments, multiInstances, publisher))
         .timeout(settings.listenerJobTimeout(workflowModuleId, cluster.scope().adapterId()))
         .name("vanillabp-businesscockpit-%s-%s".formatted(cluster.scope().adapterId(), listenerType))
         .fetchVariables(variables);
@@ -203,6 +216,45 @@ public class Camunda8CockpitWorkers {
             "Camunda8[{}]: the Business Cockpit opened a worker for '{}' of workflow module '{}', fetching {}",
             cluster.scope().adapterId(), listenerType, workflowModuleId, variables);
     return builder.open();
+
+  }
+
+  /**
+   * The variables one worker asks the cluster for. A worker serves one job type, and a job type
+   * may sit on several elements, so the list is the union over everything the worker serves.
+   * <p>
+   * The names are asked for while the module starts and not while its models are wired. The
+   * details providers are known once VanillaBP scanned the workflow services, and the adapter
+   * links a called process to the multi-instance elements of its caller only after it wired
+   * every process of the module.
+   *
+   * @param listeners What the worker serves
+   * @param multiInstances The multi-instance elements of the adapter's models
+   * @return The names, sorted so that the worker's subscription is the same after a restart
+   */
+  private List<String> variablesOf(
+      final List<Camunda8CockpitDeployments.WiredListener> listeners,
+      final Camunda8MultiInstance.Registry multiInstances) {
+
+    final var variables = new TreeSet<>(Camunda8CockpitDeployments.aggregateIdVariablesOf(listeners));
+    listeners
+        .stream()
+        .filter(Camunda8CockpitDeployments.WiredListener::sitsOnAUserTask)
+        .forEach(listener -> {
+          variables
+              .addAll(
+                  publisher
+                      .get()
+                      .variablesTheDetailsProvidersRead(listener.taskDefinition(), listener.elementId()));
+          // the adapter's own list for the element: the same variables its own workers ask for,
+          // so the values of a round reach a details provider exactly as they reach a
+          // @WorkflowTask method
+          Camunda8FetchVariables
+              .collect(
+                  variables, listener.aggregateIdName(),
+                  multiInstances.chainOf(listener.scopedBpmnProcessId(), listener.elementId()));
+        });
+    return List.copyOf(variables);
 
   }
 

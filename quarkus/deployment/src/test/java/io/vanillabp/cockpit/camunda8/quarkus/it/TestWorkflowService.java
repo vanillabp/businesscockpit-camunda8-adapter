@@ -1,5 +1,6 @@
 package io.vanillabp.cockpit.camunda8.quarkus.it;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -13,6 +14,7 @@ import io.vanillabp.spi.cockpit.workflow.WorkflowDetails;
 import io.vanillabp.spi.cockpit.workflow.WorkflowDetailsProvider;
 import io.vanillabp.spi.process.ProcessService;
 import io.vanillabp.spi.service.BpmnProcess;
+import io.vanillabp.spi.service.TaskParam;
 import io.vanillabp.spi.service.WorkflowService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -50,6 +52,13 @@ public class TestWorkflowService {
   /** What the methods serving every later version write into {@link #SERVED_BY}. */
   public static final String SERVED_BY_LATER_VERSIONS = "the methods of the later versions";
 
+  /**
+   * The detail both generations of the user-task provider fill with the process variable
+   * <code>customer</code>, read with <code>&#64;TaskParam</code>. No <code>&#64;WorkflowTask</code>
+   * method reads that variable, so only the provider's own name brings it onto the listener job.
+   */
+  public static final String CUSTOMER_VARIABLE = "customerVariable";
+
   @Inject
   ProcessService<TestAggregate> processService;
 
@@ -78,15 +87,17 @@ public class TestWorkflowService {
    * @param aggregate The workflow aggregate, loaded by VanillaBP
    * @param prefilled What the cluster knew about the task
    * @param event What happened to the task
+   * @param customer The process variable <code>customer</code>, where the report carries it
    * @return The very object it was given, which is the common case
    */
   @UserTaskDetailsProvider(taskDefinition = TASK_DEFINITION, version = "1")
   public UserTaskDetails approve(
       final TestAggregate aggregate,
       final PrefilledUserTaskDetails prefilled,
-      @DetailsEvent final DetailsEvent.Event event) {
+      @DetailsEvent final DetailsEvent.Event event,
+      @TaskParam("customer") final String customer) {
 
-    return approveDetails(aggregate, prefilled, event, SERVED_BY_VERSION_ONE);
+    return approveDetails(aggregate, prefilled, event, customer, SERVED_BY_VERSION_ONE);
 
   }
 
@@ -104,15 +115,17 @@ public class TestWorkflowService {
    * @param aggregate The workflow aggregate, loaded by VanillaBP
    * @param prefilled What the cluster knew about the task
    * @param event What happened to the task
+   * @param customer The process variable <code>customer</code>, where the report carries it
    * @return The enriched details
    */
   @UserTaskDetailsProvider(taskDefinition = TASK_DEFINITION, version = ">1")
   public UserTaskDetails approveOfALaterVersion(
       final TestAggregate aggregate,
       final PrefilledUserTaskDetails prefilled,
-      @DetailsEvent final DetailsEvent.Event event) {
+      @DetailsEvent final DetailsEvent.Event event,
+      @TaskParam("customer") final String customer) {
 
-    return approveDetails(aggregate, prefilled, event, SERVED_BY_LATER_VERSIONS);
+    return approveDetails(aggregate, prefilled, event, customer, SERVED_BY_LATER_VERSIONS);
 
   }
 
@@ -120,15 +133,21 @@ public class TestWorkflowService {
       final TestAggregate aggregate,
       final PrefilledUserTaskDetails prefilled,
       final DetailsEvent.Event event,
+      final String customer,
       final String servedBy) {
 
     aggregate.setNote(APPROVE_NOTE);
-    prefilled
-        .setDetails(
-            Map
-                .of(
-                    "customer", aggregate.getCustomer(), "event", event.name(), SERVED_BY,
-                    servedBy));
+    final var details = new LinkedHashMap<String, Object>();
+    details.put("customer", aggregate.getCustomer());
+    details.put("event", event.name());
+    details.put(SERVED_BY, servedBy);
+    // a report built from a listener job carries the variable. A report of a change the
+    // application named is built from the cluster's searchable storage, which carries no
+    // variables, so the parameter is null there and the detail is left out
+    if (customer != null) {
+      details.put(CUSTOMER_VARIABLE, customer);
+    }
+    prefilled.setDetails(details);
     prefilled.setCandidateGroups(List.of("approvers"));
     return prefilled;
 

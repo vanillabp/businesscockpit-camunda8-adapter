@@ -813,6 +813,21 @@ public class Camunda8CockpitIT {
   }
 
   @Test
+  @DisplayName("A details provider reads with @TaskParam a process variable no workflow task reads")
+  public void aDetailsProviderReadsAProcessVariable() {
+
+    final var aggregate = aStartedWorkflow("Tilda");
+
+    // the provider wrote what its @TaskParam parameter received. Nothing but the provider names
+    // the variable, so it reached the listener job only because the worker asked for it
+    awaitReportCarrying(
+        "/usertask/created",
+        "\"%s\":\"Tilda\"".formatted(TestWorkflowService.CUSTOMER_VARIABLE),
+        aggregate);
+
+  }
+
+  @Test
   @DisplayName("A details provider is picked by the version of the deployed process")
   public void aDetailsProviderIsPickedByTheDeployedVersion() {
 

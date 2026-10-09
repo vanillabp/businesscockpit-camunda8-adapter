@@ -1022,3 +1022,48 @@ The test applications show all three kinds on both platforms. The Spring Boot ap
 `UnclaimedProcess`, which nobody claims, and both of their configurations mark it at the workflow.
 The Quarkus application uses `IncidentDetailsProcess` for this, see decision 24. On both platforms
 a test deploys `ForeignProcess` straight to the cluster.
+
+## 26. A listener job carries what the details providers read
+
+A `@UserTaskDetailsProvider` method may take a process variable with `@TaskParam`, and the SPI
+promises it a value. On Camunda 8 it got `null`. A worker of this extension asked the cluster for
+the variable with the workflow aggregate's id and for nothing else. A Camunda 8 job carries only
+the variables its worker names, so the value never reached the provider. Stephan decided on
+2026-10-09 that `@TaskParam` stays and gets its value on Camunda 8 as well.
+
+The worker now asks for more. For a job type of user tasks it names three kinds of variables:
+
+- the variable with the workflow aggregate's id, as before;
+- the variables the details providers of those tasks read with `@TaskParam`;
+- the multi-instance context of the task, in the variables the Camunda 8 adapter puts into the
+  deployed model for its own workers (`Camunda8FetchVariables.collect`).
+
+The job handler passes what the job carries as `UserTaskDetailsPrefill.variables`. It turns the
+multi-instance variables into `UserTaskDetailsPrefill.multiInstances` with
+`Camunda8MultiInstance.valuesOf`, which is the adapter's own reading. So
+`@MultiInstanceIndex`, `@MultiInstanceTotal` and `@MultiInstanceElement` work on Camunda 8 too.
+Before, they received nothing.
+
+The names come from the Business Cockpit extension. `extensions-commons` notes the `@TaskParam`
+names of each provider while VanillaBP scans it. It does this in the annotation check of the
+`@UserTaskDetailsProvider` contract, so it reads the methods VanillaBP binds and walks no class a
+second time. `BusinessCockpitEventPublisher.variablesTheDetailsProvidersRead(taskDefinition,
+bpmnTaskId)` answers them. The Camunda 8 adapter does the same for its `@WorkflowTask` workers with
+`WorkflowTaskWiring.taskParameterNames`, and it asks by job type and by element id as well. The
+platform has no such question for the methods of an extension, which is why the extension keeps
+the list itself.
+
+The list is the union over every provider of the application which serves the element id or the
+task definition of a served task. It is not narrowed to the workflow module or to the BPMN process,
+because the scan does not say which process a method was registered for. So a job may carry a
+variable which a provider of another process reads under the same name of a task. It never misses
+one its own provider reads. A worker of a workflow job type asks for the aggregate's id alone,
+because a `@WorkflowDetailsProvider` takes no `@TaskParam`.
+
+The worker asks when the workflow module starts, not while its models are wired. The providers are
+scanned by then, and the adapter has linked every called process of the module to the
+multi-instance elements of its caller.
+
+What stays the same: a report of a change the application named, built from the cluster's
+searchable storage, carries no variables. A `@TaskParam` parameter receives `null` there. Reading
+variables out of that storage would be a request of its own for every report.

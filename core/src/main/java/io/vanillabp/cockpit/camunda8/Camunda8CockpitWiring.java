@@ -212,11 +212,16 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final String aggregateIdName) {
 
     final var scopedBpmnProcessId = process.getId();
+    final var scope = clients.of(adapterId).scope();
     Camunda8TaskWiring
         .readUserTasksOf(model, scopedBpmnProcessId, workflowModuleId, filename)
         .forEach(userTask -> {
           final var listenerType = Camunda8CockpitListeners
               .listenerTypeOf(userTask.externalFormReference());
+          // the name a details provider is matched by, which is what the worker asks the
+          // application's providers about once the module starts
+          final var taskDefinition = scope
+              .plainTaskDefinitionOf(workflowModuleId, bpmnProcessId, userTask.externalFormReference());
           final var element = model.getModelElementById(userTask.activityId()) instanceof UserTask found
               ? found
               : null;
@@ -232,7 +237,8 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
                           element == null
                               ? null
                               : element.getName(),
-                          userTask.activityId()), nameOrIdentifier(process.getName(), bpmnProcessId), aggregateIdName));
+                          userTask.activityId()), nameOrIdentifier(process.getName(),
+                              bpmnProcessId), aggregateIdName, taskDefinition));
         });
 
   }
@@ -242,7 +248,10 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final String workflowModuleId,
       final Camunda8ProcessingContext bpmsProcessingContext) {
 
-    workers.open(bpmsProcessingContext.getAdapterId(), workflowModuleId);
+    workers
+        .open(
+            bpmsProcessingContext.getAdapterId(), workflowModuleId,
+            bpmsProcessingContext.getMultiInstanceRegistry());
 
   }
 
