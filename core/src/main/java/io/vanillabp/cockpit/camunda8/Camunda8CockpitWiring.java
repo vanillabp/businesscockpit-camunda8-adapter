@@ -92,18 +92,20 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final Camunda8ProcessingContext context) {
 
     final var adapterId = context.getAdapterId();
-    final var aggregateIdName = aggregateIdNameOf(workflowModuleId, bpmnProcessId);
-    if (aggregateIdName == null) {
+    if (!workflowTaskWiring.isClaimedByAWorkflowService(workflowModuleId, bpmnProcessId)) {
       // A listener carries no retries, so a job nobody serves stops the workflow where it sits.
       // A BPMN process which no @WorkflowService class claims has no workflow aggregate, so
       // there is nothing the cockpit could report a case for, and it gets no listener either.
-      // See decision 5 in the repository's DECISIONS.md
+      // VanillaBP still hands such a process to this method, so this method has to ask.
+      // See decisions 5 and 25 in the repository's DECISIONS.md
       logger
           .debug(
               "Camunda8: the Business Cockpit adds no listeners to BPMN process '{}' of workflow module '{}' (file '{}'): no workflow aggregate of this application claims it",
               bpmnProcessId, workflowModuleId, filename);
       return;
     }
+    final var aggregateIdName = workflowTaskWiring
+        .resolveWorkflowAggregateIdName(workflowModuleId, bpmnProcessId);
 
     final var process = processInModel(model, adapterId, workflowModuleId, bpmnProcessId);
     if (process.isEmpty()) {
@@ -296,28 +298,6 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
         .processOf(
             model,
             clients.of(adapterId).scope().scopedProcessIdOf(workflowModuleId, bpmnProcessId));
-
-  }
-
-  /**
-   * The variable a BPMN process carries the workflow aggregate's id in.
-   *
-   * @return The name, or <code>null</code> where no workflow aggregate of this application
-   *         claims the process
-   */
-  private String aggregateIdNameOf(
-      final String workflowModuleId,
-      final String bpmnProcessId) {
-
-    try {
-      return workflowTaskWiring.resolveWorkflowAggregateIdName(workflowModuleId, bpmnProcessId);
-    } catch (final RuntimeException e) {
-      logger
-          .debug(
-              "Camunda8: the BPMN process '{}' of workflow module '{}' has no known workflow aggregate",
-              bpmnProcessId, workflowModuleId, e);
-      return null;
-    }
 
   }
 

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="UnclaimedDefinitions" targetNamespace="http://vanillabp.io/businesscockpit/camunda8">
+  <!--
+    A process this application deploys and no @WorkflowService claims. Somebody else would serve
+    it, so the configuration marks it with implemented-externally at the workflow, and the start
+    goes on.
+
+    It has a Camunda user task, so a listener of the cockpit would have something to report if
+    the extension had put one there. The tests assert that it did not.
+  -->
+  <bpmn:process id="UnclaimedProcess" isExecutable="true">
+    <bpmn:startEvent id="UnclaimedStart">
+      <bpmn:outgoing>ToUnclaimedTask</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToUnclaimedTask" sourceRef="UnclaimedStart" targetRef="UnclaimedTask" />
+    <bpmn:userTask id="UnclaimedTask" name="Work off a task nobody here claims">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="unclaimedTask" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToUnclaimedTask</bpmn:incoming>
+      <bpmn:outgoing>ToUnclaimedEnd</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="ToUnclaimedEnd" sourceRef="UnclaimedTask" targetRef="UnclaimedEnd" />
+    <bpmn:endEvent id="UnclaimedEnd">
+      <bpmn:incoming>ToUnclaimedEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>
