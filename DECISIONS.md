@@ -1023,7 +1023,7 @@ The test applications show all three kinds on both platforms. The Spring Boot ap
 The Quarkus application uses `IncidentDetailsProcess` for this, see decision 24. On both platforms
 a test deploys `ForeignProcess` straight to the cluster.
 
-## 26. A listener job carries what the details providers read
+## 26. A listener job carries what the details providers read - where the names come from replaced by decision 27
 
 A `@UserTaskDetailsProvider` method may take a process variable with `@TaskParam`, and the SPI
 promises it a value. On Camunda 8 it got `null`. A worker of this extension asked the cluster for
@@ -1067,3 +1067,28 @@ multi-instance elements of its caller.
 What stays the same: a report of a change the application named, built from the cluster's
 searchable storage, carries no variables. A `@TaskParam` parameter receives `null` there. Reading
 variables out of that storage would be a request of its own for every report.
+
+## 27. VanillaBP names the variables per workflow module and BPMN process
+
+Decision 26 took the names the details providers read from a list the Business Cockpit extension
+kept itself. That list knew nothing of workflow modules or BPMN processes. VanillaBP can now answer
+the question itself (`ExtensionHandlers#taskParameterNames`), and the extension passes it on. So
+`BusinessCockpitEventPublisher.variablesTheDetailsProvidersRead` takes four values now:
+`workflowModuleId`, `bpmnProcessId`, `taskDefinition` and `bpmnTaskId`.
+
+`Camunda8CockpitWorkers` asks once for each user-task listener of a job type. It passes the
+workflow module of the worker and the BPMN process the listener sits in, as the application wrote
+it, and not as the cluster knows it. A worker whose job type sits in several processes fetches the
+union of the answers. So a job carries what a provider of its own process reads, and no longer what a
+provider of another process reads under the same element id.
+
+The answer can still name a variable too many. Where several providers of one key split the
+versions of a process between them, VanillaBP also counts the provider for every task, although it
+may never run. A job never misses a variable its own provider reads.
+
+`Camunda8CockpitWorkerVariablesTest` shows it with two processes that use the same element id and
+have different providers. Each worker asks only about its own process.
+
+Everything else in decision 26 stays: the variable with the aggregate's id, the multi-instance
+variables, the moment the worker asks, and the report built from the searchable storage, which
+carries no variables.
