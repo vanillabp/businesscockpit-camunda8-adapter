@@ -36,10 +36,14 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.client.api.command.ClientHttpException;
 import io.camunda.client.api.search.filter.ProcessInstanceFilter;
+import io.camunda.client.api.search.filter.UserTaskVariableFilter;
+import io.camunda.client.api.search.filter.builder.StringProperty;
+import io.camunda.client.api.search.request.UserTaskEffectiveVariableSearchRequest;
 import io.camunda.client.api.search.response.ProcessInstance;
 import io.camunda.client.api.search.response.UserTask;
 import io.camunda.client.api.search.response.Variable;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
+import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
@@ -509,6 +513,69 @@ public class Camunda8CockpitBridgeTest {
     final var said = whatTheBridgeSaid(Level.DEBUG);
     assertEquals(1, said.size(), said.toString());
     assertTrue(said.getFirst().contains("variables of user task"), said.getFirst());
+
+  }
+
+  @Test
+  @DisplayName("A task of a process called by an expression reads the rounds its caller handed down")
+  public void aTaskOfAProcessCalledByAnExpressionReadsTheRoundsHandedDown() {
+
+    aTaskTheStorageHolds();
+    // a caller of the module names this process by an expression. Nobody reads a variable, and
+    // the task sits in no multi-instance element of its own process, so only the caller's
+    // rounds make the variables worth asking for
+    final var callerProcessId = "cockpit-module-CallingProcess";
+    final var multiInstances = new Camunda8MultiInstance.Registry();
+    multiInstances.registerCallByExpression(callerProcessId, SCOPED_PROCESS_ID);
+    deployments.rememberMultiInstances("c8", MODULE_ID, multiInstances);
+    final var search = client().newUserTaskEffectiveVariableSearchRequest(Long.parseLong(USER_TASK_ID));
+    when(search.filter(any(Consumer.class))).thenReturn(search);
+    when(search.withFullValues()).thenReturn(search);
+    final var handedDown = mock(Variable.class);
+    when(handedDown.getName()).thenReturn(Camunda8MultiInstance.CHAIN_VARIABLE);
+    when(handedDown.getValue()).thenReturn("the chain as JSON");
+    when(search.send().join().items()).thenReturn(List.of(handedDown));
+    // the second round of three, as the cluster counts it: from one
+    when(client().getConfiguration().getJsonMapper().fromJson("the chain as JSON", Object.class))
+        .thenReturn(
+            List
+                .of(
+                    Map
+                        .of(
+                            "process", callerProcessId, "levels", List
+                                .of(Map.of("element", "CallInRounds", "index", 2, "total", 3, "item", "south")))));
+    clearInvocations(search);
+
+    final var prefill = bridge().prefilledUserTaskDetails(theTaskOfTheCase()).orElseThrow();
+
+    // the round a listener job of the task reports as well
+    final var round = prefill.multiInstances().get("CallInRounds");
+    assertEquals("south", round.element(), prefill.multiInstances().toString());
+    assertEquals(1, round.index(), prefill.multiInstances().toString());
+    assertEquals(3, round.total(), prefill.multiInstances().toString());
+    assertEquals(List.of(Camunda8MultiInstance.CHAIN_VARIABLE), theNamesAskedFor(search));
+
+  }
+
+  /**
+   * @param search The search for the variables of a task
+   * @return The names the search was narrowed to
+   */
+  @SuppressWarnings("unchecked")
+  private static List<String> theNamesAskedFor(
+      final UserTaskEffectiveVariableSearchRequest search) {
+
+    final ArgumentCaptor<Consumer<UserTaskVariableFilter>> narrowing = ArgumentCaptor.captor();
+    verify(search).filter(narrowing.capture());
+    final var filter = mock(UserTaskVariableFilter.class);
+    narrowing.getValue().accept(filter);
+    final ArgumentCaptor<Consumer<StringProperty>> byName = ArgumentCaptor.captor();
+    verify(filter).name(byName.capture());
+    final var name = mock(StringProperty.class);
+    byName.getValue().accept(name);
+    final ArgumentCaptor<List<String>> names = ArgumentCaptor.captor();
+    verify(name).in(names.capture());
+    return names.getValue();
 
   }
 

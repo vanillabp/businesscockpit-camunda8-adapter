@@ -13,6 +13,9 @@ import io.vanillabp.spi.cockpit.workflow.WorkflowDetails;
 import io.vanillabp.spi.cockpit.workflow.WorkflowDetailsProvider;
 import io.vanillabp.spi.process.ProcessService;
 import io.vanillabp.spi.service.BpmnProcess;
+import io.vanillabp.spi.service.MultiInstanceElement;
+import io.vanillabp.spi.service.MultiInstanceIndex;
+import io.vanillabp.spi.service.MultiInstanceTotal;
 import io.vanillabp.spi.service.WorkflowService;
 
 /**
@@ -36,7 +39,8 @@ import io.vanillabp.spi.service.WorkflowService;
     bpmnProcess = @BpmnProcess(bpmnProcessId = CallingWorkflowService.BPMN_PROCESS_ID),
     secondaryBpmnProcesses = {
         @BpmnProcess(bpmnProcessId = CallingWorkflowService.CALLED_BPMN_PROCESS_ID), @BpmnProcess(
-            bpmnProcessId = CallingWorkflowService.EXPRESSION_CALLED_BPMN_PROCESS_ID)
+            bpmnProcessId = CallingWorkflowService.EXPRESSION_CALLED_BPMN_PROCESS_ID), @BpmnProcess(
+                bpmnProcessId = CallingWorkflowService.ROUND_CALLED_BPMN_PROCESS_ID)
     })
 public class CallingWorkflowService {
 
@@ -66,6 +70,24 @@ public class CallingWorkflowService {
 
   /** Which provider of that task ran. */
   public static final String SERVED_BY = "servedBy";
+
+  /**
+   * The process a multi-instance call activity reaches by an expression, once per round. Its
+   * model has no round of its own.
+   */
+  public static final String ROUND_CALLED_BPMN_PROCESS_ID = "RoundCalledProcess";
+
+  /** The external form reference of the user task inside that process. */
+  public static final String COUNT_TASK_DEFINITION = "count";
+
+  /** The multi-instance call activity of the calling process which reaches that process. */
+  public static final String ROUNDS_ELEMENT = "CallInRounds";
+
+  /**
+   * What the provider of that task writes the round into, as "customer/region/index/total". The
+   * customer says which case the report belongs to.
+   */
+  public static final String ROUND = "round";
 
   private final ProcessService<CallingAggregate> processService;
 
@@ -148,6 +170,50 @@ public class CallingWorkflowService {
 
     prefilled.setDetails(Map.of(INSPECTED, aggregate.getCustomer(), SERVED_BY, SERVED_BY_LATER_MODELS));
     return prefilled;
+
+  }
+
+  /**
+   * The provider of the user task in the process reached once per round. It reads no variable,
+   * only the round, and the round reaches the task only through what the call activity hands
+   * down.
+   *
+   * @param aggregate The workflow aggregate, which is the CALLING workflow's case
+   * @param prefilled What the cluster knew about the task
+   * @param region The region of this round, or <code>null</code> where no round reached it
+   * @param index Which round this is, or <code>null</code> where no round reached it
+   * @param total How many rounds there are, or <code>null</code> where no round reached it
+   * @return The enriched details
+   */
+  @UserTaskDetailsProvider(taskDefinition = COUNT_TASK_DEFINITION)
+  public UserTaskDetails count(
+      final CallingAggregate aggregate,
+      final PrefilledUserTaskDetails prefilled,
+      @MultiInstanceElement(ROUNDS_ELEMENT) final String region,
+      @MultiInstanceIndex(ROUNDS_ELEMENT) final Integer index,
+      @MultiInstanceTotal(ROUNDS_ELEMENT) final Integer total) {
+
+    prefilled.setDetails(Map.of(ROUND, roundOf(aggregate.getCustomer(), region, index, total)));
+    return prefilled;
+
+  }
+
+  /**
+   * What {@link #count} writes into {@link #ROUND}.
+   *
+   * @param customer The customer of the case
+   * @param region The region of the round
+   * @param index Which round it is
+   * @param total How many rounds there are
+   * @return The value
+   */
+  public static String roundOf(
+      final String customer,
+      final String region,
+      final Integer index,
+      final Integer total) {
+
+    return "%s/%s/%s/%s".formatted(customer, region, index, total);
 
   }
 

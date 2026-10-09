@@ -214,8 +214,10 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * <p>
    * The request asks for the effective variables of the task. Those are the variables the task
    * sees, from its own scope up to its process instance, and where two scopes hold the same name
-   * the inner one wins. That is what a job carries as well. Where nobody reads a variable and the
-   * task sits in no multi-instance element, nothing is asked.
+   * the inner one wins. That is what a job carries as well. Where nobody reads a variable, the
+   * task sits in no multi-instance element of its own process, and no caller names the process by
+   * an expression, nothing is asked. Such a caller may hand its rounds down to the task, so then
+   * the variable which carries them is asked for as well.
    * <p>
    * The names are asked for with the workflow module and the BPMN process of the reference,
    * because the extension picks the details provider by those two.
@@ -235,10 +237,17 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
             .variablesTheDetailsProvidersRead(
                 userTask.workflowModuleId(), userTask.bpmnProcessId(), userTask.taskDefinition(),
                 userTask.bpmnTaskId()));
-    final var chain = multiInstancesOf(userTask, task)
-        .map(multiInstances -> multiInstances.chainOf(task.getBpmnProcessId(), task.getElementId()))
+    final var multiInstances = multiInstancesOf(userTask, task);
+    final var chain = multiInstances
+        .map(registry -> registry.chainOf(task.getBpmnProcessId(), task.getElementId()))
         .orElse(List.of());
-    if (names.isEmpty() && chain.isEmpty()) {
+    // a process called by an expression may sit in rounds of its caller, which no chain of its
+    // own model shows. The caller hands them down in a variable, and the adapter knows which
+    // processes such a variable can reach
+    final var mayInheritRounds = multiInstances
+        .map(registry -> registry.mayBeHandedAChain(task.getBpmnProcessId()))
+        .orElse(false);
+    if (names.isEmpty() && chain.isEmpty() && !mayInheritRounds) {
       return Optional.of(Map.of());
     }
     // the adapter's own list for the element, the same one the worker of the listener uses. The

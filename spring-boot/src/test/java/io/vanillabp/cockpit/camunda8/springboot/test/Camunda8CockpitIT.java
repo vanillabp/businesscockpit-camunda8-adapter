@@ -1070,6 +1070,94 @@ public class Camunda8CockpitIT {
 
   }
 
+  /**
+   * Waits until the cluster's searchable storage holds the user tasks of both rounds of one
+   * calling case. A report of a change is built from that storage, and a listener job is
+   * served before the exporter wrote the task there.
+   *
+   * @param aggregate The calling case
+   */
+  private void awaitTheTasksOfBothRoundsInTheStorage(
+      final CallingAggregate aggregate) {
+
+    awaitValue(
+        () -> client()
+            .newUserTaskSearchRequest()
+            .filter(
+                filter -> filter
+                    .state(UserTaskState.CREATED)
+                    .bpmnProcessId("%s__%s".formatted(MODULE_ID, CallingWorkflowService.ROUND_CALLED_BPMN_PROCESS_ID))
+                    .processInstanceVariables(Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
+            .send()
+            .join()
+            .items()
+            .size() == 2
+                ? Boolean.TRUE
+                : null,
+        "the user tasks of both rounds of calling case %s".formatted(aggregate.getId()));
+
+  }
+
+  /**
+   * @param customer The customer of the case
+   * @param region The region of the round
+   * @param index Which round it is, counted from zero
+   * @return What the report of the task of that round carries
+   */
+  private static String roundReported(
+      final String customer,
+      final String region,
+      final int index) {
+
+    return "\"%s\":\"%s\""
+        .formatted(CallingWorkflowService.ROUND, CallingWorkflowService.roundOf(customer, region, index, 2));
+
+  }
+
+  @Test
+  @DisplayName("A task of a process called by an expression in rounds gets its round from the storage as well")
+  public void aTaskCalledInRoundsByAnExpressionGetsItsRoundFromTheStorage() {
+
+    // one task per region. The provider reads no variable, and the called model has no round of
+    // its own. The round reaches the task only in the variable the call activity hands down
+    final var aggregate = aStartedCallingWorkflow("Rita");
+    final var north = CockpitServer.awaitRequest("/usertask/created", roundReported("Rita", "north", 0));
+    final var south = CockpitServer.awaitRequest("/usertask/created", roundReported("Rita", "south", 1));
+    final var northId = idOf(north, "userTaskId");
+    final var southId = idOf(south, "userTaskId");
+    awaitTheTasksOfBothRoundsInTheStorage(aggregate);
+
+    // a change of the case is reported from the storage, and each task keeps its round
+    CockpitServer.forgetRequests();
+    transactions
+        .executeWithoutResult(status -> {
+          final var attached = callingAggregates.findById(aggregate.getId()).orElseThrow();
+          attached.setCustomer("Rita the second");
+          callingAggregates.save(attached);
+          // no task named: every open task of the case, which is the search of the storage
+          callingWorkflowService.businessCockpit().aggregateChanged(attached, new String[0]);
+        });
+    CockpitServer
+        .awaitRequestOf(
+            "/usertask/%s/updated".formatted(northId), roundReported("Rita the second", "north", 0));
+    CockpitServer
+        .awaitRequestOf(
+            "/usertask/%s/updated".formatted(southId), roundReported("Rita the second", "south", 1));
+
+    // a read of a task takes the same way and gets the same round
+    final var read = transactions
+        .execute(
+            status -> callingWorkflowService
+                .businessCockpit()
+                .getUserTask(callingAggregates.findById(aggregate.getId()).orElseThrow(), southId));
+    assertEquals(
+        CallingWorkflowService.roundOf("Rita the second", "south", 1, 2),
+        read.orElseThrow(() -> new AssertionError("the task of the second round was not found"))
+            .getDetails()
+            .get(CallingWorkflowService.ROUND));
+
+  }
+
   @Test
   @DisplayName("Completing the user task reports the task and the workflow as completed")
   public void completingTheUserTaskIsReported() {

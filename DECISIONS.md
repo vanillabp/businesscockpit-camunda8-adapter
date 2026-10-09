@@ -1131,17 +1131,34 @@ Both searches found the variables of the multi-instance round (`loopCounter`, th
 because the round is a scope above the task. The client has the effective search from 8.8.31 and
 8.9.6 on. Every line here needs a newer cluster anyway (8.8.40, 8.9.21, 8.10.0).
 
-It costs one more request per report, and only where somebody reads a variable: where no provider of
-the task reads one and the task sits in no multi-instance element, nothing is asked. Where the
-storage answers 404 for the variables, the bridge answers nothing, the same as for a task it does not
-hold yet. The dispatch then asks again a little later, so no report goes out without the value.
+It costs one more request per report, and only where a variable may be needed. Nothing is asked
+where no provider of the task reads a variable, the task sits in no multi-instance element of its
+own process, and no caller names its process by an expression. Where the storage answers 404 for
+the variables, the bridge answers nothing, the same as for a task it does not hold yet. The
+dispatch then asks again a little later.
 
-One case still differs. A task of a process called by an expression learns its rounds from the
-variable the caller hands down. On this way that variable is asked for only where a provider reads a
-variable or the task sits in a multi-instance element of its own process.
+**A process called by an expression.** Such a process learns its rounds from the variable its
+caller hands down (`Camunda8MultiInstance.CHAIN_VARIABLE`). Its own model shows no round, so
+`chainOf` is empty for its tasks, and a provider which reads no variable would have made the bridge
+ask for nothing. The Camunda 8 adapter now answers `Camunda8MultiInstance.Registry#mayBeHandedAChain`
+for the process id as the cluster knows it. `true` means that a process of the same workflow
+aggregate names this process by an expression, so a chain may be in that variable. Then the bridge
+asks as well, and `Camunda8FetchVariables.collect` puts the chain variable among the names. `true`
+does not mean that a chain is there. Where the caller runs no round, the variable is missing and
+the task has no round, which is what a job says as well. The adapter's side of this is decision 75
+of `camunda-community-hub/vanillabp-camunda8-adapter`.
+
+**The storage may hold a task before its variables.** The exporter writes a task and its variables
+as records of their own. Where the storage holds the task and not yet all of its variables, the
+search answers fewer values, and the report carries fewer values. The search does not answer 404
+then, so the bridge does not wait. We leave it this way (Stephan, 2026-10-09). The storage gives no
+sign that the variables of a task are complete, so there is nothing the bridge could wait for.
 
 `Camunda8CockpitBridgeTest` and the two test applications show it. On both platforms a report after
-`aggregateChanged` and an answer of `getUserTask` carry the value the first report carried.
+`aggregateChanged` and an answer of `getUserTask` carry the value the first report carried. The
+calling case of the test applications also calls a process by an expression once per round of a
+multi-instance call activity. The provider of its task reads no variable, and the report from the
+storage carries the same round as the first one.
 
 ## 29. A task of a called process names its own process, and the search asks for every process of the case
 
