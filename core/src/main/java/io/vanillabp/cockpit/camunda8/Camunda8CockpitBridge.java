@@ -1,7 +1,9 @@
 package io.vanillabp.cockpit.camunda8;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -13,6 +15,7 @@ import io.camunda.client.api.search.response.UserTask;
 import io.vanillabp.camunda8.client.Camunda8Errors;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
 import io.vanillabp.camunda8.processservice.Camunda8Searches;
+import io.vanillabp.camunda8.processservice.Camunda8VariableFilters;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
 import io.vanillabp.cockpit.extension.spi.UserTaskDetailsPrefill;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
@@ -363,16 +366,17 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       final String workflowAggregateId,
       final List<String> userTaskIds) {
 
+    final var processes = processesOfTheCase(workflowModuleId, bpmnProcessId);
     if ((userTaskIds == null) || userTaskIds.isEmpty()) {
       final var found = searchUserTasks(
-          workflowModuleId, bpmnProcessId, workflowAggregateId, null, true);
+          workflowModuleId, bpmnProcessId, workflowAggregateId, processes, null, true);
       if (found.isEmpty()) {
         sayTheStorageHoldsNoRecord(
             "active user tasks", workflowModuleId, bpmnProcessId, workflowAggregateId);
       }
       return found
           .stream()
-          .map(task -> referenceOf(workflowModuleId, bpmnProcessId, workflowAggregateId, task))
+          .map(task -> referenceOf(workflowModuleId, workflowAggregateId, processes, task))
           .toList();
     }
 
@@ -384,7 +388,8 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
             userTaskId -> userTaskKeyOf(userTaskId)
                 .ifPresent(
                     userTaskKey -> searchUserTaskOfAggregate(
-                        workflowModuleId, bpmnProcessId, workflowAggregateId, userTaskKey)
+                        workflowModuleId, bpmnProcessId, workflowAggregateId, processes,
+                        userTaskKey)
                         .ifPresentOrElse(
                             references::add,
                             () -> sayTheStorageHoldsNoRecord(
@@ -408,7 +413,8 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
     }
 
     final var found = searchUserTaskOfAggregate(
-        workflowModuleId, bpmnProcessId, workflowAggregateId, userTaskKey.get());
+        workflowModuleId, bpmnProcessId, workflowAggregateId,
+        processesOfTheCase(workflowModuleId, bpmnProcessId), userTaskKey.get());
     if (found.isEmpty()) {
       sayTheStorageHoldsNoRecord(
           "user task '%s'".formatted(userTaskId), workflowModuleId, bpmnProcessId,
@@ -423,6 +429,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * answer. Each caller says that itself, because saying it here would say it twice for the ids a
    * caller named.
    *
+   * @param processes The processes of the case, see {@link #processesOfTheCase}
    * @param userTaskKey The task's key as the cluster counts it
    * @return The task, or empty where the storage holds no such task of that aggregate
    */
@@ -430,13 +437,14 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       final String workflowModuleId,
       final String bpmnProcessId,
       final String workflowAggregateId,
+      final Map<String, String> processes,
       final Long userTaskKey) {
 
     return searchUserTasks(
-        workflowModuleId, bpmnProcessId, workflowAggregateId, userTaskKey, false)
+        workflowModuleId, bpmnProcessId, workflowAggregateId, processes, userTaskKey, false)
         .stream()
         .findFirst()
-        .map(task -> referenceOf(workflowModuleId, bpmnProcessId, workflowAggregateId, task));
+        .map(task -> referenceOf(workflowModuleId, workflowAggregateId, processes, task));
 
   }
 
@@ -614,7 +622,31 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
 
   /**
    * The user tasks of one aggregate this cluster holds.
+   * <p>
+   * A task of a case sits in the process of the case or in a process the case calls with a call
+   * activity. The second kind is how VanillaBP splits a large process into smaller ones: the
+   * called process shares the case's workflow aggregate, and the cluster copies the aggregate's
+   * id variable into it, so the variable condition finds its tasks as well. So the search names
+   * every process which may hold a task of the case. See {@link #processesOfTheCase}.
+   * <p>
+   * The processes go INTO the search, and the search is not run without them and sorted out
+   * afterwards. Three reasons:
+   * <ul>
+   * <li>Without a process condition the search reads every task of the tenant whose process
+   * carries a variable of that name and value. Under <code>name-clash-avoidance: none</code>
+   * other workflow modules and other applications share that tenant, and an aggregate id like
+   * <code>1</code> is common. Such tasks would come back on every page and push the wanted ones
+   * off it.</li>
+   * <li>A called process with a workflow aggregate of its own still gets the caller's variables
+   * copied into it. Its tasks must not be counted as tasks of the caller's case.</li>
+   * <li>The search names each process the way the cluster knows it, which under
+   * <code>use-prefix</code> carries the module's prefix. So it asks for exactly what this
+   * extension wired, and nothing which only looks like it.</li>
+   * </ul>
+   * The tenant and the aggregate's id are spelled the way the Camunda 8 adapter spells them for
+   * its own searches, so the two never ask different questions about one case.
    *
+   * @param processes The processes of the case, see {@link #processesOfTheCase}
    * @param userTaskKey One task's key, or <code>null</code> for all of them
    * @param activeOnly Whether only a task somebody can still work on counts
    */
@@ -622,51 +654,153 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
       final String workflowModuleId,
       final String bpmnProcessId,
       final String workflowAggregateId,
+      final Map<String, String> processes,
       final Long userTaskKey,
       final boolean activeOnly) {
 
-    final var scopedProcessId = cluster
-        .scope()
-        .scopedProcessIdOf(workflowModuleId, bpmnProcessId);
     final var tenantId = cluster.scope().tenantIdOf(workflowModuleId);
-    return cluster
-        .client()
-        .newUserTaskSearchRequest()
-        .filter(filter -> {
-          // the process id as the cluster knows it, the tenant of the workflow module and
-          // the aggregate's id as a variable of the process instance. The adapter spells all
-          // three, because a search which spells one of them differently answers nothing,
-          // and nothing reads exactly like a case which has no such task. It also means a
-          // key somebody guessed reads no task of another case
-          Camunda8Searches
-              .scopedTo(
-                  filter, scopedProcessId, tenantId,
-                  aggregateIdNameOf(workflowModuleId, bpmnProcessId), workflowAggregateId);
-          // which tasks of that aggregate are meant is this bridge's own question, so it
-          // adds that part itself
-          if (userTaskKey != null) {
-            filter.userTaskKey(userTaskKey);
-          }
-          if (activeOnly) {
-            filter.state(UserTaskState.CREATED);
-          }
-        })
-        .send()
-        .join()
-        .items();
+    final var aggregateIdName = aggregateIdNameOf(workflowModuleId, bpmnProcessId);
+    return Camunda8UserTaskSearch
+        .search(
+            cluster.client(),
+            processes.keySet(),
+            filter -> {
+              if (tenantId != null) {
+                filter.tenantId(tenantId);
+              }
+              // the aggregate's id as a variable of the process instance. A task holds no copy
+              // of it. It also means a key somebody guessed reads no task of another case
+              filter
+                  .processInstanceVariables(
+                      Map
+                          .of(
+                              aggregateIdName,
+                              Camunda8VariableFilters.aggregateIdSearchValue(workflowAggregateId)));
+              // which tasks of that aggregate are meant is this bridge's own question
+              if (userTaskKey != null) {
+                filter.userTaskKey(userTaskKey);
+              }
+              if (activeOnly) {
+                filter.state(UserTaskState.CREATED);
+              }
+            })
+        .stream()
+        // the search asked for these processes only. Checking it costs nothing, and a task this
+        // bridge cannot name back would be reported under a process nobody wrote
+        .filter(task -> processes.containsKey(task.getBpmnProcessId()))
+        .toList();
 
   }
 
+  /**
+   * The BPMN processes a task of one case may sit in: the process of the case and every process
+   * which shares its workflow aggregate and which this extension wired on this cluster. That is a
+   * process the case calls with a call activity, declared as one of the
+   * <code>secondaryBpmnProcesses</code> of the case's workflow service.
+   * <p>
+   * The set comes from the shared aggregate and not from the call activities of the models. A
+   * call activity may name its process by an expression. Which process it reaches is then decided
+   * per instance, so no graph of calls holds it. The Camunda 8 adapter answers the same question
+   * the same way: a call by expression may reach every process of the module with the same
+   * aggregate.
+   * <p>
+   * A process with a workflow aggregate of its own is left out, although the case may call it.
+   * It is a case of its own, and its tasks are reported for its own aggregate.
+   *
+   * @param workflowModuleId The workflow module
+   * @param bpmnProcessId The process of the case, as the application wrote it
+   * @return The plain process id by the id the cluster knows, the case's process first
+   */
+  private Map<String, String> processesOfTheCase(
+      final String workflowModuleId,
+      final String bpmnProcessId) {
+
+    final var processes = new LinkedHashMap<String, String>();
+    // the case's own process even where nothing of this module was wired yet. That is the
+    // search this bridge always ran, so an early question is answered no worse than before
+    processes.put(cluster.scope().scopedProcessIdOf(workflowModuleId, bpmnProcessId), bpmnProcessId);
+    deployments
+        .bpmnProcessIdsByScopedIdOf(adapterId(), workflowModuleId)
+        .forEach((
+            scopedBpmnProcessId,
+            wiredBpmnProcessId) -> {
+          if (workflowTaskWiring
+              .workflowsShareTheWorkflowAggregate(
+                  workflowModuleId, bpmnProcessId, wiredBpmnProcessId)) {
+            processes.putIfAbsent(scopedBpmnProcessId, wiredBpmnProcessId);
+          }
+        });
+    return processes;
+
+  }
+
+  /**
+   * What the cockpit is told about one task found in the searchable storage.
+   * <p>
+   * <b>The process of the task, not of the case.</b> <code>bpmnProcessId</code>,
+   * <code>processVersion</code>, <code>taskDefinition</code> and <code>bpmnTaskId</code> all name
+   * the process the task sits in. For a task of a called process that is the CALLED process, not
+   * the case's process which this bridge was asked about. The four values belong together, and
+   * every reader of them expects the process of the task:
+   * <ul>
+   * <li>The Business Cockpit extension picks the details provider and builds the platform's
+   * handler call by (workflow module, BPMN process). A class serves every process it declares,
+   * so a workflow service which declares both the case's process and the called one is found by
+   * either id. The wrong id therefore does not show while a provider is bound, and the same goes
+   * for the names of the <code>&#64;TaskParam</code> parameters. A provider of a workflow service
+   * which declares the called process only, and not the case's process, is not found by the
+   * case's id at all.</li>
+   * <li>The wrong id breaks whatever VanillaBP keeps per process. A provider's version range is
+   * checked against the version of the process it is declared for, per (class, process). The version of the called model paired with the id of the
+   * case's process would match a range nobody wrote, so the wrong provider runs, or only one
+   * naming no version, or none. The catalogue of version tags, the delivery record and the
+   * election's hint are kept per process as well. So is the name of an element, which VanillaBP
+   * looks up per (workflow module, process, element): asked with the case's process, it answers
+   * no name for an element of a called process, and says nothing about it.</li>
+   * <li><code>taskDefinition</code> is turned back into what the application wrote with the
+   * process the task belongs to, because <code>use-prefix</code> scopes it by that process.
+   * <code>bpmnTaskId</code> is an element id, which exists in the called model only.</li>
+   * <li>The cockpit server stores all four, the GUI filters and sorts the task list by them and
+   * picks the form by (workflow module, task definition).</li>
+   * </ul>
+   * The platform's rule is the same: a task and an element are always named by the process which
+   * holds them, for a called process by its own id. See decision 29 in the repository's
+   * DECISIONS.md. VanillaBP
+   * binds a <code>&#64;WorkflowTask</code> of a called process that way on Camunda 8, Camunda 7
+   * and the Process-Engine-API alike. So does the listener of this extension, which reads all
+   * four values off the job of the task. A task reported first by its listener and later from the
+   * storage is therefore served by the same details provider both times.
+   * <p>
+   * <b>The case, not the process.</b> <code>workflowId</code> is the business case, which is the
+   * instance at the top of the call hierarchy (see decision 3 in the repository's DECISIONS.md),
+   * the same instance the listener
+   * reports. <code>subWorkflowId</code>, filled in by {@link #prefilledUserTaskDetails}, is the
+   * instance the task really sits in where that is another one. The case is tied to the
+   * aggregate by <code>workflowAggregateId</code> and <code>workflowId</code> and never by the
+   * process id.
+   *
+   * @param workflowModuleId The workflow module
+   * @param workflowAggregateId The aggregate the search was about
+   * @param processes The processes searched, by the id the cluster knows
+   * @param task The task as the storage holds it
+   * @return The reference
+   */
   private UserTaskReference referenceOf(
       final String workflowModuleId,
-      final String bpmnProcessId,
       final String workflowAggregateId,
+      final Map<String, String> processes,
       final UserTask task) {
 
+    // the search asked for these ids only, so the task's process is one of them
+    final var bpmnProcessId = processes.get(task.getBpmnProcessId());
+    final var root = cluster.callHierarchy().rootProcessInstanceKeyOf(task);
+    final var workflowId = root == null
+        ? task.getProcessInstanceKey()
+        : root;
     return new UserTaskReference(
         adapterId(), workflowModuleId, bpmnProcessId, processVersionOf(
             task.getProcessDefinitionVersion()), workflowAggregateId, String
-                .valueOf(task.getProcessInstanceKey()), String.valueOf(task.getUserTaskKey()), cluster
+                .valueOf(workflowId), String.valueOf(task.getUserTaskKey()), cluster
                     .scope()
                     .plainTaskDefinitionOf(workflowModuleId, bpmnProcessId,
                         task.getExternalFormReference()), task.getElementId());

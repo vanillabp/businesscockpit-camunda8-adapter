@@ -42,6 +42,16 @@ vanillabp:
           tasks:
             Handle:
               implemented-externally: true
+        ExpressionCalledProcess:
+          allow-full-sync-with-bpms: true
+          tasks:
+            Inspect:
+              implemented-externally: true
+        OwnCaseProcess:
+          allow-full-sync-with-bpms: true
+          tasks:
+            Check:
+              implemented-externally: true
         IncidentDetailsProcess:
           allow-full-sync-with-bpms: true
           tasks:

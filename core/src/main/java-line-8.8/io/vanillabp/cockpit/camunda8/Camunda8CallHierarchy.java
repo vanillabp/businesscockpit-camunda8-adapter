@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import io.camunda.client.api.response.ActivatedJob;
 import io.camunda.client.api.search.response.ProcessInstanceCallHierarchyEntryResponse;
+import io.camunda.client.api.search.response.UserTask;
 import io.vanillabp.camunda8.client.Camunda8Errors;
 
 /**
@@ -108,7 +109,28 @@ final class Camunda8CallHierarchy {
   Long rootProcessInstanceKeyOf(
       final ActivatedJob job) {
 
-    final var own = job.getProcessInstanceKey();
+    return rootProcessInstanceKeyOf(job.getProcessInstanceKey());
+
+  }
+
+  /**
+   * The same question about a user task read from the searchable storage. An 8.8 record of a task
+   * does not name its root either, so the cluster is asked as it is for a job.
+   *
+   * @param task The user task a report is about
+   * @return The process instance the whole hierarchy hangs below, or <code>null</code> where the
+   *         task's own instance is that one
+   */
+  Long rootProcessInstanceKeyOf(
+      final UserTask task) {
+
+    return rootProcessInstanceKeyOf(task.getProcessInstanceKey());
+
+  }
+
+  private Long rootProcessInstanceKeyOf(
+      final Long own) {
+
     // asked outside the map, because the answer may take a moment and every other lookup would
     // wait behind it for a hierarchy it does not care about
     var root = rootsAnswered.get(own);

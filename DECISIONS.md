@@ -1092,3 +1092,62 @@ have different providers. Each worker asks only about its own process.
 Everything else in decision 26 stays: the variable with the aggregate's id, the multi-instance
 variables, the moment the worker asks, and the report built from the searchable storage, which
 carries no variables.
+
+## 29. A task of a called process names its own process, and the search asks for every process of the case
+
+A user task can sit in a process which the case started by a call activity. Two ways build the
+reference of such a task, and both now say the same.
+
+- The listener job of the task. It names the process the job comes from, which is the called
+  process.
+- A search of the cluster's searchable storage, for `getUserTask` and for `aggregateChanged`. Until
+  now it asked for tasks of the case's process only. A task of a called process was never found:
+  `getUserTask` answered nothing, and `aggregateChanged` left the task out or, with its id named,
+  blocked the outbox entry after ten minutes. That hit the typical cockpit task hardest, a task
+  without a `@WorkflowTask`, because only VanillaBP's delivery log knows the others.
+
+**The reference names the process which holds the task.** `bpmnProcessId`, `processVersion`,
+`taskDefinition` and `bpmnTaskId` all belong to that process. For a task of a called process that is
+the called process, written the way the application wrote it. `workflowId` stays the case, the
+instance at the top of the call hierarchy (decision 3), and `subWorkflowId` is the instance the
+task sits in. This is the platform's rule as well, decision 123 of `adapter-platform-integration`.
+
+Why the four values must come from one process:
+
+- A class serves every process it declares. So a details provider is found by the case's process
+  as well, wherever one workflow service declares both processes, and the wrong id does not show
+  while a provider is bound. It shows wherever VanillaBP keeps something per process: the version
+  range of a provider per (class, process), the catalogue of version tags, the delivery record, the
+  election's hint and the name of an element. The version of the called model paired with the id
+  of the case's process matches a range nobody wrote.
+- A provider declared only for the called process is not found by the case's process at all.
+- `taskDefinition` is turned back from the cluster's spelling with the process it belongs to,
+  because `use-prefix` scopes it by that process. `bpmnTaskId` exists only in the called model.
+
+**The search names every process of the case.** These are the case's process and every process of
+the workflow module which shares its workflow aggregate and which this extension wired on this
+cluster, each spelled the way the cluster knows it. The set comes from the shared aggregate
+(`WorkflowTaskWiring#workflowsShareTheWorkflowAggregate`) and not from the call activities in the
+models. A call activity may name its process by an expression, and then no graph of calls holds the
+process it reaches. The Camunda 8 adapter draws the same line for such a call. A process with a
+workflow aggregate of its own is left out: it is a case of its own, although the cluster copies the
+caller's variables into it, the aggregate's id included.
+
+The processes go into the search, and the search does not run without them to sort the answer out
+afterwards. Without a process condition the search reads every task of the tenant whose process
+carries a variable of that name and value. Under `name-clash-avoidance: none` other workflow
+modules and other applications share that tenant, and such tasks would push the wanted ones off the
+page. 8.10 asks once, with `bpmnProcessId` set to "one of these ids". The 8.8 and 8.9 clients only
+know "this one id", so those lines send one request per process and put the answers together. The
+class `Camunda8UserTaskSearch` exists once per line for that.
+
+The aggregate's id has to reach the called process for any of this to work. Camunda 8 copies the
+caller's variables into a called instance unless the call activity says
+`propagateAllParentVariables="false"`, and the Camunda 8 adapter writes `true` where the model says
+nothing. A call activity saying `false` without an input mapping of the aggregate's id variable
+leaves its tasks unfound, and their listener jobs fail. The wiki says so.
+
+`Camunda8CockpitBridgeTest` shows the search and the reference. `Camunda8CockpitIT` and its Quarkus
+twin show it on a cluster: a case calls one process by its id, one by an expression and one with an
+aggregate of its own. The first report and the one after `aggregateChanged` pick the same provider,
+and the task of the case of its own is neither read nor reported.
