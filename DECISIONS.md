@@ -330,8 +330,10 @@ directory is not what we want anyway: it breaks as soon as a module moves, and a
 module from the root in one click. The other wrong statement was `distributionManagement`: every
 published POM named our snapshot repository. Where we deploy is nothing a consumer can use, and
 on an artifact which later sits on Maven Central it would point a reader at GitHub Packages. The
-flatten plugin takes it out of the published POM and the source keeps it, because the deploy reads
-it from the model of the running build. The same test guards both.
+flatten plugin takes it out of the published POM. Since story 1470 the source names none either,
+because the snapshots go to Maven Central through the profile `central-portal` of the parent. The
+rule stays, so that a `distributionManagement` which comes back, here or from a parent, never
+reaches the published POM. The same test guards both.
 
 What one line needs is no business of another line's users. That rule is wider than the client,
 and it is why the parent is dropped rather than only corrected. What this repository pins for its
