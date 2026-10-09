@@ -40,6 +40,11 @@ vanillabp:
           tasks:
             Inspect:
               implemented-externally: true
+        RoundCalledProcess:
+          allow-full-sync-with-bpms: true
+          tasks:
+            Count:
+              implemented-externally: true
         OwnCaseProcess:
           allow-full-sync-with-bpms: true
           tasks:

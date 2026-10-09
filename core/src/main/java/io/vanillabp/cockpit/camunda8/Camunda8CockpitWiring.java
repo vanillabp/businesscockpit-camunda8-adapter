@@ -248,6 +248,12 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final String workflowModuleId,
       final Camunda8ProcessingContext bpmsProcessingContext) {
 
+    // a report built from the searchable storage reads the rounds of a task as well, and it has
+    // no worker to take them from
+    deployments
+        .rememberMultiInstances(
+            bpmsProcessingContext.getAdapterId(), workflowModuleId,
+            bpmsProcessingContext.getMultiInstanceRegistry());
     workers
         .open(
             bpmsProcessingContext.getAdapterId(), workflowModuleId,

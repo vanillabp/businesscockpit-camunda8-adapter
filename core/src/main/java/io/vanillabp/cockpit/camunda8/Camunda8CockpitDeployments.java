@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
+import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
+
 /**
  * What this extension put into the models of a workflow module, remembered until the workers
  * serving it are opened and for as long as they are.
@@ -119,6 +121,8 @@ public class Camunda8CockpitDeployments {
   }
 
   private final Map<Deployment, List<WiredListener>> listenersByDeployment = new ConcurrentHashMap<>();
+
+  private final Map<Deployment, Camunda8MultiInstance.Registry> multiInstancesByDeployment = new ConcurrentHashMap<>();
 
   /**
    * Notes one listener this extension added.
@@ -255,6 +259,41 @@ public class Camunda8CockpitDeployments {
         .filter(listener -> listener.bpmnProcessId().equals(bpmnProcessId))
         .map(WiredListener::bpmnProcessName)
         .findFirst();
+
+  }
+
+  /**
+   * Notes the multi-instance elements of one workflow module, once the adapter linked every
+   * called process of the module to the elements of its caller.
+   * <p>
+   * The workers get them when they are opened. A report built from the searchable storage needs
+   * them as well, to read the rounds of a task, and it has no worker to ask.
+   *
+   * @param adapterId The configured adapter id the module started for
+   * @param workflowModuleId The workflow module which started
+   * @param multiInstances The elements, as the adapter collected them
+   */
+  public void rememberMultiInstances(
+      final String adapterId,
+      final String workflowModuleId,
+      final Camunda8MultiInstance.Registry multiInstances) {
+
+    multiInstancesByDeployment.put(new Deployment(adapterId, workflowModuleId), multiInstances);
+
+  }
+
+  /**
+   * The multi-instance elements of one workflow module on one cluster.
+   *
+   * @param adapterId The configured adapter id
+   * @param workflowModuleId The workflow module
+   * @return The elements, or empty where the module has not started on that cluster
+   */
+  public Optional<Camunda8MultiInstance.Registry> multiInstancesOf(
+      final String adapterId,
+      final String workflowModuleId) {
+
+    return Optional.ofNullable(multiInstancesByDeployment.get(new Deployment(adapterId, workflowModuleId)));
 
   }
 

@@ -237,7 +237,7 @@ public class Camunda8CockpitJobHandlerTest {
     final var clients = new Camunda8Clients(clientFactories, null);
     final var asked = new RecordingPublisher(
         new Camunda8CockpitBridge(
-            clients.of(ADAPTER_ID), workflowTaskWiring, NOTHING_WRITTEN_DOWN, deployments));
+            clients.of(ADAPTER_ID), workflowTaskWiring, NOTHING_WRITTEN_DOWN, deployments, () -> publisher));
     handler = new Camunda8CockpitJobHandler(
         clients.of(ADAPTER_ID), MODULE_ID, deployments, multiInstances, () -> asked);
     return asked;
@@ -428,7 +428,7 @@ public class Camunda8CockpitJobHandlerTest {
 
     final var clients = new Camunda8Clients(clientFactories, null);
     final var bridge = new Camunda8CockpitBridge(
-        clients.of(ADAPTER_ID), workflowTaskWiring, NOTHING_WRITTEN_DOWN, deployments);
+        clients.of(ADAPTER_ID), workflowTaskWiring, NOTHING_WRITTEN_DOWN, deployments, () -> publisher);
     handler = new Camunda8CockpitJobHandler(
         clients.of(ADAPTER_ID), MODULE_ID, deployments, new Camunda8MultiInstance.Registry(), () -> publisher);
 

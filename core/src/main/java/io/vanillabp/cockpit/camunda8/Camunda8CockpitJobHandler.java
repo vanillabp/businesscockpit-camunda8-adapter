@@ -338,7 +338,8 @@ public class Camunda8CockpitJobHandler implements JobHandler {
     final var values = UserTaskDetailsPrefill
         .builder()
         .variables(variables)
-        .multiInstances(multiInstancesOf(job, variables))
+        .multiInstances(
+            multiInstancesOf(multiInstances, job.getBpmnProcessId(), job.getElementId(), variables))
         .bpmnProcessVersion(processVersionOf(job))
         // the workflow of a task is the business case, which is the instance the reference
         // carries. For a task of a called process the job's own process instance is the step
@@ -370,31 +371,40 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   }
 
   /**
-   * The rounds of the multi-instance elements enclosing the job's user task, outermost first.
+   * The rounds of the multi-instance elements enclosing a user task, outermost first.
    * <p>
    * The adapter answers this, out of the elements it collected while it wired the model and the
-   * values the job carries. What is left here is a copy from one record into another. The
-   * adapter answers what a BPMS reports about a task, and the platform's handler layer takes
-   * what a call into application code runs in. They are separate contracts, although they carry
-   * the same three values.
+   * values of the task. What is left here is a copy from one record into another. The adapter
+   * answers what a BPMS reports about a task, and the platform's handler layer takes what a call
+   * into application code runs in. They are separate contracts, although they carry the same
+   * three values.
+   * <p>
+   * A listener job and a task read from the searchable storage both answer it the same way, so
+   * {@link Camunda8CockpitBridge} calls it as well.
    *
-   * @param job The listener job
-   * @param variables The variables the job carries
+   * @param multiInstances The multi-instance elements of the module's models
+   * @param scopedBpmnProcessId The BPMN process the task sits in, as the cluster knows it
+   * @param elementId The BPMN element id of the task
+   * @param variables The variables of the task
    * @return The rounds, keyed by the BPMN element id of each multi-instance element. Empty where
    *         the task is not part of one
    */
-  private Map<String, HandlerMultiInstance> multiInstancesOf(
-      final ActivatedJob job,
+  static Map<String, HandlerMultiInstance> multiInstancesOf(
+      final Camunda8MultiInstance.Registry multiInstances,
+      final String scopedBpmnProcessId,
+      final String elementId,
       final Map<String, Object> variables) {
 
     final var outermostFirst = new LinkedHashMap<String, HandlerMultiInstance>();
     Camunda8MultiInstance
-        .valuesOf(multiInstances, job.getBpmnProcessId(), job.getElementId(), variables)
+        .valuesOf(multiInstances, scopedBpmnProcessId, elementId, variables)
         .forEach(
             (
-                elementId,
+                multiInstanceElementId,
                 round) -> outermostFirst
-                    .put(elementId, new HandlerMultiInstance(round.element(), round.index(), round.total())));
+                    .put(
+                        multiInstanceElementId,
+                        new HandlerMultiInstance(round.element(), round.index(), round.total())));
     return outermostFirst;
 
   }

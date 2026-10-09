@@ -159,6 +159,7 @@ public class Camunda8CockpitTest {
               .addAsResource("c8-cockpit/processes/cockpit-process.bpmn")
               .addAsResource("c8-cockpit/processes/calling-process.bpmn")
               .addAsResource("c8-cockpit/processes/expression-called-process.bpmn")
+              .addAsResource("c8-cockpit/processes/round-called-process.bpmn")
               .addAsResource("c8-cockpit/processes/own-case-process.bpmn")
               .addAsResource(
                   "workflow-module-descriptor/workflow-module", "META-INF/workflow-module")
@@ -526,6 +527,97 @@ public class Camunda8CockpitTest {
 
   }
 
+  /**
+   * Waits until the cluster's searchable storage holds the user tasks of both rounds of one
+   * calling case. A report of a change is built from that storage, and a listener job is
+   * served before the exporter wrote the task there.
+   *
+   * @param aggregate The calling case
+   */
+  private void awaitTheTasksOfBothRoundsInTheStorage(
+      final CallingAggregate aggregate) {
+
+    awaitValue(
+        () -> client()
+            .newUserTaskSearchRequest()
+            .filter(
+                filter -> filter
+                    .state(UserTaskState.CREATED)
+                    .bpmnProcessId("%s__%s".formatted(MODULE_ID, CallingWorkflowService.ROUND_CALLED_BPMN_PROCESS_ID))
+                    .processInstanceVariables(Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
+            .send()
+            .join()
+            .items()
+            .size() == 2
+                ? Boolean.TRUE
+                : null,
+        "the user tasks of both rounds of calling case %s".formatted(aggregate.getId()));
+
+  }
+
+  /**
+   * @param customer The customer of the case
+   * @param region The region of the round
+   * @param index Which round it is, counted from zero
+   * @return What the report of the task of that round carries
+   */
+  private static String roundReported(
+      final String customer,
+      final String region,
+      final int index) {
+
+    return "\"%s\":\"%s\""
+        .formatted(CallingWorkflowService.ROUND, CallingWorkflowService.roundOf(customer, region, index, 2));
+
+  }
+
+  @Test
+  @DisplayName("A task of a process called by an expression in rounds gets its round from the storage as well")
+  public void aTaskCalledInRoundsByAnExpressionGetsItsRoundFromTheStorage() throws Exception {
+
+    // one task per region. The provider reads no variable, and the called model has no round of
+    // its own. The round reaches the task only in the variable the call activity hands down
+    final var started = aStartedCallingWorkflow("Rita");
+    final var north = CockpitServer.awaitRequest("/usertask/created", roundReported("Rita", "north", 0));
+    final var south = CockpitServer.awaitRequest("/usertask/created", roundReported("Rita", "south", 1));
+    final var northId = idOf(north, "userTaskId");
+    final var southId = idOf(south, "userTaskId");
+    awaitTheTasksOfBothRoundsInTheStorage(started);
+
+    // a change of the case is reported from the storage, and each task keeps its round
+    CockpitServer.forgetRequests();
+    transaction.begin();
+    try {
+      final var attached = callingAggregates.byId(started.getId());
+      attached.setCustomer("Rita the second");
+      // no task named: every open task of the case, which is the search of the storage
+      callingWorkflowService.businessCockpit().aggregateChanged(attached, new String[0]);
+    } finally {
+      transaction.commit();
+    }
+    CockpitServer
+        .awaitRequestOf(
+            "/usertask/%s/updated".formatted(northId), roundReported("Rita the second", "north", 0));
+    CockpitServer
+        .awaitRequestOf(
+            "/usertask/%s/updated".formatted(southId), roundReported("Rita the second", "south", 1));
+
+    // a read of a task takes the same way and gets the same round
+    transaction.begin();
+    try {
+      final var read = callingWorkflowService
+          .businessCockpit()
+          .getUserTask(callingAggregates.byId(started.getId()), southId);
+      assertTrue(read.isPresent(), "the task of the second round was not found");
+      assertEquals(
+          CallingWorkflowService.roundOf("Rita the second", "south", 1, 2),
+          read.get().getDetails().get(CallingWorkflowService.ROUND));
+    } finally {
+      transaction.commit();
+    }
+
+  }
+
   private CallingAggregate aStartedCallingWorkflow(
       final String customer) throws Exception {
 
@@ -882,6 +974,47 @@ public class Camunda8CockpitTest {
     final var workflow = CockpitServer.awaitRequest("/updated", "\"customer\":\"Cleo the second\"");
     assertTrue(workflow.path().contains("/workflow/"), workflow.path());
     CockpitServer.awaitRequest("/usertask/%s/updated".formatted(userTaskId), "Cleo the second");
+
+  }
+
+  @Test
+  @DisplayName("A report built from the storage gives a @TaskParam the value the first report gave it")
+  public void aReportFromTheStorageCarriesTheSameTaskParam() throws Exception {
+
+    final var started = aStartedWorkflow("Ulla");
+    final var userTaskId = userTaskIdOf(started);
+    final var theValue = "\"%s\":\"Ulla\"".formatted(TestWorkflowService.CUSTOMER_VARIABLE);
+    // the first report is built from the listener job, which carries the variable
+    CockpitServer.awaitRequest("/usertask/created", theValue);
+    CockpitServer.forgetRequests();
+
+    // the application changes the case. The process variable stays what it was at the start
+    transaction.begin();
+    try {
+      final var attached = aggregates.byId(started.getId());
+      attached.setCustomer("Ulla the second");
+      workflowService.businessCockpit().aggregateChanged(attached, userTaskId);
+    } finally {
+      transaction.commit();
+    }
+
+    // this report is built from the cluster's searchable storage, and the provider gets the same
+    // value as before. With null it would leave the detail out and overwrite the first report
+    final var updated = CockpitServer
+        .awaitRequest("/usertask/%s/updated".formatted(userTaskId), "Ulla the second");
+    assertTrue(updated.body().contains(theValue), updated.body());
+
+    // a read of the task takes the same way and gets the same value
+    transaction.begin();
+    try {
+      final var read = workflowService
+          .businessCockpit()
+          .getUserTask(aggregates.byId(started.getId()), userTaskId);
+      assertTrue(read.isPresent(), "the case's own task was not answered");
+      assertEquals("Ulla", read.get().getDetails().get(TestWorkflowService.CUSTOMER_VARIABLE));
+    } finally {
+      transaction.commit();
+    }
 
   }
 

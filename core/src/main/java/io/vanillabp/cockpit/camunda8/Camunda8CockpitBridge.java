@@ -5,6 +5,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeSet;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,11 +14,15 @@ import org.slf4j.LoggerFactory;
 import io.camunda.client.api.search.enums.UserTaskState;
 import io.camunda.client.api.search.response.ProcessInstance;
 import io.camunda.client.api.search.response.UserTask;
+import io.camunda.client.api.search.response.Variable;
 import io.vanillabp.camunda8.client.Camunda8Errors;
 import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
 import io.vanillabp.camunda8.processservice.Camunda8Searches;
 import io.vanillabp.camunda8.processservice.Camunda8VariableFilters;
+import io.vanillabp.camunda8.wiring.Camunda8FetchVariables;
+import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
+import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 import io.vanillabp.cockpit.extension.spi.UserTaskDetailsPrefill;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowDetailsPrefill;
@@ -24,6 +30,7 @@ import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 import io.vanillabp.integration.extension.spi.election.WorkflowStart;
+import io.vanillabp.integration.extension.spi.handler.HandlerMultiInstance;
 
 /**
  * What one configured Camunda 8 cluster answers the Business Cockpit.
@@ -74,6 +81,11 @@ import io.vanillabp.integration.extension.spi.election.WorkflowStart;
  * key when the entry is dispatched. An empty answer there makes the extension ask again a little
  * later.
  * <p>
+ * <b>The variables of a task read from the storage.</b> A record of a user task in the storage
+ * carries no process variables. So where a details provider of the task reads one with
+ * <code>&#64;TaskParam</code>, or where the task sits in a multi-instance element, the bridge asks
+ * the storage for them in a second request. See {@link #variablesOfTheTask}.
+ * <p>
  * One bridge serves one adapter id, because during a migration each cluster holds workflows of
  * its own and the cockpit addresses a workflow by the cluster holding it.
  */
@@ -89,6 +101,8 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
 
   private final Camunda8CockpitDeployments deployments;
 
+  private final Supplier<BusinessCockpitEventPublisher> publisher;
+
   /**
    * Creates the bridge through which the cockpit reads one cluster.
    *
@@ -98,17 +112,22 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * @param election VanillaBP's election, asked only for what it wrote down when a workflow
    *          started
    * @param deployments What this extension read out of the models while wiring them
+   * @param publisher The Business Cockpit extension, asked which variables the details providers
+   *          of a task read. It is asked for when a task is read and not now, because the
+   *          extension is built from the bridges
    */
   public Camunda8CockpitBridge(
       final Camunda8Clients.Cluster cluster,
       final WorkflowTaskWiring workflowTaskWiring,
       final WorkflowElection election,
-      final Camunda8CockpitDeployments deployments) {
+      final Camunda8CockpitDeployments deployments,
+      final Supplier<BusinessCockpitEventPublisher> publisher) {
 
     this.cluster = cluster;
     this.workflowTaskWiring = workflowTaskWiring;
     this.election = election;
     this.deployments = deployments;
+    this.publisher = publisher;
 
   }
 
@@ -154,11 +173,17 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
           e);
       return Optional.empty();
     }
+    final var variables = variablesOfTheTask(userTask, read);
+    if (variables.isEmpty()) {
+      return Optional.empty();
+    }
     return Optional
         .of(read)
         .map(
             task -> UserTaskDetailsPrefill
                 .builder()
+                .variables(variables.get())
+                .multiInstances(roundsOf(userTask, task, variables.get()))
                 .bpmnProcessVersion(processVersionOf(task.getProcessDefinitionVersion()))
                 // the workflow of a task is the business case, which is the instance the
                 // reference carries. For a task of a called process the cluster's own
@@ -174,6 +199,132 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
                 .dueDate(task.getDueDate())
                 .followUpDate(task.getFollowUpDate())
                 .build());
+
+  }
+
+  /**
+   * The process variables a report of one task needs, read from the searchable storage.
+   * <p>
+   * A listener job carries the variables its worker asked for, and a record of a task in the
+   * storage carries none. So the same names are asked for here: the variables the
+   * details providers of the task read with <code>&#64;TaskParam</code>, and the variables of the
+   * multi-instance elements around the task. Without them a later report of a task would give
+   * such a parameter <code>null</code>, although the first report gave it the value. See decision
+   * 28 in the repository's DECISIONS.md.
+   * <p>
+   * The request asks for the effective variables of the task. Those are the variables the task
+   * sees, from its own scope up to its process instance, and where two scopes hold the same name
+   * the inner one wins. That is what a job carries as well. Where nobody reads a variable, the
+   * task sits in no multi-instance element of its own process, and no caller names the process by
+   * an expression, nothing is asked. Such a caller may hand its rounds down to the task, so then
+   * the variable which carries them is asked for as well.
+   * <p>
+   * The names are asked for with the workflow module and the BPMN process of the reference,
+   * because the extension picks the details provider by those two.
+   *
+   * @param userTask The task as the cockpit addresses it
+   * @param task The task as the storage holds it
+   * @return The values by name, which may be empty. Empty as a whole where the storage holds no
+   *         record of the task's variables yet. Then the report waits, as it waits for the task
+   */
+  private Optional<Map<String, Object>> variablesOfTheTask(
+      final UserTaskReference userTask,
+      final UserTask task) {
+
+    final var names = new TreeSet<String>(
+        publisher
+            .get()
+            .variablesTheDetailsProvidersRead(
+                userTask.workflowModuleId(), userTask.bpmnProcessId(), userTask.taskDefinition(),
+                userTask.bpmnTaskId()));
+    final var multiInstances = multiInstancesOf(userTask, task);
+    final var chain = multiInstances
+        .map(registry -> registry.chainOf(task.getBpmnProcessId(), task.getElementId()))
+        .orElse(List.of());
+    // a process called by an expression may sit in rounds of its caller, which no chain of its
+    // own model shows. The caller hands them down in a variable, and the adapter knows which
+    // processes such a variable can reach
+    final var mayInheritRounds = multiInstances
+        .map(registry -> registry.mayBeHandedAChain(task.getBpmnProcessId()))
+        .orElse(false);
+    if (names.isEmpty() && chain.isEmpty() && !mayInheritRounds) {
+      return Optional.of(Map.of());
+    }
+    // the adapter's own list for the element, the same one the worker of the listener uses. The
+    // aggregate's id is left out, because no report reads it from here
+    Camunda8FetchVariables.collect(names, null, chain);
+
+    final List<Variable> stored;
+    try {
+      stored = cluster
+          .client()
+          .newUserTaskEffectiveVariableSearchRequest(task.getUserTaskKey())
+          .filter(filter -> filter.name(name -> name.in(List.copyOf(names))))
+          // a provider gets the whole value, as it does from a job. The storage shortens long
+          // values unless it is told not to
+          .withFullValues()
+          .send()
+          .join()
+          .items();
+    } catch (final RuntimeException e) {
+      if (!Camunda8Errors.notFound(e)) {
+        throw e;
+      }
+      sayTheStorageHasNotWritten(
+          "the variables of user task '%s' of aggregate '%s'"
+              .formatted(userTask.userTaskId(), userTask.workflowAggregateId()),
+          e);
+      return Optional.empty();
+    }
+    final var jsonMapper = cluster.client().getConfiguration().getJsonMapper();
+    final var byName = new LinkedHashMap<String, Object>();
+    stored
+        .forEach(
+            variable -> byName
+                .put(variable.getName(), jsonMapper.fromJson(variable.getValue(), Object.class)));
+    return Optional.of(byName);
+
+  }
+
+  /**
+   * The multi-instance elements of the workflow module a task belongs to, as the adapter collected
+   * them while it wired the module's models.
+   *
+   * @param userTask The task as the cockpit addresses it
+   * @param task The task as the storage holds it
+   * @return The elements, or empty where the module has not started on this cluster or the record
+   *         names no process or no element to look them up by
+   */
+  private Optional<Camunda8MultiInstance.Registry> multiInstancesOf(
+      final UserTaskReference userTask,
+      final UserTask task) {
+
+    if ((task.getBpmnProcessId() == null) || (task.getElementId() == null)) {
+      return Optional.empty();
+    }
+    return deployments.multiInstancesOf(adapterId(), userTask.workflowModuleId());
+
+  }
+
+  /**
+   * The rounds of the multi-instance elements around a task, read the same way as from a listener
+   * job.
+   *
+   * @param userTask The task as the cockpit addresses it
+   * @param task The task as the storage holds it
+   * @param variables The variables read for it
+   * @return The rounds, outermost first. Empty where the task is not part of one
+   */
+  private Map<String, HandlerMultiInstance> roundsOf(
+      final UserTaskReference userTask,
+      final UserTask task,
+      final Map<String, Object> variables) {
+
+    return multiInstancesOf(userTask, task)
+        .map(
+            multiInstances -> Camunda8CockpitJobHandler
+                .multiInstancesOf(multiInstances, task.getBpmnProcessId(), task.getElementId(), variables))
+        .orElse(Map.of());
 
   }
 

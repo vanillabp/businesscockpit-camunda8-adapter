@@ -16,11 +16,13 @@ import io.vanillabp.camunda8.deployment.Camunda8DeploymentService;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
 import io.vanillabp.cockpit.camunda8.quarkus.Camunda8CockpitProducer;
+import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 import io.vanillabp.integration.adapter.migration.config.AdapterConfigProperties;
 import io.vanillabp.integration.adapter.migration.config.MigrationAdapterProperties;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 import io.vanillabp.integration.extension.spi.election.WorkflowElection;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
+import jakarta.enterprise.inject.Instance;
 
 /**
  * Which Camunda 8 adapter ids get a bridge.
@@ -43,6 +45,10 @@ public class Camunda8BridgesPerAdapterIdTest {
 
   private final WorkflowTaskWiring workflowTaskWiring = mock(WorkflowTaskWiring.class);
 
+  /** The Business Cockpit extension. A bridge asks it only when it reads a task, so never here. */
+  @SuppressWarnings("unchecked")
+  private final Instance<BusinessCockpitEventPublisher> publisher = mock(Instance.class);
+
   private List<String> bridgedAdapterIds(
       final MigrationAdapterProperties properties) {
 
@@ -50,7 +56,7 @@ public class Camunda8BridgesPerAdapterIdTest {
         .businessCockpitCamunda8Bridges(
             new Camunda8Clients(clientFactories, null), properties, workflowTaskWiring, mock(
                 WorkflowElection.class),
-            new Camunda8CockpitDeployments())
+            new Camunda8CockpitDeployments(), publisher)
         .stream()
         .map(bridge -> bridge.adapterId())
         .toList();

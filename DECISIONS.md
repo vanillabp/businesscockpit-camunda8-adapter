@@ -1025,7 +1025,7 @@ The test applications show all three kinds on both platforms. The Spring Boot ap
 The Quarkus application uses `IncidentDetailsProcess` for this, see decision 24. On both platforms
 a test deploys `ForeignProcess` straight to the cluster.
 
-## 26. A listener job carries what the details providers read - where the names come from replaced by decision 27
+## 26. A listener job carries what the details providers read - where the names come from replaced by decision 27, extended by decision 28 for a report built from the storage
 
 A `@UserTaskDetailsProvider` method may take a process variable with `@TaskParam`, and the SPI
 promises it a value. On Camunda 8 it got `null`. A worker of this extension asked the cluster for
@@ -1070,7 +1070,9 @@ What stays the same: a report of a change the application named, built from the 
 searchable storage, carries no variables. A `@TaskParam` parameter receives `null` there. Reading
 variables out of that storage would be a request of its own for every report.
 
-## 27. VanillaBP names the variables per workflow module and BPMN process
+Decision 28 changed this: a report built from the storage now reads the same variables.
+
+## 27. VanillaBP names the variables per workflow module and BPMN process - extended by decision 28
 
 Decision 26 took the names the details providers read from a list the Business Cockpit extension
 kept itself. That list knew nothing of workflow modules or BPMN processes. VanillaBP can now answer
@@ -1094,6 +1096,69 @@ have different providers. Each worker asks only about its own process.
 Everything else in decision 26 stays: the variable with the aggregate's id, the multi-instance
 variables, the moment the worker asks, and the report built from the searchable storage, which
 carries no variables.
+
+Decision 28 uses the same names for a report built from the searchable storage.
+
+## 28. A report built from the storage reads the same variables as a listener job
+
+Decision 26 left one gap. A report after `aggregateChanged` and the answer of `getUserTask` are built
+from the cluster's searchable storage, and a record of a user task there carries no variables. So a
+`@TaskParam` parameter of a details provider received `null` on that way, and the value on the way
+through the listener job. A provider which leaves a detail out for `null` then took back what the
+first report said.
+
+`Camunda8CockpitBridge.prefilledUserTaskDetails` now asks the storage for the variables after it read
+the task. It asks for the same names a worker asks for:
+
+- the names `BusinessCockpitEventPublisher.variablesTheDetailsProvidersRead` answers, with the
+  workflow module, the BPMN process, the task definition and the element id of the reference. Those
+  are the values the extension picks the details provider by;
+- the multi-instance variables of the task (`Camunda8FetchVariables.collect`). The wiring now keeps
+  the adapter's `Camunda8MultiInstance.Registry` of a module in `Camunda8CockpitDeployments` when the
+  module starts, because the bridge has no worker to take it from. The rounds are read with the same
+  code as for a job.
+
+The request is the search for the effective variables of the user task
+(`newUserTaskEffectiveVariableSearchRequest`), filtered to these names and with full values. We
+measured on 2026-10-09 against a cluster 8.10.0, with a user task inside a multi-instance subprocess:
+
+- the plain search (`newUserTaskVariableSearchRequest`) answers the variables of every scope from the
+  task up to the process instance. Where two scopes hold the same name, it answers both;
+- the effective search answers the same scopes, but each name once, and the inner scope wins. That is
+  what a job carries, so we take this one.
+
+Both searches found the variables of the multi-instance round (`loopCounter`, the input element),
+because the round is a scope above the task. The client has the effective search from 8.8.31 and
+8.9.6 on. Every line here needs a newer cluster anyway (8.8.40, 8.9.21, 8.10.0).
+
+It costs one more request per report, and only where a variable may be needed. Nothing is asked
+where no provider of the task reads a variable, the task sits in no multi-instance element of its
+own process, and no caller names its process by an expression. Where the storage answers 404 for
+the variables, the bridge answers nothing, the same as for a task it does not hold yet. The
+dispatch then asks again a little later.
+
+**A process called by an expression.** Such a process learns its rounds from the variable its
+caller hands down (`Camunda8MultiInstance.CHAIN_VARIABLE`). Its own model shows no round, so
+`chainOf` is empty for its tasks, and a provider which reads no variable would have made the bridge
+ask for nothing. The Camunda 8 adapter now answers `Camunda8MultiInstance.Registry#mayBeHandedAChain`
+for the process id as the cluster knows it. `true` means that a process of the same workflow
+aggregate names this process by an expression, so a chain may be in that variable. Then the bridge
+asks as well, and `Camunda8FetchVariables.collect` puts the chain variable among the names. `true`
+does not mean that a chain is there. Where the caller runs no round, the variable is missing and
+the task has no round, which is what a job says as well. The adapter's side of this is decision 75
+of `camunda-community-hub/vanillabp-camunda8-adapter`.
+
+**The storage may hold a task before its variables.** The exporter writes a task and its variables
+as records of their own. Where the storage holds the task and not yet all of its variables, the
+search answers fewer values, and the report carries fewer values. The search does not answer 404
+then, so the bridge does not wait. We leave it this way (Stephan, 2026-10-09). The storage gives no
+sign that the variables of a task are complete, so there is nothing the bridge could wait for.
+
+`Camunda8CockpitBridgeTest` and the two test applications show it. On both platforms a report after
+`aggregateChanged` and an answer of `getUserTask` carry the value the first report carried. The
+calling case of the test applications also calls a process by an expression once per round of a
+multi-instance call activity. The provider of its task reads no variable, and the report from the
+storage carries the same round as the first one.
 
 ## 29. A task of a called process names its own process, and the search asks for every process of the case
 

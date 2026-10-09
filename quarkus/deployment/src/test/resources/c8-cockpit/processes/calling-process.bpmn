@@ -9,9 +9,10 @@
     it prepares the model, the same way it rewrites the process ids themselves, so this model
     reads the way the application wrote it.
 
-    The case runs three call activities side by side: one naming its process plainly, one naming
-    it by an expression, and one starting a process with a workflow aggregate of its own. The
-    first two are steps of this case, the third one is not.
+    The case runs four call activities side by side: one naming its process plainly, one naming
+    it by an expression, one starting a process with a workflow aggregate of its own, and one
+    naming its process by an expression once per round of a multi-instance loop. All but the
+    third are steps of this case.
   -->
   <bpmn:process id="CallingProcess" isExecutable="true">
     <bpmn:startEvent id="CallingStart">
@@ -23,6 +24,7 @@
       <bpmn:outgoing>ToCall</bpmn:outgoing>
       <bpmn:outgoing>ToCallByExpression</bpmn:outgoing>
       <bpmn:outgoing>ToCallOwnCase</bpmn:outgoing>
+      <bpmn:outgoing>ToCallInRounds</bpmn:outgoing>
     </bpmn:parallelGateway>
     <bpmn:sequenceFlow id="ToCall" sourceRef="Split" targetRef="Call" />
     <bpmn:callActivity id="Call" name="Have the order handled">
@@ -61,10 +63,30 @@
       <bpmn:outgoing>FromCallOwnCase</bpmn:outgoing>
     </bpmn:callActivity>
     <bpmn:sequenceFlow id="FromCallOwnCase" sourceRef="CallOwnCase" targetRef="Join" />
+    <!--
+      One call per region, and the process it reaches is named by an expression. So the called
+      model shows no round, and the task in it learns its round only from the variable the adapter
+      hands down from this call activity.
+    -->
+    <bpmn:sequenceFlow id="ToCallInRounds" sourceRef="Split" targetRef="CallInRounds" />
+    <bpmn:callActivity id="CallInRounds" name="Have each region counted">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="=&#34;RoundCalledProcess&#34;" propagateAllChildVariables="false" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToCallInRounds</bpmn:incoming>
+      <bpmn:outgoing>FromCallInRounds</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics>
+        <bpmn:extensionElements>
+          <zeebe:loopCharacteristics inputCollection="=[&#34;north&#34;, &#34;south&#34;]" inputElement="region" />
+        </bpmn:extensionElements>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="FromCallInRounds" sourceRef="CallInRounds" targetRef="Join" />
     <bpmn:parallelGateway id="Join">
       <bpmn:incoming>FromCall</bpmn:incoming>
       <bpmn:incoming>FromCallByExpression</bpmn:incoming>
       <bpmn:incoming>FromCallOwnCase</bpmn:incoming>
+      <bpmn:incoming>FromCallInRounds</bpmn:incoming>
       <bpmn:outgoing>ToCallingEnd</bpmn:outgoing>
     </bpmn:parallelGateway>
     <bpmn:sequenceFlow id="ToCallingEnd" sourceRef="Join" targetRef="CallingEnd" />

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="RoundCalledDefinitions" targetNamespace="http://vanillabp.io/businesscockpit/camunda8">
+  <!--
+    A step of the calling case, reached once per round of a multi-instance call activity which
+    names it by an expression. Nothing in this model is multi-instance, so the round of its task
+    comes only from the caller.
+  -->
+  <bpmn:process id="RoundCalledProcess" isExecutable="true">
+    <bpmn:startEvent id="RoundCalledStart">
+      <bpmn:outgoing>ToCount</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToCount" sourceRef="RoundCalledStart" targetRef="Count" />
+    <bpmn:userTask id="Count" name="Count the region">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="count" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToCount</bpmn:incoming>
+      <bpmn:outgoing>ToRoundCalledEnd</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="ToRoundCalledEnd" sourceRef="Count" targetRef="RoundCalledEnd" />
+    <bpmn:endEvent id="RoundCalledEnd">
+      <bpmn:incoming>ToRoundCalledEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

@@ -160,9 +160,9 @@ public class TestWorkflowService {
     details.put("customer", aggregate.getCustomer());
     details.put("event", event.name());
     details.put(SERVED_BY, servedBy);
-    // a report built from a listener job carries the variable. A report of a change the
-    // application named is built from the cluster's searchable storage, which carries no
-    // variables, so the parameter is null there and the detail is left out
+    // a report built from a listener job carries the variable, and so does a report built from
+    // the cluster's searchable storage. The parameter is null only where the workflow never set
+    // the variable, and then the detail is left out
     if (customer != null) {
       details.put(CUSTOMER_VARIABLE, customer);
     }
