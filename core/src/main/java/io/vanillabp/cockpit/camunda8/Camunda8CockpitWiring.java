@@ -97,7 +97,7 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       // A BPMN process which no @WorkflowService class claims has no workflow aggregate, so
       // there is nothing the cockpit could report a case for, and it gets no listener either.
       // VanillaBP still hands such a process to this method, so this method has to ask.
-      // See decision 5 in the repository's DECISIONS.md
+      // See decisions 5 and 25 in the repository's DECISIONS.md
       logger
           .debug(
               "Camunda8: the Business Cockpit adds no listeners to BPMN process '{}' of workflow module '{}' (file '{}'): no workflow aggregate of this application claims it",

@@ -62,7 +62,7 @@ the version they were started on and keep reporting their user tasks, because th
 that version are the ones this extension serves anyway. The documentation says this out loud rather
 than hiding it. It is the price of reporting a workflow which knows what it is about.
 
-## 5. A listener of this extension carries no retries
+## 5. A listener of this extension carries no retries - extended by decision 25
 
 A report which cannot be written is a defect somebody has to see, and an incident is how a cluster
 says so. Completing the job anyway would let the workflow run on while the cockpit loses the event.
@@ -957,7 +957,7 @@ At the dispatch they are asked only for a task VanillaBP wrote nothing down abou
 attempt is possible there. That is a task delivered before VanillaBP wrote such notes, a task named
 by an id of another BPMS, or a task of a called process without a note of the start.
 
-## 23. A details provider does not serve a user task, so the test applications mark their user tasks
+## 23. A details provider does not serve a user task, so the test applications mark their user tasks - extended by decision 24
 
 `adapter-platform-integration` now ends the start when a task of a claimed process has no
 `@WorkflowTask` method and is not marked with `implemented-externally=true`. This holds for a user
@@ -975,3 +975,50 @@ because nothing is asked of its tasks. In the Quarkus application that is `Incid
 
 The formatter removes comments from a YAML file, so the reason also stands in the Javadoc of
 `Camunda8CockpitIT` and `Camunda8CockpitTest`.
+
+## 24. The process nobody claims is marked at the workflow - extends decision 23
+
+`adapter-platform-integration` now ends the start when a workflow module deploys a process which
+no `@WorkflowService` claims, unless the process is marked with
+`vanillabp.workflow-modules.<wm>.workflows.<id>.implemented-externally=true`.
+
+The Quarkus application deploys `IncidentDetailsProcess` and claims it nowhere, because the test
+`anUnclaimedProcessIsLeftAlone` needs such a process. So `business-cockpit.yaml` marks that process
+at the workflow. Its tasks still get no mark, as decision 23 says. The mark at a task of a claimed
+process says that somebody outside the application completes that task. The mark at the workflow
+says that the application does not run the process at all.
+
+The mark stands in the YAML of the Quarkus application. That file configures this one application
+only, and nobody in it claims the process. The Spring Boot applications claim
+`IncidentDetailsProcess`, so that process has no mark at the workflow there. Decision 25 gives them
+a process of their own which nobody claims.
+
+## 25. Only a process a workflow service claims gets listeners, and VanillaBP says which those are - extends decision 5
+
+`adapter-platform-integration` sorts the processes of a workflow module into three kinds:
+
+- claimed: a `@WorkflowService` names the process as its `bpmnProcess` or among its
+  `secondaryBpmnProcesses`. A process a call activity starts counts, as long as the service of
+  the caller names it.
+- deployed but not claimed: the workflow module deploys the process, and no `@WorkflowService`
+  names it. The start goes on only when the process is marked with
+  `vanillabp.workflow-modules.<wm>.workflows.<id>.implemented-externally=true`.
+- foreign: the process exists only in the cluster. VanillaBP never deployed it.
+
+The rule is the same for all three cockpit adapters. Only a claimed process gets listeners of the
+cockpit, and only a claimed process is reported. The other two kinds get no listener, no change to
+their BPMN and no report.
+
+Decision 5 already kept listeners away from a process nobody claims. What changes is how the
+adapter finds out. It asks `WorkflowTaskWiring.isClaimedByAWorkflowService(workflowModuleId,
+bpmnProcessId)`. Before, it asked `resolveWorkflowAggregateIdName` and treated an exception as "not
+claimed". The behaviour stays the same. VanillaBP still calls `wireBpmn` for a process nobody
+claims, so the adapter has to ask.
+
+A foreign process never reaches `wireBpmn`. The adapter never sees its model, and its jobs carry no
+job type a worker of the cockpit subscribes to.
+
+The test applications show all three kinds on both platforms. The Spring Boot applications deploy
+`UnclaimedProcess`, which nobody claims, and both of their configurations mark it at the workflow.
+The Quarkus application uses `IncidentDetailsProcess` for this, see decision 24. On both platforms
+a test deploys `ForeignProcess` straight to the cluster.
