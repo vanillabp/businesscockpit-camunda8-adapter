@@ -9,6 +9,7 @@ import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitBpmsBridge;
+import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 import io.vanillabp.integration.adapter.AdapterBeanRegistrarSupport;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 import io.vanillabp.integration.extension.spi.election.WorkflowElection;
@@ -59,7 +60,11 @@ public class Camunda8CockpitBeanRegistrar implements BeanRegistrar {
                                     .bean(Camunda8Clients.class)
                                     .of(adapterId), supplierContext.bean(WorkflowTaskWiring.class), supplierContext
                                         .bean(WorkflowElection.class), supplierContext
-                                            .bean(Camunda8CockpitDeployments.class)))));
+                                            .bean(Camunda8CockpitDeployments.class),
+                                // asked for when a task is read: the extension collects the
+                                // bridges, so it cannot be there while they are built
+                                supplierContext
+                                    .beanProvider(BusinessCockpitEventPublisher.class)::getObject))));
 
   }
 

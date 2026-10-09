@@ -168,6 +168,8 @@ public class Camunda8CockpitProducer {
    * @param workflowTaskWiring VanillaBP's registry
    * @param election VanillaBP's election, which knows the key of a workflow it started
    * @param deployments What this extension read out of the models while wiring them
+   * @param publisher The Business Cockpit extension, resolved when a task is read rather than
+   *          now: the extension collects these bridges
    * @return One bridge per configured Camunda 8 adapter id
    */
   @Produces
@@ -178,14 +180,15 @@ public class Camunda8CockpitProducer {
       final MigrationAdapterProperties properties,
       final WorkflowTaskWiring workflowTaskWiring,
       final WorkflowElection election,
-      final Camunda8CockpitDeployments deployments) {
+      final Camunda8CockpitDeployments deployments,
+      final Instance<BusinessCockpitEventPublisher> publisher) {
 
     return properties
         .adapterIdsOfType(Camunda8DeploymentService.ADAPTER_TYPE)
         .stream()
         .<BusinessCockpitBpmsBridge>map(
             adapterId -> new Camunda8CockpitBridge(
-                clients.of(adapterId), workflowTaskWiring, election, deployments))
+                clients.of(adapterId), workflowTaskWiring, election, deployments, publisher::get))
         .toList();
 
   }

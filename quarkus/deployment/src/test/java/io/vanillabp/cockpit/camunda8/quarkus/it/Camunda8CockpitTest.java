@@ -886,6 +886,47 @@ public class Camunda8CockpitTest {
   }
 
   @Test
+  @DisplayName("A report built from the storage gives a @TaskParam the value the first report gave it")
+  public void aReportFromTheStorageCarriesTheSameTaskParam() throws Exception {
+
+    final var started = aStartedWorkflow("Ulla");
+    final var userTaskId = userTaskIdOf(started);
+    final var theValue = "\"%s\":\"Ulla\"".formatted(TestWorkflowService.CUSTOMER_VARIABLE);
+    // the first report is built from the listener job, which carries the variable
+    CockpitServer.awaitRequest("/usertask/created", theValue);
+    CockpitServer.forgetRequests();
+
+    // the application changes the case. The process variable stays what it was at the start
+    transaction.begin();
+    try {
+      final var attached = aggregates.byId(started.getId());
+      attached.setCustomer("Ulla the second");
+      workflowService.businessCockpit().aggregateChanged(attached, userTaskId);
+    } finally {
+      transaction.commit();
+    }
+
+    // this report is built from the cluster's searchable storage, and the provider gets the same
+    // value as before. With null it would leave the detail out and overwrite the first report
+    final var updated = CockpitServer
+        .awaitRequest("/usertask/%s/updated".formatted(userTaskId), "Ulla the second");
+    assertTrue(updated.body().contains(theValue), updated.body());
+
+    // a read of the task takes the same way and gets the same value
+    transaction.begin();
+    try {
+      final var read = workflowService
+          .businessCockpit()
+          .getUserTask(aggregates.byId(started.getId()), userTaskId);
+      assertTrue(read.isPresent(), "the case's own task was not answered");
+      assertEquals("Ulla", read.get().getDetails().get(TestWorkflowService.CUSTOMER_VARIABLE));
+    } finally {
+      transaction.commit();
+    }
+
+  }
+
+  @Test
   @DisplayName("A question about something the cluster does not hold is answered with nothing")
   public void aQuestionAboutSomethingTheClusterDoesNotHoldIsAnsweredWithNothing() throws Exception {
 

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.clearInvocations;
@@ -37,11 +38,13 @@ import io.camunda.client.api.command.ClientHttpException;
 import io.camunda.client.api.search.filter.ProcessInstanceFilter;
 import io.camunda.client.api.search.response.ProcessInstance;
 import io.camunda.client.api.search.response.UserTask;
+import io.camunda.client.api.search.response.Variable;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
+import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
 import io.vanillabp.integration.adapter.spi.NameClashAvoidance;
@@ -79,6 +82,12 @@ public class Camunda8CockpitBridgeTest {
    * nothing, which is the answer for every workflow started before VanillaBP wrote such notes.
    */
   private final WorkflowElection election = mock(WorkflowElection.class);
+
+  /**
+   * The Business Cockpit extension, asked which variables the details providers of a task read.
+   * Unless a test says otherwise nobody reads any, which is what a mock of the interface answers.
+   */
+  private final BusinessCockpitEventPublisher publisher = mock(BusinessCockpitEventPublisher.class);
 
   /** What this extension read out of the models of this test while it wired them. */
   private final Camunda8CockpitDeployments deployments = new Camunda8CockpitDeployments();
@@ -152,7 +161,8 @@ public class Camunda8CockpitBridgeTest {
   private Camunda8CockpitBridge bridge() {
 
     final var clients = new Camunda8Clients(clientFactories, null);
-    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring, election, deployments);
+    return new Camunda8CockpitBridge(
+        clients.of("c8"), workflowTaskWiring, election, deployments, () -> publisher);
 
   }
 
@@ -192,7 +202,8 @@ public class Camunda8CockpitBridgeTest {
     // bridge makes, because a second call would replace the first rather than add to it
     clearInvocations(search);
     final var clients = new Camunda8Clients(clientFactories, scoping);
-    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring, election, deployments);
+    return new Camunda8CockpitBridge(
+        clients.of("c8"), workflowTaskWiring, election, deployments, () -> publisher);
 
   }
 
@@ -216,7 +227,8 @@ public class Camunda8CockpitBridgeTest {
     when(search.send().join().items()).thenReturn(found);
     clearInvocations(search);
     final var clients = new Camunda8Clients(clientFactories, scoping);
-    return new Camunda8CockpitBridge(clients.of("c8"), workflowTaskWiring, election, deployments);
+    return new Camunda8CockpitBridge(
+        clients.of("c8"), workflowTaskWiring, election, deployments, () -> publisher);
 
   }
 
@@ -404,6 +416,99 @@ public class Camunda8CockpitBridgeTest {
     final var said = whatTheBridgeSaid(Level.DEBUG);
     assertEquals(1, said.size(), said.toString());
     assertTrue(said.getFirst().contains(USER_TASK_ID), said.getFirst());
+
+  }
+
+  /**
+   * A task as the storage holds it, read by its key.
+   *
+   * @return The task
+   */
+  private UserTask aTaskTheStorageHolds() {
+
+    final var task = mock(UserTask.class, RETURNS_DEEP_STUBS);
+    when(task.getUserTaskKey()).thenReturn(Long.parseLong(USER_TASK_ID));
+    when(task.getProcessInstanceKey()).thenReturn(Long.parseLong(CALLING_INSTANCE));
+    when(task.getBpmnProcessId()).thenReturn(SCOPED_PROCESS_ID);
+    when(task.getElementId()).thenReturn("Handle");
+    when(task.getProcessDefinitionVersion()).thenReturn(1);
+    when(task.getCandidateUsers()).thenReturn(List.of());
+    when(task.getCandidateGroups()).thenReturn(List.of());
+    when(client().newUserTaskGetRequest(Long.parseLong(USER_TASK_ID)).send().join()).thenReturn(task);
+    return task;
+
+  }
+
+  private static UserTaskReference theTaskOfTheCase() {
+
+    return new UserTaskReference(
+        "c8", MODULE_ID, PROCESS_ID, "1", AGGREGATE_ID, CALLING_INSTANCE, USER_TASK_ID, "handle", "Handle");
+
+  }
+
+  @Test
+  @DisplayName("A task read from the storage carries the variables its details providers read")
+  public void aTaskReadFromTheStorageCarriesTheVariablesItsProvidersRead() {
+
+    aTaskTheStorageHolds();
+    when(publisher.variablesTheDetailsProvidersRead(MODULE_ID, PROCESS_ID, "handle", "Handle"))
+        .thenReturn(List.of("customer"));
+    final var search = client().newUserTaskEffectiveVariableSearchRequest(Long.parseLong(USER_TASK_ID));
+    // a search request answers itself, see bridgeOfAScopedModule
+    when(search.filter(any(Consumer.class))).thenReturn(search);
+    when(search.withFullValues()).thenReturn(search);
+    final var customer = mock(Variable.class);
+    when(customer.getName()).thenReturn("customer");
+    when(customer.getValue()).thenReturn("\"Tilda\"");
+    when(search.send().join().items()).thenReturn(List.of(customer));
+    when(client().getConfiguration().getJsonMapper().fromJson("\"Tilda\"", Object.class))
+        .thenReturn("Tilda");
+    clearInvocations(search);
+
+    final var prefill = bridge().prefilledUserTaskDetails(theTaskOfTheCase()).orElseThrow();
+
+    // the same value a listener job of that task carries, so a later report of the task does not
+    // overwrite what the first one said
+    assertEquals(Map.of("customer", "Tilda"), prefill.variables());
+    // the long values in full, as a job carries them
+    verify(search).withFullValues();
+
+  }
+
+  @Test
+  @DisplayName("A task whose details providers read no variable costs no second request")
+  public void aTaskNobodyReadsAVariableOfCostsNoSecondRequest() {
+
+    aTaskTheStorageHolds();
+
+    final var prefill = bridge().prefilledUserTaskDetails(theTaskOfTheCase()).orElseThrow();
+
+    assertTrue(prefill.variables().isEmpty(), prefill.variables().toString());
+    verify(client(), never()).newUserTaskEffectiveVariableSearchRequest(anyLong());
+
+  }
+
+  @Test
+  @DisplayName("A task whose variables the storage holds no record of is answered with nothing")
+  public void aTaskWhoseVariablesTheStorageDoesNotHoldIsAnsweredWithNothing() {
+
+    aTaskTheStorageHolds();
+    when(publisher.variablesTheDetailsProvidersRead(MODULE_ID, PROCESS_ID, "handle", "Handle"))
+        .thenReturn(List.of("customer"));
+    final var search = client().newUserTaskEffectiveVariableSearchRequest(Long.parseLong(USER_TASK_ID));
+    when(search.filter(any(Consumer.class))).thenReturn(search);
+    when(search.withFullValues()).thenReturn(search);
+    when(search.send().join()).thenThrow(new ClientHttpException(404, "Not Found"));
+
+    final var prefill = bridge().prefilledUserTaskDetails(theTaskOfTheCase());
+
+    // a report without the value would overwrite what the first report said. So it waits, as it
+    // waits for a task the storage has not written yet, and the dispatch asks again later
+    assertTrue(prefill.isEmpty());
+    assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
+    final var said = whatTheBridgeSaid(Level.DEBUG);
+    assertEquals(1, said.size(), said.toString());
+    assertTrue(said.getFirst().contains("variables of user task"), said.getFirst());
 
   }
 

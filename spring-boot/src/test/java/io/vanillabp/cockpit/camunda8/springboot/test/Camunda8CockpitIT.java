@@ -1641,6 +1641,42 @@ public class Camunda8CockpitIT {
   }
 
   @Test
+  @DisplayName("A report built from the storage gives a @TaskParam the value the first report gave it")
+  public void aReportFromTheStorageCarriesTheSameTaskParam() {
+
+    final var aggregate = aStartedWorkflow("Ulla");
+    final var userTaskId = userTaskIdOf(aggregate);
+    final var theValue = "\"%s\":\"Ulla\"".formatted(TestWorkflowService.CUSTOMER_VARIABLE);
+    // the first report is built from the listener job, which carries the variable
+    awaitReportCarrying("/usertask/created", theValue, aggregate);
+    CockpitServer.forgetRequests();
+
+    // the application changes the case. The process variable stays what it was at the start
+    changeTheCase(
+        aggregate.getId(),
+        attached -> {
+          attached.setCustomer("Ulla the second");
+          workflowService.businessCockpit().aggregateChanged(attached, userTaskId);
+        });
+
+    // this report is built from the cluster's searchable storage, and the provider gets the same
+    // value as before. With null it would leave the detail out and overwrite the first report
+    final var updated = awaitReportCarrying(
+        "/usertask/%s/updated".formatted(userTaskId), "Ulla the second", aggregate);
+    assertTrue(updated.body().contains(theValue), updated.body());
+
+    // a read of the task takes the same way and gets the same value
+    final var read = transactions
+        .execute(
+            status -> workflowService
+                .businessCockpit()
+                .getUserTask(aggregates.findById(aggregate.getId()).orElseThrow(), userTaskId));
+    assertTrue(read.isPresent(), "the case's own task was not answered");
+    assertEquals("Ulla", read.get().getDetails().get(TestWorkflowService.CUSTOMER_VARIABLE));
+
+  }
+
+  @Test
   @DisplayName("A report carries the state its case had at the moment of the event")
   public void aReportCarriesTheStateOfItsEvent() {
 
