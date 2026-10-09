@@ -209,6 +209,32 @@ public class Camunda8CockpitDeployments {
   }
 
   /**
+   * The BPMN processes of one workflow module this extension wired listeners into on one
+   * cluster.
+   * <p>
+   * A search of the cluster's storage names a process the way the cluster knows it, and a report
+   * names it the way the application wrote it. Both spellings come from here. So a process a
+   * search asks for is one this extension wired, and a task found that way can be named back.
+   *
+   * @param adapterId The configured adapter id whose models were wired
+   * @param workflowModuleId The workflow module
+   * @return The plain BPMN process id by the id the cluster knows, in the order the processes
+   *         were wired. Empty where the module was not wired for that adapter id
+   */
+  public Map<String, String> bpmnProcessIdsByScopedIdOf(
+      final String adapterId,
+      final String workflowModuleId) {
+
+    final var byScopedId = new LinkedHashMap<String, String>();
+    of(adapterId, workflowModuleId)
+        .forEach(
+            listener -> byScopedId
+                .putIfAbsent(listener.scopedBpmnProcessId(), listener.bpmnProcessId()));
+    return byScopedId;
+
+  }
+
+  /**
    * The BPMN name of one process, as this extension read it out of the model while wiring it.
    * <p>
    * A report about a workflow the cluster's searchable storage has not written yet takes its

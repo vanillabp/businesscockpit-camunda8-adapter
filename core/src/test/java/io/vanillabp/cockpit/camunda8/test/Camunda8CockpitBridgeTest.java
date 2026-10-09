@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import org.junit.jupiter.api.AfterEach;
@@ -567,6 +568,160 @@ public class Camunda8CockpitBridgeTest {
     // nothing was searched and nothing is ambiguous here, so there is nothing to warn about
     assertTrue(whatTheBridgeSaid(Level.WARN).isEmpty(), whatTheBridgeSaid(Level.WARN).toString());
     verifyNoInteractions(workflowTaskWiring);
+
+  }
+
+  /** A process the case's process calls, which works on the same workflow aggregate. */
+  private static final String CALLED_PROCESS_ID = "CalledProcess";
+
+  private static final String SCOPED_CALLED_PROCESS_ID = "cockpit-module-CalledProcess";
+
+  /** A process the case may call as well, which has a workflow aggregate of its own. */
+  private static final String OWN_CASE_PROCESS_ID = "OwnCaseProcess";
+
+  private static final String SCOPED_OWN_CASE_PROCESS_ID = "cockpit-module-OwnCaseProcess";
+
+  /**
+   * The module of this test wired three processes on this cluster: the case's process, a process
+   * it calls on the same aggregate and a process with an aggregate of its own.
+   */
+  private void threeProcessesWereWired() {
+
+    deployments
+        .register(
+            "c8", MODULE_ID,
+            new WiredListener(
+                "type-a", SCOPED_PROCESS_ID, PROCESS_ID, "Approve", "Approve", "Cockpit", AGGREGATE_ID_NAME, "approve"));
+    deployments
+        .register(
+            "c8", MODULE_ID,
+            new WiredListener(
+                "type-b", SCOPED_CALLED_PROCESS_ID, CALLED_PROCESS_ID, "Handle", "Handle", "Called", AGGREGATE_ID_NAME, "handle"));
+    deployments
+        .register(
+            "c8", MODULE_ID,
+            new WiredListener(
+                "type-c", SCOPED_OWN_CASE_PROCESS_ID, OWN_CASE_PROCESS_ID, "Check", "Check", "Own case", AGGREGATE_ID_NAME, "check"));
+    when(workflowTaskWiring.workflowsShareTheWorkflowAggregate(MODULE_ID, PROCESS_ID, PROCESS_ID))
+        .thenReturn(true);
+    when(workflowTaskWiring.workflowsShareTheWorkflowAggregate(MODULE_ID, PROCESS_ID, CALLED_PROCESS_ID))
+        .thenReturn(true);
+    when(workflowTaskWiring.workflowsShareTheWorkflowAggregate(MODULE_ID, PROCESS_ID, OWN_CASE_PROCESS_ID))
+        .thenReturn(false);
+
+  }
+
+  @Test
+  @DisplayName("The task search names the case's process and every wired process sharing its aggregate")
+  public void theTaskSearchNamesTheProcessesOfTheCase() {
+
+    threeProcessesWereWired();
+
+    bridgeSearchingUserTasks(List.of()).userTasksOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, List.of());
+
+    // as the cluster knows them, so under use-prefix with the module's prefix. The process with
+    // an aggregate of its own is a case of its own and is not asked for
+    assertEquals(
+        Set.of(SCOPED_PROCESS_ID, SCOPED_CALLED_PROCESS_ID),
+        ProcessesSearched.byTheUserTaskSearch(clientFactories, "c8"));
+
+  }
+
+  @Test
+  @DisplayName("A module wired nothing yet is searched in the case's process, as before")
+  public void aModuleWiredNothingYetIsSearchedInTheCasesProcess() {
+
+    bridgeSearchingUserTasks(List.of()).userTaskOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, USER_TASK_ID);
+
+    assertEquals(Set.of(SCOPED_PROCESS_ID), ProcessesSearched.byTheUserTaskSearch(clientFactories, "c8"));
+
+  }
+
+  /**
+   * One task the searchable storage holds.
+   *
+   * @param scopedBpmnProcessId The process it sits in, as the cluster knows it
+   * @param scopedTaskDefinition Its external form reference, as the cluster knows it
+   * @return The record
+   */
+  private static UserTask aStoredTask(
+      final String scopedBpmnProcessId,
+      final String scopedTaskDefinition) {
+
+    final var task = mock(UserTask.class);
+    when(task.getUserTaskKey()).thenReturn(Long.parseLong(USER_TASK_ID));
+    when(task.getBpmnProcessId()).thenReturn(scopedBpmnProcessId);
+    when(task.getProcessDefinitionVersion()).thenReturn(3);
+    when(task.getElementId()).thenReturn("Handle");
+    when(task.getExternalFormReference()).thenReturn(scopedTaskDefinition);
+    return task;
+
+  }
+
+  @Test
+  @DisplayName("A task of a called process is named by its own process and filed under the case")
+  public void aTaskOfACalledProcessIsNamedByItsOwnProcess() {
+
+    threeProcessesWereWired();
+    final var task = aStoredTask(SCOPED_CALLED_PROCESS_ID, "cockpit-module-CalledProcess-handle");
+    TasksInAHierarchy
+        .isCalledBy(
+            clientFactories, "c8", task, CALLED_INSTANCE, Long.parseLong(CALLING_INSTANCE));
+    when(
+        scoping
+            .plainTaskDefinition(
+                MODULE_ID, CALLED_PROCESS_ID, "cockpit-module-CalledProcess-handle", "c8"))
+        .thenReturn("handle");
+
+    final var found = bridgeSearchingUserTasks(List.of(task))
+        .userTaskOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, USER_TASK_ID)
+        .orElseThrow();
+
+    // all four values name the process the task sits in, written the way the application wrote
+    // it, so the listener's report and this one pick the same details provider
+    assertEquals(CALLED_PROCESS_ID, found.bpmnProcessId());
+    assertEquals("3", found.processVersion());
+    assertEquals("handle", found.taskDefinition());
+    assertEquals("Handle", found.bpmnTaskId());
+    // and the workflow is the case at the top, as the listener reports it (decision 3)
+    assertEquals(CALLING_INSTANCE, found.workflowId());
+    assertEquals(AGGREGATE_ID, found.workflowAggregateId());
+
+  }
+
+  @Test
+  @DisplayName("A task of the case's own process is filed under its own instance")
+  public void aTaskOfTheCasesProcessIsFiledUnderItsOwnInstance() {
+
+    threeProcessesWereWired();
+    final var task = aStoredTask(SCOPED_PROCESS_ID, "approve");
+    TasksInAHierarchy.isItsOwnRoot(clientFactories, "c8", task, Long.parseLong(CALLING_INSTANCE));
+
+    final var found = bridgeSearchingUserTasks(List.of(task))
+        .userTasksOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, List.of());
+
+    assertEquals(1, found.size(), found.toString());
+    assertEquals(PROCESS_ID, found.getFirst().bpmnProcessId());
+    assertEquals(CALLING_INSTANCE, found.getFirst().workflowId());
+
+  }
+
+  @Test
+  @DisplayName("A task of a process the search did not ask for is not reported")
+  public void aTaskOfAnotherProcessIsNotReported() {
+
+    threeProcessesWereWired();
+    final var task = aStoredTask(SCOPED_OWN_CASE_PROCESS_ID, "check");
+    TasksInAHierarchy
+        .isCalledBy(
+            clientFactories, "c8", task, CALLED_INSTANCE, Long.parseLong(CALLING_INSTANCE));
+
+    final var found = bridgeSearchingUserTasks(List.of(task))
+        .userTasksOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, List.of());
+
+    // the cluster would not answer it, as the search names other processes. Were it answered all
+    // the same, there would be no plain id to report it by
+    assertTrue(found.isEmpty(), found.toString());
 
   }
 

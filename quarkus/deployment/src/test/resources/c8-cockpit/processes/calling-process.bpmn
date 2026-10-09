@@ -8,20 +8,66 @@
     The call activity names the plain process id. The adapter rewrites it to the scoped one while
     it prepares the model, the same way it rewrites the process ids themselves, so this model
     reads the way the application wrote it.
+
+    The case runs three call activities side by side: one naming its process plainly, one naming
+    it by an expression, and one starting a process with a workflow aggregate of its own. The
+    first two are steps of this case, the third one is not.
   -->
   <bpmn:process id="CallingProcess" isExecutable="true">
     <bpmn:startEvent id="CallingStart">
-      <bpmn:outgoing>ToCall</bpmn:outgoing>
+      <bpmn:outgoing>ToSplit</bpmn:outgoing>
     </bpmn:startEvent>
-    <bpmn:sequenceFlow id="ToCall" sourceRef="CallingStart" targetRef="Call" />
+    <bpmn:sequenceFlow id="ToSplit" sourceRef="CallingStart" targetRef="Split" />
+    <bpmn:parallelGateway id="Split">
+      <bpmn:incoming>ToSplit</bpmn:incoming>
+      <bpmn:outgoing>ToCall</bpmn:outgoing>
+      <bpmn:outgoing>ToCallByExpression</bpmn:outgoing>
+      <bpmn:outgoing>ToCallOwnCase</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sequenceFlow id="ToCall" sourceRef="Split" targetRef="Call" />
     <bpmn:callActivity id="Call" name="Have the order handled">
       <bpmn:extensionElements>
         <zeebe:calledElement processId="CalledProcess" propagateAllChildVariables="true" propagateAllParentVariables="true" />
       </bpmn:extensionElements>
       <bpmn:incoming>ToCall</bpmn:incoming>
-      <bpmn:outgoing>ToCallingEnd</bpmn:outgoing>
+      <bpmn:outgoing>FromCall</bpmn:outgoing>
     </bpmn:callActivity>
-    <bpmn:sequenceFlow id="ToCallingEnd" sourceRef="Call" targetRef="CallingEnd" />
+    <bpmn:sequenceFlow id="FromCall" sourceRef="Call" targetRef="Join" />
+    <!--
+      The process this call activity reaches is named by an expression, so it is decided per
+      instance and no graph of calls holds it. The process it reaches shares the aggregate, so its
+      task is a task of this case all the same.
+    -->
+    <bpmn:sequenceFlow id="ToCallByExpression" sourceRef="Split" targetRef="CallByExpression" />
+    <bpmn:callActivity id="CallByExpression" name="Have the order inspected">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="=&#34;ExpressionCalledProcess&#34;" propagateAllChildVariables="false" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToCallByExpression</bpmn:incoming>
+      <bpmn:outgoing>FromCallByExpression</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="FromCallByExpression" sourceRef="CallByExpression" targetRef="Join" />
+    <!--
+      A process with a workflow aggregate of its own. The cluster still copies this case's
+      variables into it, the aggregate's id included, but it is a case of its own and none of
+      its tasks is a task of this case.
+    -->
+    <bpmn:sequenceFlow id="ToCallOwnCase" sourceRef="Split" targetRef="CallOwnCase" />
+    <bpmn:callActivity id="CallOwnCase" name="Open a case of its own">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="OwnCaseProcess" propagateAllChildVariables="false" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToCallOwnCase</bpmn:incoming>
+      <bpmn:outgoing>FromCallOwnCase</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="FromCallOwnCase" sourceRef="CallOwnCase" targetRef="Join" />
+    <bpmn:parallelGateway id="Join">
+      <bpmn:incoming>FromCall</bpmn:incoming>
+      <bpmn:incoming>FromCallByExpression</bpmn:incoming>
+      <bpmn:incoming>FromCallOwnCase</bpmn:incoming>
+      <bpmn:outgoing>ToCallingEnd</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sequenceFlow id="ToCallingEnd" sourceRef="Join" targetRef="CallingEnd" />
     <bpmn:endEvent id="CallingEnd">
       <bpmn:incoming>ToCallingEnd</bpmn:incoming>
     </bpmn:endEvent>

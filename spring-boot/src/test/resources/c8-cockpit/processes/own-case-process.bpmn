@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="OwnCaseDefinitions" targetNamespace="http://vanillabp.io/businesscockpit/camunda8">
+  <!--
+    A process with a workflow aggregate of its own, which the calling case starts by a call
+    activity. It is a case of its own, so its task never counts as a task of the caller's case.
+  -->
+  <bpmn:process id="OwnCaseProcess" isExecutable="true">
+    <bpmn:startEvent id="OwnCaseStart">
+      <bpmn:outgoing>ToCheck</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="ToCheck" sourceRef="OwnCaseStart" targetRef="Check" />
+    <bpmn:userTask id="Check" name="Check the own case">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:formDefinition externalReference="check" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>ToCheck</bpmn:incoming>
+      <bpmn:outgoing>ToOwnCaseEnd</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="ToOwnCaseEnd" sourceRef="Check" targetRef="OwnCaseEnd" />
+    <bpmn:endEvent id="OwnCaseEnd">
+      <bpmn:incoming>ToOwnCaseEnd</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

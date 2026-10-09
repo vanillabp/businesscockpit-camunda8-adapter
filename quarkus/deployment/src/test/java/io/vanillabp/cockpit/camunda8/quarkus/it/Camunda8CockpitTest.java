@@ -158,6 +158,8 @@ public class Camunda8CockpitTest {
               .addAsResource("business-cockpit.yaml", "application.yaml")
               .addAsResource("c8-cockpit/processes/cockpit-process.bpmn")
               .addAsResource("c8-cockpit/processes/calling-process.bpmn")
+              .addAsResource("c8-cockpit/processes/expression-called-process.bpmn")
+              .addAsResource("c8-cockpit/processes/own-case-process.bpmn")
               .addAsResource(
                   "workflow-module-descriptor/workflow-module", "META-INF/workflow-module")
               .addClass(TestAggregate.class)
@@ -165,7 +167,10 @@ public class Camunda8CockpitTest {
               .addClass(TestWorkflowService.class)
               .addClass(CallingAggregate.class)
               .addClass(CallingAggregatePersistence.class)
-              .addClass(CallingWorkflowService.class))
+              .addClass(CallingWorkflowService.class)
+              .addClass(OwnCaseAggregate.class)
+              .addClass(OwnCaseAggregatePersistence.class)
+              .addClass(OwnCaseWorkflowService.class))
       .overrideRuntimeConfigKey(
           "vanillabp.cockpit.rest.base-url", CockpitServer.baseUrl())
       // the fallbacks are what a machine without Docker gets, and nothing ever connects to
@@ -185,6 +190,9 @@ public class Camunda8CockpitTest {
 
   @Inject
   CallingWorkflowService callingWorkflowService;
+
+  @Inject
+  CallingAggregatePersistence callingAggregates;
 
   @Inject
   Camunda8ClientFactoryRegistry clientFactories;
@@ -377,6 +385,144 @@ public class Camunda8CockpitTest {
             .filter(request -> request.body().contains("\"customer\":\"Della\""))
             .count(),
         "one call, one case");
+
+  }
+
+  /**
+   * The key of the user task one process holds for a case of the calling workflow. It is searched
+   * by the CALLING case's id, which every called process carries, because the cluster copies the
+   * caller's variables into it. That includes the process with an aggregate of its own.
+   *
+   * @param bpmnProcessId The process the task sits in, as the application wrote it
+   * @param aggregate The calling case
+   * @return The task's key
+   */
+  private String userTaskIdOf(
+      final String bpmnProcessId,
+      final CallingAggregate aggregate) {
+
+    return awaitValue(
+        () -> client()
+            .newUserTaskSearchRequest()
+            .filter(
+                filter -> filter
+                    .state(UserTaskState.CREATED)
+                    .bpmnProcessId("%s__%s".formatted(MODULE_ID, bpmnProcessId))
+                    .processInstanceVariables(
+                        Map.of("id", "\"%s\"".formatted(aggregate.getId()))))
+            .send()
+            .join()
+            .items()
+            .stream()
+            .findFirst()
+            .map(task -> String.valueOf(task.getUserTaskKey()))
+            .orElse(null),
+        "the user task of '%s' of calling case %s".formatted(bpmnProcessId, aggregate.getId()));
+
+  }
+
+  /**
+   * Deploys the process the calling case reaches by an expression a second time, with another
+   * name, the way {@link #aSecondVersionOfTheDeployedModel()} does it. It lives in a file of its
+   * own, so no other process gets a new version.
+   *
+   * @return The version the cluster assigned
+   */
+  private int aSecondVersionOfTheProcessCalledByExpression() {
+
+    final var scopedProcessId = "%s__%s"
+        .formatted(MODULE_ID, CallingWorkflowService.EXPRESSION_CALLED_BPMN_PROCESS_ID);
+    final var model = deployedModelOf(scopedProcessId);
+    ((Process) model.getModelElementById(scopedProcessId))
+        .setName("The inspection, deployed a second time");
+    return client()
+        .newDeployResourceCommand()
+        .addProcessModel(
+            model, "%s.bpmn".formatted(CallingWorkflowService.EXPRESSION_CALLED_BPMN_PROCESS_ID))
+        .send()
+        .join()
+        .getProcesses()
+        .getFirst()
+        .getVersion();
+
+  }
+
+  @Test
+  @DisplayName("A task of a called process is found from the storage and served by the provider its listener used")
+  public void aTaskOfACalledProcessIsFoundAndServedAlike() throws Exception {
+
+    // only the version of the called model picks the provider of its task, and the calling
+    // process stays on version 1
+    final var version = aSecondVersionOfTheProcessCalledByExpression();
+    assertTrue(version > 1, "the cluster counted no second version");
+    final var started = aStartedCallingWorkflow("Carla");
+
+    final var inspectReported = CockpitServer
+        .awaitRequest("/usertask/created", "\"%s\":\"Carla\"".formatted(CallingWorkflowService.INSPECTED));
+    final var inspectId = userTaskIdOf(CallingWorkflowService.EXPRESSION_CALLED_BPMN_PROCESS_ID, started);
+    final var handleId = userTaskIdOf(CallingWorkflowService.CALLED_BPMN_PROCESS_ID, started);
+    final var ownCaseId = userTaskIdOf(OwnCaseWorkflowService.BPMN_PROCESS_ID, started);
+    final var workflowId = callingWorkflowIdOf(started);
+    assertTrue(
+        inspectReported
+            .body()
+            .contains(
+                "\"bpmnProcessId\":\"%s\"".formatted(CallingWorkflowService.EXPRESSION_CALLED_BPMN_PROCESS_ID)),
+        inspectReported.body());
+    assertTrue(inspectReported.body().contains(CallingWorkflowService.SERVED_BY_LATER_MODELS), inspectReported.body());
+    assertEquals(workflowId, idOf(inspectReported, "workflowId"), inspectReported.body());
+
+    // the application reads the tasks of its case, the ones of the called processes included,
+    // and never the task of the case of its own
+    transaction.begin();
+    try {
+      final var attached = callingAggregates.byId(started.getId());
+      final var inspect = callingWorkflowService.businessCockpit().getUserTask(attached, inspectId);
+      assertTrue(inspect.isPresent(), "the inspection was not found");
+      assertEquals(CallingWorkflowService.EXPRESSION_CALLED_BPMN_PROCESS_ID, inspect.get().getBpmnProcessId());
+      assertEquals(String.valueOf(version), inspect.get().getBpmnProcessVersion());
+      assertEquals(CallingWorkflowService.INSPECT_TASK_DEFINITION, inspect.get().getTaskDefinition());
+      final var handle = callingWorkflowService.businessCockpit().getUserTask(attached, handleId);
+      assertTrue(handle.isPresent(), "the handling was not found");
+      assertEquals(CallingWorkflowService.CALLED_BPMN_PROCESS_ID, handle.get().getBpmnProcessId());
+      assertTrue(
+          callingWorkflowService.businessCockpit().getUserTask(attached, ownCaseId).isEmpty(),
+          "a task of a case of its own was read as a task of the caller's case");
+    } finally {
+      transaction.commit();
+    }
+
+    // a change of the case reaches every task of it, built from the storage, and each one is
+    // served by the provider which served its first report
+    CockpitServer.forgetRequests();
+    transaction.begin();
+    try {
+      final var attached = callingAggregates.byId(started.getId());
+      attached.setCustomer("Carla the second");
+      // no task named: every open task of the case, which is the search of the storage
+      callingWorkflowService.businessCockpit().aggregateChanged(attached, new String[0]);
+    } finally {
+      transaction.commit();
+    }
+    final var inspectUpdated = CockpitServer
+        .awaitRequest("/usertask/%s/updated".formatted(inspectId), "Carla the second");
+    assertTrue(inspectUpdated.body().contains(CallingWorkflowService.SERVED_BY_LATER_MODELS), inspectUpdated.body());
+    assertEquals(workflowId, idOf(inspectUpdated, "workflowId"), inspectUpdated.body());
+    // the name of an element is looked up per (module, process, element)
+    assertTrue(inspectUpdated.body().contains("Inspect the order"), inspectUpdated.body());
+    final var handleUpdated = CockpitServer
+        .awaitRequest("/usertask/%s/updated".formatted(handleId), "Carla the second");
+    assertTrue(
+        handleUpdated
+            .body()
+            .contains("\"bpmnProcessId\":\"%s\"".formatted(CallingWorkflowService.CALLED_BPMN_PROCESS_ID)),
+        handleUpdated.body());
+
+    CockpitServer.awaitQuiet();
+    assertEquals(
+        List.of(),
+        CockpitServer.matching("/usertask/%s/updated".formatted(ownCaseId)),
+        "a task of a case of its own was reported as a task of the caller's case");
 
   }
 
