@@ -29,6 +29,7 @@ import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration;
 import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration.JobLease;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.observability.Camunda8Metrics;
+import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
@@ -125,7 +126,7 @@ public class Camunda8CockpitWorkerOptionsTest {
 
     configuration.setStreamTimeout(Duration.ofMinutes(30));
 
-    workers.open(ADAPTER_ID, MODULE_ID);
+    workers.open(ADAPTER_ID, MODULE_ID, new Camunda8MultiInstance.Registry());
 
     verify(builder).streamTimeout(Duration.ofMinutes(30));
     verify(builder).metrics(countersOfThisWorker);
@@ -138,7 +139,7 @@ public class Camunda8CockpitWorkerOptionsTest {
   @DisplayName("Without a configured stream-timeout the worker is still counted")
   public void withoutAStreamTimeoutOnlyTheCountersArrive() {
 
-    workers.open(ADAPTER_ID, MODULE_ID);
+    workers.open(ADAPTER_ID, MODULE_ID, new Camunda8MultiInstance.Registry());
 
     verify(builder, never()).streamTimeout(any());
     verify(builder).metrics(countersOfThisWorker);
@@ -153,7 +154,7 @@ public class Camunda8CockpitWorkerOptionsTest {
 
     configuration.setJobLease(JobLease.USE);
 
-    workers.open(ADAPTER_ID, MODULE_ID);
+    workers.open(ADAPTER_ID, MODULE_ID, new Camunda8MultiInstance.Registry());
 
     // the adapter answers whether that ends in a lease, because only a client of line 8.10 and
     // newer has one. So the expected answer is its own, and this test says that the extension
@@ -171,7 +172,7 @@ public class Camunda8CockpitWorkerOptionsTest {
 
     configuration.setJobLease(JobLease.DO_NOT_USE);
 
-    workers.open(ADAPTER_ID, MODULE_ID);
+    workers.open(ADAPTER_ID, MODULE_ID, new Camunda8MultiInstance.Registry());
 
     assertFalse(theWorkerAskedForALease(), "the worker asked for a lease nobody configured");
 

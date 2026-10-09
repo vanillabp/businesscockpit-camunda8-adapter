@@ -1,6 +1,7 @@
 package io.vanillabp.cockpit.camunda8;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -14,6 +15,7 @@ import io.camunda.client.api.worker.JobClient;
 import io.camunda.client.api.worker.JobHandler;
 import io.vanillabp.camunda8.wiring.Camunda8CancelListeners;
 import io.vanillabp.camunda8.wiring.Camunda8ListenerJobs;
+import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
 import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 import io.vanillabp.cockpit.extension.spi.EventTransaction;
@@ -23,6 +25,7 @@ import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowDetailsPrefill;
 import io.vanillabp.cockpit.extension.spi.WorkflowEventKind;
 import io.vanillabp.cockpit.extension.spi.WorkflowReference;
+import io.vanillabp.integration.extension.spi.handler.HandlerMultiInstance;
 
 /**
  * What one listener job of one Camunda 8 cluster means to the Business Cockpit.
@@ -80,6 +83,8 @@ public class Camunda8CockpitJobHandler implements JobHandler {
 
   private final Camunda8CockpitDeployments deployments;
 
+  private final Camunda8MultiInstance.Registry multiInstances;
+
   private final Supplier<BusinessCockpitEventPublisher> publisher;
 
   /**
@@ -88,6 +93,8 @@ public class Camunda8CockpitJobHandler implements JobHandler {
    * @param cluster The cluster this worker listens to
    * @param workflowModuleId The workflow module the worker was opened for
    * @param deployments What this extension wired, to translate the job's identifiers back
+   * @param multiInstances Which multi-instance elements enclose an element of the adapter's
+   *          models, which is what turns the variables of a job into the rounds of its task
    * @param publisher Where an observed event is reported, asked for per event rather than up
    *          front: the workers are opened while the application is still starting
    */
@@ -95,11 +102,13 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       final Camunda8Clients.Cluster cluster,
       final String workflowModuleId,
       final Camunda8CockpitDeployments deployments,
+      final Camunda8MultiInstance.Registry multiInstances,
       final Supplier<BusinessCockpitEventPublisher> publisher) {
 
     this.cluster = cluster;
     this.workflowModuleId = workflowModuleId;
     this.deployments = deployments;
+    this.multiInstances = multiInstances;
     this.publisher = publisher;
 
   }
@@ -302,10 +311,18 @@ public class Camunda8CockpitJobHandler implements JobHandler {
    * this extension wired the process. Nothing is asked of the cluster, which is the point: the
    * event this job reports is not in the cluster's searchable storage yet.
    * <p>
-   * Process variables are not among the values. A worker of this extension asks the cluster for
-   * the workflow aggregate's id and for nothing else, so a <code>&#64;TaskParam</code> parameter
-   * of a details provider receives <code>null</code> here. Fetching more would make every
-   * listener job of every workflow carry them.
+   * The process variables are the ones the job carries. The worker asked the cluster for what
+   * the details providers of its tasks read with <code>&#64;TaskParam</code>, so such a parameter
+   * receives the value the workflow holds. A variable no provider names is not on the job, and
+   * the job of a workflow which never set a named variable carries none either. Such a parameter
+   * receives <code>null</code>.
+   * <p>
+   * The rounds of a multi-instance task are read off the same variables. The adapter put them
+   * into the deployed model for its own workers, and the worker asked for them. So a
+   * <code>&#64;MultiInstanceIndex</code>, <code>&#64;MultiInstanceTotal</code> or
+   * <code>&#64;MultiInstanceElement</code> parameter of a details provider receives what a
+   * <code>&#64;WorkflowTask</code> method would receive. See decision 26 in the repository's
+   * DECISIONS.md.
    *
    * @param job The listener job
    * @param listener Where the listener sits, which is what carries the two BPMN names
@@ -317,8 +334,11 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       final WiredListener listener,
       final UserTaskReference userTask) {
 
+    final var variables = job.getVariablesAsMap();
     final var values = UserTaskDetailsPrefill
         .builder()
+        .variables(variables)
+        .multiInstances(multiInstancesOf(job, variables))
         .bpmnProcessVersion(processVersionOf(job))
         // the workflow of a task is the business case, which is the instance the reference
         // carries. For a task of a called process the job's own process instance is the step
@@ -346,6 +366,36 @@ public class Camunda8CockpitJobHandler implements JobHandler {
         .dueDate(properties.getDueDate())
         .followUpDate(properties.getFollowUpDate())
         .build();
+
+  }
+
+  /**
+   * The rounds of the multi-instance elements enclosing the job's user task, outermost first.
+   * <p>
+   * The adapter answers this, out of the elements it collected while it wired the model and the
+   * values the job carries. What is left here is a copy from one record into another. The
+   * adapter answers what a BPMS reports about a task, and the platform's handler layer takes
+   * what a call into application code runs in. They are separate contracts, although they carry
+   * the same three values.
+   *
+   * @param job The listener job
+   * @param variables The variables the job carries
+   * @return The rounds, keyed by the BPMN element id of each multi-instance element. Empty where
+   *         the task is not part of one
+   */
+  private Map<String, HandlerMultiInstance> multiInstancesOf(
+      final ActivatedJob job,
+      final Map<String, Object> variables) {
+
+    final var outermostFirst = new LinkedHashMap<String, HandlerMultiInstance>();
+    Camunda8MultiInstance
+        .valuesOf(multiInstances, job.getBpmnProcessId(), job.getElementId(), variables)
+        .forEach(
+            (
+                elementId,
+                round) -> outermostFirst
+                    .put(elementId, new HandlerMultiInstance(round.element(), round.index(), round.total())));
+    return outermostFirst;
 
   }
 

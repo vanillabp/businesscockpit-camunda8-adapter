@@ -24,6 +24,7 @@ import io.vanillabp.camunda8.client.Camunda8AdapterConfiguration;
 import io.vanillabp.camunda8.client.Camunda8ClientFactory;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.observability.Camunda8Metrics;
+import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
@@ -91,7 +92,7 @@ public class Camunda8CockpitWorkersShutdownTest {
   @DisplayName("The client going down closes the workers this extension left open")
   public void theClientGoingDownClosesTheWorkers() {
 
-    workers.open(ADAPTER_ID, MODULE_ID);
+    workers.open(ADAPTER_ID, MODULE_ID, new Camunda8MultiInstance.Registry());
 
     adapterOfThisCluster.close();
 
@@ -103,7 +104,7 @@ public class Camunda8CockpitWorkersShutdownTest {
   @DisplayName("Workers which stopped the ordinary way are not closed a second time")
   public void aStoppedModuleLeavesNoHookBehind() {
 
-    workers.open(ADAPTER_ID, MODULE_ID);
+    workers.open(ADAPTER_ID, MODULE_ID, new Camunda8MultiInstance.Registry());
     workers.close(ADAPTER_ID, MODULE_ID);
 
     adapterOfThisCluster.close();

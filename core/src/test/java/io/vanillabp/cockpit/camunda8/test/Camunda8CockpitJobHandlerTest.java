@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -30,8 +31,10 @@ import io.camunda.client.api.search.enums.JobKind;
 import io.camunda.client.api.search.enums.ListenerEventType;
 import io.camunda.client.api.search.response.UserTask;
 import io.camunda.client.api.worker.JobClient;
+import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 import io.vanillabp.camunda8.client.Camunda8Drain;
+import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
 import io.vanillabp.cockpit.camunda8.Camunda8Clients;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitBridge;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments;
@@ -44,6 +47,7 @@ import io.vanillabp.cockpit.extension.spi.UserTaskReference;
 import io.vanillabp.cockpit.extension.spi.WorkflowEventKind;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 import io.vanillabp.integration.extension.spi.election.WorkflowElection;
+import io.vanillabp.integration.extension.spi.handler.HandlerMultiInstance;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
@@ -154,7 +158,8 @@ public class Camunda8CockpitJobHandlerTest {
                         FORM_REFERENCE), PROCESS_ID, PROCESS_ID, "Approve", TASK_NAME, PROCESS_NAME, AGGREGATE_ID_NAME));
     when(clientFactories.getFactory(ADAPTER_ID).drainOf(MODULE_ID)).thenReturn(drain);
     handler = new Camunda8CockpitJobHandler(
-        new Camunda8Clients(clientFactories, null).of(ADAPTER_ID), MODULE_ID, deployments, () -> publisher);
+        new Camunda8Clients(clientFactories, null)
+            .of(ADAPTER_ID), MODULE_ID, deployments, new Camunda8MultiInstance.Registry(), () -> publisher);
 
   }
 
@@ -215,13 +220,88 @@ public class Camunda8CockpitJobHandlerTest {
    */
   private RecordingPublisher aHandlerAskingItsBridge() {
 
+    return aHandlerAskingItsBridge(new Camunda8MultiInstance.Registry());
+
+  }
+
+  /**
+   * A handler whose reports are answered by a real bridge, serving a model whose multi-instance
+   * elements the adapter collected.
+   *
+   * @param multiInstances The multi-instance elements of the model
+   * @return What the publisher recorded, bridge answers included
+   */
+  private RecordingPublisher aHandlerAskingItsBridge(
+      final Camunda8MultiInstance.Registry multiInstances) {
+
     final var clients = new Camunda8Clients(clientFactories, null);
     final var asked = new RecordingPublisher(
         new Camunda8CockpitBridge(
             clients.of(ADAPTER_ID), workflowTaskWiring, NOTHING_WRITTEN_DOWN, deployments));
     handler = new Camunda8CockpitJobHandler(
-        clients.of(ADAPTER_ID), MODULE_ID, deployments, () -> asked);
+        clients.of(ADAPTER_ID), MODULE_ID, deployments, multiInstances, () -> asked);
     return asked;
+
+  }
+
+  @Test
+  @DisplayName("A details provider is handed the variables its user task's job carries")
+  public void theVariablesOfTheJobReachTheProvider() {
+
+    final var asked = aHandlerAskingItsBridge();
+    final var job = aUserTaskJob(ListenerEventType.CREATING);
+    // what the worker asked the cluster for: the aggregate's id and what the provider reads
+    final var carried = new HashMap<String, Object>();
+    carried.put(AGGREGATE_ID_NAME, AGGREGATE_ID);
+    carried.put("customer", "Kim");
+    carried.put("nobodySetThis", null);
+    when(job.getVariablesAsMap()).thenReturn(carried);
+
+    handler.handle(client, job);
+
+    final var values = asked.userTaskEvents().getFirst().values().orElseThrow();
+    assertEquals("Kim", values.variables().get("customer"));
+    // a variable the workflow holds as null is passed on as such, and the platform binds it as
+    // null rather than refusing the report
+    assertTrue(values.variables().containsKey("nobodySetThis"));
+    assertNull(values.variables().get("nobodySetThis"));
+    // a task which is not part of a multi-instance element runs no round
+    assertTrue(values.multiInstances().isEmpty());
+
+  }
+
+  @Test
+  @DisplayName("A details provider of a multi-instance task is handed the round its job carries")
+  public void theRoundOfTheJobReachesTheProvider() {
+
+    final var multiInstances = Camunda8MultiInstance
+        .chainsOf(
+            Bpmn
+                .createExecutableProcess(PROCESS_ID)
+                .startEvent("Started")
+                .userTask("Approve")
+                .multiInstance(
+                    signers -> signers.parallel().zeebeInputCollectionExpression("signers").zeebeInputElement("signer"))
+                .endEvent()
+                .done(),
+            PROCESS_ID);
+    final var round = multiInstances.chainOf(PROCESS_ID, "Approve").getFirst();
+    final var asked = aHandlerAskingItsBridge(multiInstances);
+    final var job = aUserTaskJob(ListenerEventType.CREATING);
+    // the second of three signers. The cluster counts rounds from 1
+    when(job.getVariablesAsMap())
+        .thenReturn(
+            Map
+                .of(
+                    AGGREGATE_ID_NAME, AGGREGATE_ID, round.indexVariable(), 2, round.totalVariable(), 3, round
+                        .elementVariable(),
+                    "bob"));
+
+    handler.handle(client, job);
+
+    final var values = asked.userTaskEvents().getFirst().values().orElseThrow();
+    // VanillaBP counts rounds from 0, the way Camunda 7 does
+    assertEquals(Map.of("Approve", new HandlerMultiInstance("bob", 1, 3)), values.multiInstances());
 
   }
 
@@ -350,7 +430,7 @@ public class Camunda8CockpitJobHandlerTest {
     final var bridge = new Camunda8CockpitBridge(
         clients.of(ADAPTER_ID), workflowTaskWiring, NOTHING_WRITTEN_DOWN, deployments);
     handler = new Camunda8CockpitJobHandler(
-        clients.of(ADAPTER_ID), MODULE_ID, deployments, () -> publisher);
+        clients.of(ADAPTER_ID), MODULE_ID, deployments, new Camunda8MultiInstance.Registry(), () -> publisher);
 
     handler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
 
@@ -574,10 +654,11 @@ public class Camunda8CockpitJobHandlerTest {
     // drain is asked while the work is happening, which is what the publisher is asked for too
     final var runningWhileTheWorkHappened = new ArrayList<Camunda8Drain.InFlightJob>();
     final var watchingHandler = new Camunda8CockpitJobHandler(
-        new Camunda8Clients(clientFactories, null).of(ADAPTER_ID), MODULE_ID, deployments, () -> {
-          runningWhileTheWorkHappened.addAll(drain.getInFlight());
-          return publisher;
-        });
+        new Camunda8Clients(clientFactories, null)
+            .of(ADAPTER_ID), MODULE_ID, deployments, new Camunda8MultiInstance.Registry(), () -> {
+              runningWhileTheWorkHappened.addAll(drain.getInFlight());
+              return publisher;
+            });
 
     watchingHandler.handle(client, aUserTaskJob(ListenerEventType.CREATING));
 
