@@ -120,10 +120,16 @@ public class Camunda8CockpitWorkerVariablesTest {
 
     @Override
     public List<String> variablesTheDetailsProvidersRead(
+        final String workflowModuleId,
+        final String bpmnProcessId,
         final String taskDefinition,
         final String bpmnTaskId) {
 
-      askedAbout.add(taskDefinition
+      askedAbout.add(workflowModuleId
+          + "/"
+          + bpmnProcessId
+          + "/"
+          + taskDefinition
           + "/"
           + bpmnTaskId);
       return switch (taskDefinition) {
@@ -232,12 +238,22 @@ public class Camunda8CockpitWorkerVariablesTest {
     // a workflow details provider takes no @TaskParam, so there is nothing else to ask for
     verify(workflowWorker).fetchVariables(List.of(AGGREGATE_ID_NAME));
     assertEquals(
-        List.of(TASK_DEFINITION
-            + "/"
-            + BPMN_TASK_ID,
-            OTHER_TASK_DEFINITION
-                + "/"
-                + OTHER_BPMN_TASK_ID),
+        List
+            .of(
+                MODULE_ID
+                    + "/"
+                    + PROCESS_ID
+                    + "/"
+                    + TASK_DEFINITION
+                    + "/"
+                    + BPMN_TASK_ID,
+                MODULE_ID
+                    + "/"
+                    + PROCESS_ID
+                    + "/"
+                    + OTHER_TASK_DEFINITION
+                    + "/"
+                    + OTHER_BPMN_TASK_ID),
         askedAbout);
 
   }

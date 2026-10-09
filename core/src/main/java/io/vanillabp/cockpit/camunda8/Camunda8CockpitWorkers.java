@@ -28,11 +28,11 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * which appears sooner. The variables are the one the workflow aggregate's id is carried in and,
  * for a worker serving user tasks, two more kinds. The first kind is what the details providers
  * of those tasks read with <code>&#64;TaskParam</code>. The application's Business Cockpit
- * extension says which names those are, since it noted them while VanillaBP scanned the
- * providers. The second kind is the multi-instance context of the task, in the variables the
+ * extension says which names those are. It asks VanillaBP, per workflow module and BPMN process,
+ * which providers are bound for the task. The second kind is the multi-instance context of the task, in the variables the
  * adapter put into the deployed model for its own workers. So a listener job carries what a
- * provider of this module reads, and not every variable of the workflow. See decision 26 in the
- * repository's DECISIONS.md.
+ * provider of this process reads, and not every variable of the workflow. See decision 26 and
+ * decision 27 in the repository's DECISIONS.md.
  * <p>
  * The pipeline starts this extension once per configured Camunda 8 adapter a module was
  * deployed to, and its processing context says which adapter that is. So a start opens the
@@ -180,7 +180,7 @@ public class Camunda8CockpitWorkers {
       final List<Camunda8CockpitDeployments.WiredListener> listeners,
       final Camunda8MultiInstance.Registry multiInstances) {
 
-    final var variables = variablesOf(listeners, multiInstances);
+    final var variables = variablesOf(workflowModuleId, listeners, multiInstances);
     var builder = cluster
         .client()
         .newWorker()
@@ -223,16 +223,22 @@ public class Camunda8CockpitWorkers {
    * The variables one worker asks the cluster for. A worker serves one job type, and a job type
    * may sit on several elements, so the list is the union over everything the worker serves.
    * <p>
+   * The names the details providers read are asked for per listener, with the BPMN process that
+   * listener sits in. A worker serving user tasks of two processes therefore fetches what the
+   * providers of either process read, and nothing a provider of a third process reads.
+   * <p>
    * The names are asked for while the module starts and not while its models are wired. The
    * details providers are known once VanillaBP scanned the workflow services, and the adapter
    * links a called process to the multi-instance elements of its caller only after it wired
    * every process of the module.
    *
+   * @param workflowModuleId The workflow module the worker serves
    * @param listeners What the worker serves
    * @param multiInstances The multi-instance elements of the adapter's models
    * @return The names, sorted so that the worker's subscription is the same after a restart
    */
   private List<String> variablesOf(
+      final String workflowModuleId,
       final List<Camunda8CockpitDeployments.WiredListener> listeners,
       final Camunda8MultiInstance.Registry multiInstances) {
 
@@ -245,7 +251,9 @@ public class Camunda8CockpitWorkers {
               .addAll(
                   publisher
                       .get()
-                      .variablesTheDetailsProvidersRead(listener.taskDefinition(), listener.elementId()));
+                      .variablesTheDetailsProvidersRead(
+                          workflowModuleId, listener.bpmnProcessId(), listener.taskDefinition(),
+                          listener.elementId()));
           // the adapter's own list for the element: the same variables its own workers ask for,
           // so the values of a round reach a details provider exactly as they reach a
           // @WorkflowTask method
