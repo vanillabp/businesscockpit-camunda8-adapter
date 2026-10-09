@@ -8,7 +8,7 @@
   <parent>
     <groupId>io.vanillabp</groupId>
     <artifactId>release-parent</artifactId>
-    <version>1.2.1</version>
+    <version>1.3.0</version>
   </parent>
 
   <groupId>io.vanillabp.businesscockpit</groupId>
@@ -40,17 +40,6 @@
     <developerConnection>scm:git:https://github.com/vanillabp/businesscockpit-camunda8-adapter.git</developerConnection>
     <url>https://github.com/vanillabp/businesscockpit-camunda8-adapter/tree/main</url>
   </scm>
-
-  <!-- Where we deploy. It stays here because the build needs it, and it is taken out of the
-       published POM by the flatten plugin below: it says nothing a consumer can use, and on an
-       artifact which later sits on Maven Central it would point a reader at GitHub Packages. -->
-  <distributionManagement>
-    <snapshotRepository>
-      <id>github</id>
-      <name>Github Packages</name>
-      <url>https://maven.pkg.github.com/vanillabp/businesscockpit-camunda8-adapter</url>
-    </snapshotRepository>
-  </distributionManagement>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -413,9 +402,10 @@
           <updatePomFile>true</updatePomFile>
           <flattenMode>oss</flattenMode>
           <!-- The 'oss' mode keeps distributionManagement, and a consumer has no use for it.
-               Removing it here and not from the source keeps the deployment working: this
-               plugin rewrites the file which is installed and deployed, while the deploy
-               plugin reads the repository from the model of the running build. -->
+               This POM names none any more, because the snapshots go to Maven Central through
+               the profile 'central-portal' of the parent. The line stays, so that a
+               distributionManagement which comes back, here or from a parent, never reaches the
+               published POM. -->
           <pomElements>
             <distributionManagement>remove</distributionManagement>
           </pomElements>

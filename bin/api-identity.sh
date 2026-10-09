@@ -39,13 +39,14 @@ dump_api() {
   local classes="$work/classes"
   rm -rf "$classes"
   mkdir -p "$classes"
-  # a JAR without classes has no API to compare, and unzip says so with exit code 11
+  # a JAR without classes has no API to compare, and unzip says so with exit code 11. The
+  # coverage gate builds such a JAR, and grep then finds no line and exits with 1 as well
   unzip -q -o "$jar" -d "$classes" '*.class' || true
   # -public only, and sorted, so the dump depends on the API and on nothing else
   find "$classes" -name '*.class' -print0 \
     | sort -z \
     | xargs -0 -r javap -public \
-    | grep -v '^Compiled from' \
+    | { grep -v '^Compiled from' || true; } \
     > "$out"
 }
 

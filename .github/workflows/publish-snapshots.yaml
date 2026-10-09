@@ -1,7 +1,11 @@
-name: Publish to GitHub Packages
+name: Publish snapshots
 # Only a push to main publishes the snapshot. Other repositories compile against the
 # shared snapshot coordinates, so what gets published has to be what main holds, not
 # whatever branch was pushed last.
+#
+# The snapshots go to the snapshot repository of Maven Central. Anybody can read them there
+# without a login. Writing needs the Central Portal token, and only this workflow and the
+# release get it.
 "on":
   push:
     branches:
@@ -14,8 +18,9 @@ concurrency:
   # main that is what should happen: the newer run carries the newer artifacts. The
   # pull-request build has a group of its own, one per pull request, because it
   # publishes nothing. The release has a group of its own too, so it can run beside a
-  # publish: the 'central-portal' profile switches the deploy plugin off, so a release
-  # uploads to Maven Central and nothing of it reaches GitHub Packages.
+  # publish: both upload through the profile 'central-portal', but a release writes fixed
+  # versions and this workflow writes the snapshot, so they never write the same
+  # coordinates.
   group: businesscockpit-camunda8-adapter-publish
   cancel-in-progress: false
 permissions:
@@ -32,14 +37,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v7
+      # Maven 3.10 writes 'maven-metadata-local.xml' and '_remote.repositories' into the
+      # staging directory of central-publishing-maven-plugin, and the Central Portal refuses
+      # a release bundle with them: "Bundle has content that does NOT have a .pom file". The
+      # runner image ships 3.10 now, so this job brings its own 3.9, like the release does.
+      # Remove this step once a plugin version stages a clean bundle under Maven 3.10.
+      - name: Use Maven 3.9
+        run: |
+          curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz \
+            | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/apache-maven-3.9.16/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-java@v6
         with:
           java-version: 25.0.4+101.0.LTS
           distribution: temurin
           cache: maven
+          # the server of the profile 'central-portal' in io.vanillabp:release-parent. The
+          # two names are environment variables, and only the step which publishes sets them
+          server-id: vanillabp-central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
       - name: Publish package
         # The whole lifecycle up to 'deploy', tests included. The worst run on record
         # took 6.9 minutes and the median 5.4, so 30 minutes is around four times the
@@ -47,11 +66,12 @@ jobs:
         # allows one publish at a time.
         timeout-minutes: 30
         run: mvn -s $GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml
-          --batch-mode --no-transfer-progress --update-snapshots deploy
+          --batch-mode --no-transfer-progress --update-snapshots deploy -P central-portal
         env:
           USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
           USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          MAVEN_USERNAME: "${{ secrets.MAVEN_CENTRAL_PORTAL_TOKEN_USER }}"
+          MAVEN_PASSWORD: "${{ secrets.MAVEN_CENTRAL_PORTAL_TOKEN_PW }}"
       # The reports are already there: the step above runs the whole lifecycle up to
       # 'deploy', and JaCoCo writes both of them in 'verify'. So this step only copies them
       # under the names they get on the web. A name is the last part of the address the

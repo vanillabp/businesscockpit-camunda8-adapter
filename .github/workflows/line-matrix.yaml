@@ -44,13 +44,15 @@ name: Release lines
         value: "${{ jobs.ga-lines.outputs.broken }}"
 # A called workflow may not ask for more than the workflow calling it granted, and the
 # pull-request checks grant 'contents: read'. Nothing here needs more: what the build reads from
-# GitHub Packages it reads with VANILLABP_USER_TOKEN and not with the workflow's own token.
+# GitHub Packages, the Camunda 8 adapter, it reads with VANILLABP_USER_TOKEN and not with the
+# workflow's own token.
 permissions:
   contents: read
 env:
-  # The VanillaBP artifacts, the cockpit's extensions-commons and the Camunda 8 adapter are
-  # snapshots in GitHub Packages until the release. Reading them needs a token, see
-  # github-packages-settings.xml.
+  # The Camunda 8 adapter is a snapshot in GitHub Packages until the release, because its
+  # namespace belongs to the Camunda Community Hub. Reading it needs a token, see
+  # github-packages-settings.xml. The platform and the cockpit's extensions-commons come from
+  # the snapshot repository of Maven Central, which needs no login.
   USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
   USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
 jobs:

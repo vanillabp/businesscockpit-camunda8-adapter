@@ -45,9 +45,11 @@
       <plugin>
         <artifactId>maven-jar-plugin</artifactId>
         <configuration>
-          <!-- the module has no main sources; 'mvn install' runs the package phase twice,
-               and the second attempt to attach an empty JAR fails the build -->
-          <skipIfEmpty>true</skipIfEmpty>
+          <!-- This module has test sources only, so its jar is empty. It is built anyway: the
+               Maven Central plugin publishes the bundle from the last module of the reactor,
+               which is this one, and it fails there when the module assigned no file to its
+               artifact, even with 'skip.central.release' set. -->
+          <skipIfEmpty>false</skipIfEmpty>
         </configuration>
       </plugin>
       <plugin>
