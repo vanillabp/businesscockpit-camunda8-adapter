@@ -29,8 +29,8 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * for a worker serving user tasks, two more kinds. The first kind is what the details providers
  * of those tasks read with <code>&#64;TaskParam</code>. The application's Business Cockpit
  * extension says which names those are. It asks VanillaBP, per workflow module and BPMN process,
- * which providers are bound for the task. The second kind is the multi-instance context of the task, in the variables the
- * adapter put into the deployed model for its own workers. So a listener job carries what a
+ * which providers are bound for the task. The second kind is the multi-instance context of the
+ * task, in the variables the adapter put into the deployed model for its own workers. So a listener job carries what a
  * provider of this process reads, and not every variable of the workflow. See decision 26 and
  * decision 27 in the repository's DECISIONS.md.
  * <p>
