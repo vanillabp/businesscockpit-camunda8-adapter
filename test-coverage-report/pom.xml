@@ -20,6 +20,14 @@
     <module>coverage-gate</module>
   </modules>
 
+  <properties>
+    <!-- a report is published on GitHub Pages and never to Maven Central. The snapshot and
+         the release go out through central-publishing-maven-plugin of the profile
+         'central-portal', which does not read the deploy plugin below. This is the property
+         of release-parent which it does read, and the modules below inherit it -->
+    <skip.central.release>true</skip.central.release>
+  </properties>
+
   <build>
     <plugins>
       <plugin>

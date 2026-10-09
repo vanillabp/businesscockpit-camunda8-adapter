@@ -1,6 +1,6 @@
 name: Build
 # A pull request builds and tests. Publishing is the job of
-# deploy-to-github-packages.yaml, which has a concurrency group of its own.
+# publish-snapshots.yaml, which has a concurrency group of its own.
 "on":
   pull_request:
   workflow_dispatch:
@@ -21,9 +21,10 @@ concurrency:
 permissions:
   contents: read
 env:
-  # The VanillaBP artifacts, the cockpit's extensions-commons and the Camunda 8 adapter are
-  # snapshots in GitHub Packages until the release. Reading them needs a token, see
-  # github-packages-settings.xml.
+  # The Camunda 8 adapter is a snapshot in GitHub Packages until the release, because its
+  # namespace belongs to the Camunda Community Hub. Reading it needs a token, see
+  # github-packages-settings.xml. The platform and the cockpit's extensions-commons come from
+  # the snapshot repository of Maven Central, which needs no login.
   USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
   USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
 jobs:
@@ -34,6 +35,13 @@ jobs:
       packages: read
     steps:
       - uses: actions/checkout@v7
+      # the Maven the publish of main runs with, see publish-snapshots.yaml for why it is not
+      # the 3.10 of the runner image
+      - name: Use Maven 3.9
+        run: |
+          curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz \
+            | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/apache-maven-3.9.16/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-java@v6
         with:
           java-version: 25.0.4+101.0.LTS
@@ -54,7 +62,6 @@ jobs:
         env:
           USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
           USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       # what a failing test printed is in these reports, and for a test booting its
       # application in a forked JVM it is ONLY in that application's own log file
       - name: Upload the test reports of a failed build

@@ -353,9 +353,18 @@ Without Docker the integration tests skip themselves and the unit tests still ru
 Leaving the integration tests out takes `-DskipITs`. `-DskipTests` on its own skips the unit
 tests and starts them, because Failsafe 3.6.0 no longer reads that property.
 
-Snapshots are published to GitHub Packages by the pipeline described below, and releases go to
-Maven Central under the groupId `io.vanillabp.businesscockpit`, like the rest of the Business
-Cockpit.
+The build reads the snapshots of the platform and of the cockpit from the snapshot repository of
+Maven Central, `https://central.sonatype.com/repository/maven-snapshots/`. The parent
+`io.vanillabp:release-parent` names that repository, and reading it needs no login. The snapshot of
+the Camunda 8 adapter is the exception. Its namespace belongs to the Camunda Community Hub, so it is
+published to `https://maven.pkg.github.com/camunda-community-hub/vanillabp-camunda8-adapter`, and
+GitHub Packages asks for a token even for a public package. A local build needs that repository in
+`~/.m2/settings.xml`, with a GitHub token which has the scope `read:packages`. CI reads it through
+[.github/workflows/github-packages-settings.xml](./.github/workflows/github-packages-settings.xml).
+
+Snapshots of this repository go to the snapshot repository of Maven Central through the pipeline
+described below, and releases go to Maven Central under the groupId `io.vanillabp.businesscockpit`,
+like the rest of the Business Cockpit.
 
 ## Test coverage
 
@@ -413,7 +422,7 @@ nothing, and it is there because a client patch which merges itself looks like e
 request.
 `line-matrix.yaml` builds and tests every line, once a night and once per pull request, and it is
 what the section [Release lines](#release-lines) is proven by.
-`deploy-to-github-packages.yaml` publishes the snapshot, and only for a push to `main`. The
+`publish-snapshots.yaml` publishes the snapshot, and only for a push to `main`. The
 snapshot artifacts share their coordinates, so what the other repositories compile against has to
 be what `main` holds. It runs in a group of its own, one publish at a time, and a publish which is
 already running is never cancelled, because two runs publishing at the same time would overwrite
@@ -421,7 +430,7 @@ each other. `release.yaml` is started by hand, reads the live lines out of the `
 it cannot fall behind the build, and publishes each of them to Maven Central from the same commit.
 It deploys no snapshot, so it can run beside a publish.
 
-`deploy-to-github-packages.yaml` also publishes the two coverage reports to GitHub Pages, which is
+`publish-snapshots.yaml` also publishes the two coverage reports to GitHub Pages, which is
 what the badges at the top of this page link to. The number is the current GA line and nothing
 else: the publish names no `line-*` profile, and a build without one is line 8.9. The nightly
 matrix builds and tests the other lines, but it writes no report.

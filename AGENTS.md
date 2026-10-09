@@ -88,8 +88,8 @@ their own code. On 2026-09-20 such a mixture sat in a shared `~/.m2` and cost so
 of an hour.
 
 So deploy the whole reactor or nothing. The workflows do it that way already:
-`deploy-to-github-packages.yaml` runs `mvn deploy` from the root POM on a push to main, and
-`release.yaml` runs `clean deploy` once per line, also from the root. Neither of them passes
+`publish-snapshots.yaml` runs `mvn deploy -P central-portal` from the root POM on a push to main,
+and `release.yaml` runs `clean deploy` once per line, also from the root. Neither of them passes
 `-pl`, so only a deploy somebody types by hand can produce the mixture. If you have to repair a
 single module, deploy the whole reactor again instead.
 

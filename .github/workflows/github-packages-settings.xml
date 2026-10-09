@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Where CI reads the one VanillaBP snapshot this build needs from GitHub Packages: the Camunda 8
+  adapter, org.camunda.community.vanillabp. Its namespace belongs to the Camunda Community Hub, so
+  it publishes its snapshots there and not to Maven Central. GitHub Packages asks for a token even
+  for a public package, so the server below carries the repository secrets VANILLABP_USER_NAME and
+  VANILLABP_USER_TOKEN, a token with 'read:packages'.
+
+  The platform, spi-for-java and the cockpit's extensions-commons come from the snapshot
+  repository of Maven Central. The parent io.vanillabp:release-parent names it, and it needs no
+  login.
+-->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
@@ -19,38 +30,6 @@
                         <enabled>false</enabled>
                     </snapshots>
                 </repository>
-                <repository>
-                    <id>vanillabp-spi-for-java</id>
-                    <url>https://maven.pkg.github.com/vanillabp/spi-for-java</url>
-                    <releases>
-                        <enabled>false</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                    </snapshots>
-                </repository>
-                <repository>
-                    <id>vanillabp-adapter-platform-integration</id>
-                    <url>https://maven.pkg.github.com/vanillabp/adapter-platform-integration</url>
-                    <releases>
-                        <enabled>false</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                    </snapshots>
-                </repository>
-                <!-- the cockpit's extensions-commons, which every module of this repository
-                     builds on -->
-                <repository>
-                    <id>vanillabp-business-cockpit</id>
-                    <url>https://maven.pkg.github.com/vanillabp/business-cockpit</url>
-                    <releases>
-                        <enabled>false</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                    </snapshots>
-                </repository>
                 <!-- the BPMS adapter this extension plugs into -->
                 <repository>
                     <id>vanillabp-camunda8-adapter</id>
@@ -67,28 +46,6 @@
     </profiles>
 
     <servers>
-        <!-- used for "mvn deploy" due to pom's distributionManagement/snapshotRepository -->
-        <server>
-            <id>github</id>
-            <username>${env.USER_NAME}</username>
-            <password>${env.GITHUB_TOKEN}</password>
-        </server>
-        <!-- used for retrieving SNAPSHOT dependencies -->
-        <server>
-            <id>vanillabp-spi-for-java</id>
-            <username>${env.USER_NAME}</username>
-            <password>${env.USER_TOKEN}</password>
-        </server>
-        <server>
-            <id>vanillabp-adapter-platform-integration</id>
-            <username>${env.USER_NAME}</username>
-            <password>${env.USER_TOKEN}</password>
-        </server>
-        <server>
-            <id>vanillabp-business-cockpit</id>
-            <username>${env.USER_NAME}</username>
-            <password>${env.USER_TOKEN}</password>
-        </server>
         <server>
             <id>vanillabp-camunda8-adapter</id>
             <username>${env.USER_NAME}</username>
