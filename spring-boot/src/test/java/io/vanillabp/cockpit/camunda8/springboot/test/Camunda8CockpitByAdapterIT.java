@@ -49,8 +49,8 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * report, and the listener jobs still reach the extension although they are handed out for a
  * tenant. A worker which had not subscribed for it would never see them.
  * <p>
- * Its configuration marks the user tasks the same way, for the reason {@link Camunda8CockpitIT}
- * gives.
+ * Its configuration marks the user tasks and <code>UnclaimedProcess</code> the same way, for the
+ * reasons {@link Camunda8CockpitIT} gives. The application deploys that process here as well.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput

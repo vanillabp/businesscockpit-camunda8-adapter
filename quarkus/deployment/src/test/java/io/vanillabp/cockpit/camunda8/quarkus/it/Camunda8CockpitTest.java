@@ -84,6 +84,12 @@ public class Camunda8CockpitTest {
   private static final String UNCLAIMED_PROCESS_ID = "IncidentDetailsProcess";
 
   /**
+   * A BPMN process this application never deploys. A test deploys it straight to the cluster,
+   * the way another application sharing the cluster would.
+   */
+  private static final String FOREIGN_PROCESS_ID = "ForeignProcess";
+
+  /**
    * Where the addresses of the cluster are published.
    * <p>
    * This class is initialized twice, once while the application is built and again inside the
@@ -491,6 +497,136 @@ public class Camunda8CockpitTest {
   }
 
   @Test
+  @DisplayName("A process a claimed process calls and names as its secondary process carries the listeners")
+  public void aSecondaryProcessCarriesTheListeners() {
+
+    final var scopedProcessId = "%s__%s"
+        .formatted(MODULE_ID, CallingWorkflowService.CALLED_BPMN_PROCESS_ID);
+    final var scopedTaskDefinition = "%s__%s__%s"
+        .formatted(
+            MODULE_ID, CallingWorkflowService.CALLED_BPMN_PROCESS_ID,
+            CallingWorkflowService.TASK_DEFINITION);
+    final var model = deployedModelOf(scopedProcessId);
+
+    // no workflow service names the called process as its main process. The calling one names
+    // it among its secondary processes, and that is what makes VanillaBP count it as claimed
+    assertTrue(
+        executionListenerTypesOf(model, scopedProcessId)
+            .contains(Camunda8CockpitListeners.listenerTypeOf(scopedProcessId)),
+        "the called process carries no listener of the cockpit");
+    assertTrue(
+        Bpmn
+            .convertToString(model)
+            .contains(Camunda8CockpitListeners.listenerTypeOf(scopedTaskDefinition)),
+        "the user task of the called process carries no listener of the cockpit");
+
+  }
+
+  @Test
+  @DisplayName("Neither a process nobody here claims nor a process VanillaBP never deployed reports anything")
+  public void unclaimedAndForeignProcessesReportNothing() throws Exception {
+
+    final var unclaimedProcessId = "%s__%s".formatted(MODULE_ID, UNCLAIMED_PROCESS_ID);
+    aWorkflowStartedInTheCluster(unclaimedProcessId);
+    theForeignProcessDeployed();
+    aWorkflowStartedInTheCluster(FOREIGN_PROCESS_ID);
+
+    // both workflows wait at a user task now. That is where a listener of the cockpit would
+    // have reported the task, and the start event behind them is where it would have reported
+    // the workflow
+    theUserTaskOf(unclaimedProcessId);
+    theUserTaskOf(FOREIGN_PROCESS_ID);
+
+    // a case of a claimed process, started after both, is reported. Once it has arrived and the
+    // server is quiet, a report about the other two would have arrived as well
+    aStartedWorkflow("Fenna");
+    CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Fenna\"");
+    CockpitServer.awaitQuiet();
+
+    assertEquals(
+        List.of(),
+        CockpitServer
+            .received()
+            .stream()
+            .filter(
+                request -> request.body().contains(reportedProcess(UNCLAIMED_PROCESS_ID)) || request.body()
+                    .contains(reportedProcess(FOREIGN_PROCESS_ID)))
+            .map(CockpitServer.Request::path)
+            .toList(),
+        "the cockpit was told about a process nobody here claims");
+
+  }
+
+  /**
+   * How a report names the BPMN process it is about. The test of a claimed process asserts the
+   * same words, so a change of the report's shape turns that test red first.
+   */
+  private static String reportedProcess(
+      final String bpmnProcessId) {
+
+    return "\"bpmnProcessId\":\"%s\"".formatted(bpmnProcessId);
+
+  }
+
+  /**
+   * Starts a workflow the way a system other than this application would: through the client,
+   * with a variable that looks like an aggregate id, and without VanillaBP knowing of it.
+   */
+  private void aWorkflowStartedInTheCluster(
+      final String scopedProcessId) {
+
+    client()
+        .newCreateInstanceCommand()
+        .bpmnProcessId(scopedProcessId)
+        .latestVersion()
+        .variables(Map.of("id", "not-an-aggregate"))
+        .send()
+        .join();
+
+  }
+
+  /**
+   * Deploys a process this application does not know, straight to the cluster, the way another
+   * application sharing the cluster would. It has a Camunda user task, so a listener of the
+   * cockpit would have something to report if it were there.
+   */
+  private void theForeignProcessDeployed() {
+
+    final var model = Bpmn
+        .createExecutableProcess(FOREIGN_PROCESS_ID)
+        .startEvent("ForeignStart")
+        .userTask("ForeignTask")
+        .zeebeUserTask()
+        .endEvent("ForeignEnd")
+        .done();
+    client()
+        .newDeployResourceCommand()
+        .addProcessModel(model, "%s.bpmn".formatted(FOREIGN_PROCESS_ID))
+        .send()
+        .join();
+
+  }
+
+  private String theUserTaskOf(
+      final String scopedProcessId) {
+
+    return awaitValue(
+        () -> client()
+            .newUserTaskSearchRequest()
+            .filter(
+                filter -> filter.state(UserTaskState.CREATED).bpmnProcessId(scopedProcessId))
+            .send()
+            .join()
+            .items()
+            .stream()
+            .findFirst()
+            .map(task -> String.valueOf(task.getUserTaskKey()))
+            .orElse(null),
+        "a user task of '%s'".formatted(scopedProcessId));
+
+  }
+
+  @Test
   @DisplayName("One bridge per configured Camunda 8 adapter id is a bean")
   public void oneBridgePerAdapterIdIsABean() {
 
@@ -508,7 +644,7 @@ public class Camunda8CockpitTest {
 
     final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Anna\"");
     assertTrue(
-        workflow.body().contains("\"bpmnProcessId\":\"%s\"".formatted(TestWorkflowService.BPMN_PROCESS_ID)),
+        workflow.body().contains(reportedProcess(TestWorkflowService.BPMN_PROCESS_ID)),
         workflow.body());
 
     final var userTask = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Anna\"");
