@@ -69,6 +69,12 @@ public class Camunda8CockpitJobHandlerTest {
 
   private static final String PROCESS_ID = "CockpitProcess";
 
+  /**
+   * A process which calls the one above. Whether the two share the workflow aggregate is the
+   * core's answer, which each test of a called process gives.
+   */
+  private static final String CALLING_PROCESS_ID = "CallingProcess";
+
   private static final String AGGREGATE_ID_NAME = "loanId";
 
   private static final String AGGREGATE_ID = "4711";
@@ -156,6 +162,17 @@ public class Camunda8CockpitJobHandlerTest {
                 Camunda8CockpitListeners
                     .listenerTypeOf(
                         FORM_REFERENCE), PROCESS_ID, PROCESS_ID, "Approve", TASK_NAME, PROCESS_NAME, AGGREGATE_ID_NAME));
+    deployments
+        .register(
+            ADAPTER_ID,
+            MODULE_ID,
+            new WiredListener(
+                Camunda8CockpitListeners
+                    .listenerTypeOf(
+                        CALLING_PROCESS_ID), CALLING_PROCESS_ID, CALLING_PROCESS_ID, CALLING_PROCESS_ID, "The caller", "The caller", AGGREGATE_ID_NAME));
+    // the core which answers whether a called process shares its caller's aggregate. A test of a
+    // called process says what it answers
+    deployments.rememberTheCore(ADAPTER_ID, MODULE_ID, workflowTaskWiring);
     when(clientFactories.getFactory(ADAPTER_ID).drainOf(MODULE_ID)).thenReturn(drain);
     handler = new Camunda8CockpitJobHandler(
         new Camunda8Clients(clientFactories, null)
@@ -406,19 +423,71 @@ public class Camunda8CockpitJobHandlerTest {
 
   }
 
+  /**
+   * Says that the job's instance was called by an instance of {@link #CALLING_PROCESS_ID}, and
+   * whether the two processes share the workflow aggregate.
+   */
+  private void isCalledByTheCaller(
+      final ActivatedJob job,
+      final boolean sharingTheAggregate) {
+
+    JobsInAHierarchy.isCalledBy(clientFactories, ADAPTER_ID, job, 777L, 12345L);
+    CallChains.calls(clientFactories, ADAPTER_ID, 12345L, CALLING_PROCESS_ID, 777L, PROCESS_ID);
+    when(workflowTaskWiring.workflowsShareTheWorkflowAggregate(MODULE_ID, CALLING_PROCESS_ID, PROCESS_ID))
+        .thenReturn(sharingTheAggregate);
+
+  }
+
   @Test
   @DisplayName("A task of a called process is reported under the case, with the called process as the step")
   public void aTaskOfACalledProcessNamesTheCaseAndTheStep() {
 
     final var asked = aHandlerAskingItsBridge();
     final var job = aUserTaskJob(ListenerEventType.CREATING);
-    JobsInAHierarchy.isCalledBy(clientFactories, ADAPTER_ID, job, 777L, 12345L);
+    isCalledByTheCaller(job, true);
 
     handler.handle(client, job);
 
     final var values = asked.userTaskEvents().getFirst().values().orElseThrow();
     assertEquals("12345", values.workflowId());
     assertEquals("777", values.subWorkflowId());
+    assertEquals("12345", asked.userTaskEvents().getFirst().userTask().workflowId());
+
+  }
+
+  @Test
+  @DisplayName("A task of a called process with an aggregate of its own is reported under its own case")
+  public void aTaskOfACalledProcessWithItsOwnAggregateNamesItsOwnCase() {
+
+    final var asked = aHandlerAskingItsBridge();
+    final var job = aUserTaskJob(ListenerEventType.CREATING);
+    isCalledByTheCaller(job, false);
+
+    handler.handle(client, job);
+
+    final var values = asked.userTaskEvents().getFirst().values().orElseThrow();
+    assertEquals("777", values.workflowId());
+    assertNull(values.subWorkflowId());
+    assertEquals("777", asked.userTaskEvents().getFirst().userTask().workflowId());
+
+  }
+
+  @Test
+  @DisplayName("A called process with an aggregate of its own is a case of its own")
+  public void aCalledProcessWithItsOwnAggregateIsACase() {
+
+    final var job = aJob(
+        JobKind.EXECUTION_LISTENER, ListenerEventType.END,
+        Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID), "Started");
+    isCalledByTheCaller(job, false);
+
+    handler.handle(client, job);
+
+    assertEquals(
+        List.of(WorkflowEventKind.CREATED),
+        publisher.workflowEvents().stream().map(RecordingPublisher.WorkflowEvent::kind).toList());
+    assertEquals("777", publisher.workflowEvents().getFirst().workflow().workflowId());
+    assertEquals(PROCESS_ID, publisher.workflowEvents().getFirst().workflow().bpmnProcessId());
 
   }
 
@@ -525,7 +594,7 @@ public class Camunda8CockpitJobHandlerTest {
     JobsOfACancellation.reportsACancellation(job);
     // a cancelled hierarchy gives every instance in it a cancel job of its own, and each of
     // them names its own process instance. Only the one nobody called is the business case
-    JobsInAHierarchy.isCalledBy(clientFactories, ADAPTER_ID, job, 777L, 12345L);
+    isCalledByTheCaller(job, true);
 
     handler.handle(client, job);
 
@@ -541,7 +610,7 @@ public class Camunda8CockpitJobHandlerTest {
     final var job = aJob(
         JobKind.EXECUTION_LISTENER, ListenerEventType.END,
         Camunda8CockpitListeners.listenerTypeOf(PROCESS_ID), PROCESS_ID);
-    JobsInAHierarchy.isCalledBy(clientFactories, ADAPTER_ID, job, 777L, 12345L);
+    isCalledByTheCaller(job, true);
 
     handler.handle(client, job);
 

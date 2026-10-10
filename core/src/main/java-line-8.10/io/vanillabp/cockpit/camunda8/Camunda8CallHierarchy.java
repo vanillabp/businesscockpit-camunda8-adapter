@@ -7,9 +7,10 @@ import io.camunda.client.api.search.response.UserTask;
  * Which workflow a job belongs to, when the job sits in a called process. This is the 8.10
  * variant.
  * <p>
- * The cockpit shows business cases, and a called process is a step of one rather than a case of
- * its own. See decision 3 in the repository's DECISIONS.md. So every report has to know the
- * root of the hierarchy its job sits in.
+ * The cockpit shows business cases. A called process which shares its caller's workflow aggregate
+ * is a step of the caller's case. See decisions 3 and 30 in the repository's DECISIONS.md. So a
+ * report has to know whether its job has a caller at all, and this class answers with the root of
+ * the hierarchy. {@link Camunda8BusinessCases} starts from that answer.
  * <p>
  * Since 8.9 the job carries it: the cluster puts the root process instance key into the job it
  * hands to a worker, and a root instance reports itself or nothing at all. Nothing is asked of

@@ -32,11 +32,14 @@ public class Camunda8Clients {
 
     private final Camunda8CallHierarchy callHierarchy;
 
+    private final Camunda8BusinessCases businessCases;
+
     private Cluster(
         final Camunda8Scope scope) {
 
       this.scope = scope;
       this.callHierarchy = new Camunda8CallHierarchy(this);
+      this.businessCases = new Camunda8BusinessCases(this);
 
     }
 
@@ -79,6 +82,20 @@ public class Camunda8Clients {
     Camunda8CallHierarchy callHierarchy() {
 
       return callHierarchy;
+
+    }
+
+    /**
+     * Which instance of a call hierarchy is the business case of an instance. A called process
+     * which shares its caller's workflow aggregate belongs to the caller's case, and one with an
+     * aggregate of its own is a case of its own. It belongs to the cluster for the same reason as
+     * {@link #callHierarchy()}.
+     *
+     * @return The lookup of this cluster
+     */
+    Camunda8BusinessCases businessCases() {
+
+      return businessCases;
 
     }
 

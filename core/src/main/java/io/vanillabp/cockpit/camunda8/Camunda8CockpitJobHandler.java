@@ -263,22 +263,22 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       final WiredListener listener,
       final String workflowAggregateId) {
 
-    // the cockpit shows business cases, and a called process is a step of one rather than a
-    // case of its own. See decision 3 in the repository's DECISIONS.md
-    final var rootProcessInstanceKey = cluster.callHierarchy().rootProcessInstanceKeyOf(job);
-    if (rootProcessInstanceKey != null) {
+    // the cockpit shows business cases. A called process which shares its caller's workflow
+    // aggregate is a step of the caller's case, and one with an aggregate of its own is a case of
+    // its own. See decisions 3 and 30 in the repository's DECISIONS.md
+    final var theCase = caseOf(job);
+    if (!theCase.equals(job.getProcessInstanceKey())) {
       logger
           .debug(
               "Camunda8[{}]: not reporting the {} of process instance {}: it is a called process of workflow {}, which is the business case",
-              adapterId(), job.getListenerEventType(), job.getProcessInstanceKey(),
-              rootProcessInstanceKey);
+              adapterId(), job.getListenerEventType(), job.getProcessInstanceKey(), theCase);
       return;
     }
 
     final var kind = workflowKindOf(job, listener);
     final var workflow = new WorkflowReference(
         adapterId(), workflowModuleId, listener.bpmnProcessId(), processVersionOf(
-            job), workflowAggregateId, workflowIdOf(job));
+            job), workflowAggregateId, String.valueOf(theCase));
     final var written = cluster
         .eventBeingReported()
         .whileReportingTheWorkflow(
@@ -295,7 +295,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
       logger
           .debug(
               "Camunda8[{}]: the {} of workflow '{}' (workflow aggregate '{}' of BPMN process '{}') {}",
-              adapterId(), kind, workflowIdOf(job), workflowAggregateId,
+              adapterId(), kind, theCase, workflowAggregateId,
               listener.bpmnProcessId(), publisher.get().reportsWorkflows()
                   ? "produced no outbox entry: either there was nothing to say about that workflow and the report was dropped, or an entry of the same key is still waiting and the store kept it. Whichever it was is logged where it happened"
                   : "was not reported: this application reports no workflows");
@@ -526,14 +526,35 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   }
 
   /**
-   * The instance a business case is. An element of a called process belongs to the workflow its
-   * whole hierarchy hangs below.
+   * The instance a business case is. An element of a called process belongs to the case of its
+   * caller where the two share the workflow aggregate. See decision 30 in the repository's
+   * DECISIONS.md.
    */
   private String workflowIdOf(
       final ActivatedJob job) {
 
+    return String.valueOf(caseOf(job));
+
+  }
+
+  /**
+   * The process instance which is the business case of the job's instance. The core says which
+   * processes share a workflow aggregate, and {@link Camunda8BusinessCases} walks the call
+   * hierarchy with that answer.
+   */
+  private Long caseOf(
+      final ActivatedJob job) {
+
     final var root = cluster.callHierarchy().rootProcessInstanceKeyOf(job);
-    return String.valueOf(root == null ? job.getProcessInstanceKey() : root);
+    return cluster
+        .businessCases()
+        .caseOf(
+            job.getProcessInstanceKey(), job.getBpmnProcessId(), root, root != null, deployments
+                .bpmnProcessIdsByScopedIdOf(adapterId(), workflowModuleId),
+            (
+                calling,
+                called) -> deployments
+                    .shareTheWorkflowAggregate(adapterId(), workflowModuleId, calling, called));
 
   }
 

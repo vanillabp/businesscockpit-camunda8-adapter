@@ -34,7 +34,7 @@ modules they had opened and opened its workers per module across all of them. To
 spelling of a BPMN process a model carried, it tried what every configured adapter would call it.
 Decision 6 says what that cost and what replaced it.
 
-## 3. A called process is a step, not a case - what a cancelled workflow reports superseded by decision 11
+## 3. A called process is a step, not a case - what a cancelled workflow reports superseded by decision 11, only a process sharing the caller's aggregate is a step since decision 30
 
 The cockpit shows business cases. A process started by a call activity is part of the case above it.
 It carries the same workflow aggregate, so reporting its start and its end would show a second case
@@ -1218,3 +1218,57 @@ leaves its tasks unfound, and their listener jobs fail. The wiki says so.
 twin show it on a cluster: a case calls one process by its id, one by an expression and one with an
 aggregate of its own. The first report and the one after `aggregateChanged` pick the same provider,
 and the task of the case of its own is neither read nor reported.
+
+## 30. A called process with a workflow aggregate of its own is a case of its own
+
+Decision 3 said that every called process is a step of the case above it. That is true only for a
+called process which shares the workflow aggregate of its caller. A called process with an aggregate
+of its own is a business case of its own. The core starts it as a workflow of its own and builds its
+aggregate, and the cockpit now shows it that way too. This follows decision 61 of `business-cockpit`
+(story 1472): notifications form one group per case, and only a process with its own aggregate forms
+a group of its own.
+
+**The case of an instance** is the highest instance above it which can be reached by calls that
+share the aggregate. The walk starts at the instance and goes up the call hierarchy. It stops at the
+first caller which does not share the aggregate. So in a chain Order → Shipping → Packing, where
+Packing works on Shipping's aggregate and Shipping has its own, the case of Packing is Shipping.
+
+**The core decides which processes share an aggregate.** The extension asks
+`WorkflowTaskWiring#workflowsShareTheWorkflowAggregate` with the plain process ids, the same answer
+the Camunda 8 adapter uses for its call activities. The extension does not build a check of its own.
+It does not use `BpmsInitiatedStartInvoker#startsAWorkflowOfItsOwn`: that answer is `true` for a
+process nobody declares and for an id left over after a rename, and neither says anything about the
+caller. A process the core does not know shares nothing. So a call from a process nobody claims
+starts a case of its own. VanillaBP does not design for processes it did not deploy, so this is
+accepted.
+
+What changes:
+
+- The listener of the start event and of the end of such a process reports the workflow, with the
+  called instance as `workflowId`. Its report is sent at its start, like the one of a case nobody
+  called.
+- A user task in such a process names that instance as `workflowId` and no `subWorkflowId`.
+- `workflowsOfAggregate` no longer drops a called instance found by the search. It drops it only
+  where the instance shares the aggregate of its caller.
+- A task read from the searchable storage (`referenceOf`) names the same case as its listener did.
+
+**Where the call hierarchy comes from.** The extension reads it from the cluster only where the
+answer can differ from the instance itself. An instance nobody called is its own case. So is an
+instance whose process shares its aggregate with no other process this extension wired for the
+module, which is a called process with an aggregate of its own. Neither costs a request. Every other
+called instance needs the chain: one call-hierarchy request, and one request per process definition
+in it. Both answers never change, so they are remembered. The chain comes from the searchable
+storage, which runs behind the engine, so the lookup waits for it as long as the adapter's
+`workflow-visibility-timeout` says, like the 8.8 lookup of the root (decision 3). If that window runs
+out, the root of the hierarchy is taken, which is what every called process got before, and the
+reason is logged.
+
+The code is `Camunda8BusinessCases`, once for all lines. The 8.9 and 8.10 lines needed no request
+for a called process before; they pay this one now where a process shares its aggregate with
+another one.
+
+`Camunda8BusinessCasesTest` shows the walk, `Camunda8CockpitJobHandlerTest` the reports of both
+kinds of called process. `Camunda8CockpitIT` shows it on a cluster: one call reaches a step on the
+caller's aggregate, one a process with an aggregate of its own. It also checks the three calls of
+`BusinessCockpitService` which read VanillaBP's note of the start first (`aggregateChanged` twice and
+`getUserTask`), for both kinds of case.
