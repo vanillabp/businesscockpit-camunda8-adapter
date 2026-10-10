@@ -10,6 +10,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 import io.vanillabp.camunda8.wiring.Camunda8MultiInstance;
+import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 
 /**
  * What this extension put into the models of a workflow module, remembered until the workers
@@ -123,6 +124,8 @@ public class Camunda8CockpitDeployments {
   private final Map<Deployment, List<WiredListener>> listenersByDeployment = new ConcurrentHashMap<>();
 
   private final Map<Deployment, Camunda8MultiInstance.Registry> multiInstancesByDeployment = new ConcurrentHashMap<>();
+
+  private final Map<Deployment, WorkflowTaskWiring> coresByDeployment = new ConcurrentHashMap<>();
 
   /**
    * Notes one listener this extension added.
@@ -279,6 +282,48 @@ public class Camunda8CockpitDeployments {
       final Camunda8MultiInstance.Registry multiInstances) {
 
     multiInstancesByDeployment.put(new Deployment(adapterId, workflowModuleId), multiInstances);
+
+  }
+
+  /**
+   * Remembers the core which wired one workflow module on one cluster. A listener job asks it
+   * whether a called process shares the workflow aggregate of its caller, and a job has no
+   * other way to reach it.
+   *
+   * @param adapterId The configured adapter id the module was wired for
+   * @param workflowModuleId The workflow module
+   * @param core The core, which answers which processes share a workflow aggregate
+   */
+  public void rememberTheCore(
+      final String adapterId,
+      final String workflowModuleId,
+      final WorkflowTaskWiring core) {
+
+    coresByDeployment.put(new Deployment(adapterId, workflowModuleId), core);
+
+  }
+
+  /**
+   * Whether two processes of one workflow module work on the same workflow aggregate. The core
+   * answers it (<code>WorkflowTaskWiring#workflowsShareTheWorkflowAggregate</code>), and nothing
+   * is decided here. See decision 30 in the repository's DECISIONS.md.
+   *
+   * @param adapterId The configured adapter id
+   * @param workflowModuleId The workflow module
+   * @param callingBpmnProcessId The calling process, as the application wrote it
+   * @param calledBpmnProcessId The called process, as the application wrote it
+   * @return Whether both share the aggregate. <code>false</code> where the module was not wired
+   *         on that cluster, and where the core does not know one of the two processes
+   */
+  public boolean shareTheWorkflowAggregate(
+      final String adapterId,
+      final String workflowModuleId,
+      final String callingBpmnProcessId,
+      final String calledBpmnProcessId) {
+
+    final var core = coresByDeployment.get(new Deployment(adapterId, workflowModuleId));
+    return (core != null) && core
+        .workflowsShareTheWorkflowAggregate(workflowModuleId, callingBpmnProcessId, calledBpmnProcessId);
 
   }
 

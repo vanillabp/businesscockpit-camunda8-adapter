@@ -227,6 +227,31 @@ public class Camunda8CockpitTest {
 
   }
 
+  /**
+   * Whether the application's cockpit service answers a task of a calling case, read in a
+   * transaction of its own.
+   */
+  private boolean readsTheTask(
+      final CallingAggregate started,
+      final String userTaskId) {
+
+    try {
+      transaction.begin();
+      try {
+        return callingWorkflowService
+            .businessCockpit()
+            .getUserTask(callingAggregates.byId(started.getId()), userTaskId)
+            .isPresent();
+      } finally {
+        transaction.commit();
+      }
+    } catch (final Exception e) {
+      throw new IllegalStateException("Could not read user task "
+          + userTaskId, e);
+    }
+
+  }
+
   private static <T> T awaitValue(
       final Supplier<T> value,
       final String description) {
@@ -474,7 +499,12 @@ public class Camunda8CockpitTest {
     assertEquals(workflowId, idOf(inspectReported, "workflowId"), inspectReported.body());
 
     // the application reads the tasks of its case, the ones of the called processes included,
-    // and never the task of the case of its own
+    // and never the task of the case of its own. A read answers nothing while the storage has not
+    // written a task's variables yet, which on 8.8 can trail the task itself, so the two tasks of
+    // the case are awaited first
+    awaitValue(() -> readsTheTask(started, inspectId) ? Boolean.TRUE : null,
+        "the inspection, read through getUserTask");
+    awaitValue(() -> readsTheTask(started, handleId) ? Boolean.TRUE : null, "the handling, read through getUserTask");
     transaction.begin();
     try {
       final var attached = callingAggregates.byId(started.getId());
@@ -1054,6 +1084,26 @@ public class Camunda8CockpitTest {
 
     final var started = aStartedWorkflow("Bert");
     final var userTaskId = userTaskIdOf(started);
+    // a read answers nothing while the storage has not written the task's variables yet, which
+    // on 8.8 can trail the task itself
+    awaitValue(() -> {
+      try {
+        transaction.begin();
+        try {
+          return workflowService
+              .businessCockpit()
+              .getUserTask(aggregates.byId(started.getId()), userTaskId)
+              .isPresent()
+                  ? Boolean.TRUE
+                  : null;
+        } finally {
+          transaction.commit();
+        }
+      } catch (final Exception e) {
+        throw new IllegalStateException("Could not read user task "
+            + userTaskId, e);
+      }
+    }, "the case's own task, read through getUserTask");
 
     transaction.begin();
     try {

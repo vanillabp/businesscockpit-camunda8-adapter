@@ -92,6 +92,8 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
       final Camunda8ProcessingContext context) {
 
     final var adapterId = context.getAdapterId();
+    // the listener jobs ask the core later which called process shares its caller's aggregate
+    deployments.rememberTheCore(adapterId, workflowModuleId, workflowTaskWiring);
     if (!workflowTaskWiring.isClaimedByAWorkflowService(workflowModuleId, bpmnProcessId)) {
       // A listener carries no retries, so a job nobody serves stops the workflow where it sits.
       // A BPMN process which no @WorkflowService class claims has no workflow aggregate, so

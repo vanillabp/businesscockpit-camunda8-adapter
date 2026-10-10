@@ -763,10 +763,12 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
         .join()
         .items()
         .stream()
-        // a called process inherits the variables of its caller, and it is a step of the
-        // business case rather than a case of its own. The adapter leaves this to whoever
+        // a called process inherits the variables of its caller. Where it shares the caller's
+        // workflow aggregate it is a step of the caller's case and not a case of its own. Where
+        // it has an aggregate of its own it is a case, and it is the one asked about here. See
+        // decision 30 in the repository's DECISIONS.md. The adapter leaves this to whoever
         // searched, because what has to be sorted out depends on the question which was asked
-        .filter(instance -> instance.getParentProcessInstanceKey() == null)
+        .filter(instance -> isACase(workflowModuleId, instance))
         .toList();
 
   }
@@ -923,8 +925,8 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * storage is therefore served by the same details provider both times.
    * <p>
    * <b>The case, not the process.</b> <code>workflowId</code> is the business case, which is the
-   * instance at the top of the call hierarchy (see decision 3 in the repository's DECISIONS.md),
-   * the same instance the listener
+   * highest instance above the task reached by calls which share the workflow aggregate (see
+   * decisions 3 and 30 in the repository's DECISIONS.md), the same instance the listener
    * reports. <code>subWorkflowId</code>, filled in by {@link #prefilledUserTaskDetails}, is the
    * instance the task really sits in where that is another one. The case is tied to the
    * aggregate by <code>workflowAggregateId</code> and <code>workflowId</code> and never by the
@@ -945,9 +947,8 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
     // the search asked for these ids only, so the task's process is one of them
     final var bpmnProcessId = processes.get(task.getBpmnProcessId());
     final var root = cluster.callHierarchy().rootProcessInstanceKeyOf(task);
-    final var workflowId = root == null
-        ? task.getProcessInstanceKey()
-        : root;
+    final var workflowId = caseOf(
+        workflowModuleId, task.getProcessInstanceKey(), task.getBpmnProcessId(), root, root != null);
     return new UserTaskReference(
         adapterId(), workflowModuleId, bpmnProcessId, processVersionOf(
             task.getProcessDefinitionVersion()), workflowAggregateId, String
@@ -955,6 +956,64 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
                     .scope()
                     .plainTaskDefinitionOf(workflowModuleId, bpmnProcessId,
                         task.getExternalFormReference()), task.getElementId());
+
+  }
+
+  /**
+   * Whether a workflow found by the search is a business case. A workflow nobody called is one.
+   * A called workflow is one where it does not share the workflow aggregate of its caller.
+   *
+   * @param workflowModuleId The workflow module
+   * @param instance The workflow as the storage holds it
+   * @return Whether the cockpit shows it as a case
+   */
+  private boolean isACase(
+      final String workflowModuleId,
+      final ProcessInstance instance) {
+
+    final var parent = instance.getParentProcessInstanceKey();
+    if (parent == null) {
+      return true;
+    }
+    // the parent stands in for the root, which an 8.8 record does not name. It is used only
+    // where the cluster cannot say the chain in time
+    return instance
+        .getProcessInstanceKey()
+        .equals(
+            caseOf(
+                workflowModuleId, instance.getProcessInstanceKey(), instance.getProcessDefinitionId(),
+                parent, true));
+
+  }
+
+  /**
+   * The process instance which is the business case of an instance. The core says which
+   * processes share a workflow aggregate, and {@link Camunda8BusinessCases} walks the call
+   * hierarchy with that answer. See decision 30 in the repository's DECISIONS.md.
+   *
+   * @param workflowModuleId The workflow module
+   * @param processInstanceKey The instance
+   * @param scopedBpmnProcessId Its process, as the cluster knows it
+   * @param root The root of its hierarchy, <code>null</code> where it is the root or nobody knows
+   * @param hasACaller Whether another instance called it
+   * @return The key of the instance which is the case
+   */
+  private Long caseOf(
+      final String workflowModuleId,
+      final Long processInstanceKey,
+      final String scopedBpmnProcessId,
+      final Long root,
+      final boolean hasACaller) {
+
+    return cluster
+        .businessCases()
+        .caseOf(
+            processInstanceKey, scopedBpmnProcessId, root, hasACaller, deployments
+                .bpmnProcessIdsByScopedIdOf(adapterId(), workflowModuleId),
+            (
+                calling,
+                called) -> workflowTaskWiring
+                    .workflowsShareTheWorkflowAggregate(workflowModuleId, calling, called));
 
   }
 

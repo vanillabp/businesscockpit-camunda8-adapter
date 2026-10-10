@@ -839,6 +839,10 @@ public class Camunda8CockpitBridgeTest {
     TasksInAHierarchy
         .isCalledBy(
             clientFactories, "c8", task, CALLED_INSTANCE, Long.parseLong(CALLING_INSTANCE));
+    CallChains
+        .calls(
+            clientFactories, "c8", Long.parseLong(CALLING_INSTANCE), SCOPED_PROCESS_ID, CALLED_INSTANCE,
+            SCOPED_CALLED_PROCESS_ID);
     when(
         scoping
             .plainTaskDefinition(

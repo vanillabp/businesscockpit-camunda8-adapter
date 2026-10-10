@@ -2,6 +2,7 @@ package io.vanillabp.cockpit.camunda8.springboot.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -11,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -158,6 +160,12 @@ public class Camunda8CockpitIT {
 
   @Autowired
   private CallingAggregateRepository callingAggregates;
+
+  @Autowired
+  private OwnCaseWorkflowService ownCaseWorkflowService;
+
+  @Autowired
+  private OwnCaseAggregateRepository ownCaseAggregates;
 
   @Autowired
   private WaitingWorkflowService waitingWorkflowService;
@@ -914,6 +922,119 @@ public class Camunda8CockpitIT {
 
   }
 
+  @Test
+  @DisplayName("A called process with an aggregate of its own is a case of its own, and a step stays in the caller's case")
+  public void aCalledProcessWithItsOwnAggregateIsACaseOfItsOwn() {
+
+    final var aggregate = aStartedCallingWorkflow("Erik");
+    final var caseNumber = "own-%s".formatted(aggregate.getId());
+    final var ownCase = "\"%s\":\"%s\"".formatted(OwnCaseWorkflowService.OWN_CASE, caseNumber);
+    final var callerId = callingWorkflowIdOf(aggregate);
+
+    // the case of its own is reported at its start, like a case nobody called. See decision 30
+    // in the repository's DECISIONS.md
+    final var ownWorkflow = CockpitServer.awaitRequest("/workflow/created", ownCase);
+    final var ownId = idOf(ownWorkflow, "workflowId");
+    assertNotEquals(callerId, ownId, ownWorkflow.body());
+    assertTrue(
+        ownWorkflow.body().contains("\"bpmnProcessId\":\"%s\"".formatted(OwnCaseWorkflowService.BPMN_PROCESS_ID)),
+        ownWorkflow.body());
+    // VanillaBP wrote that instance down when the cluster started it, under the process of its
+    // own aggregate
+    final var start = awaitValue(
+        () -> election.workflowStartOf(MODULE_ID, OwnCaseWorkflowService.BPMN_PROCESS_ID, caseNumber).orElse(null),
+        "the start VanillaBP wrote down for case %s".formatted(caseNumber));
+    assertEquals(start.workflowId(), ownId);
+
+    // its task belongs to that case and is no step of the caller's
+    final var ownTask = CockpitServer.awaitRequest("/usertask/created", ownCase);
+    assertEquals(ownId, idOf(ownTask, "workflowId"), ownTask.body());
+    assertFalse(
+        Pattern.compile("\"subWorkflowId\"\\s*:\\s*\"").matcher(ownTask.body()).find(),
+        ownTask.body());
+
+    // the step without an aggregate of its own stays in the caller's case
+    final var handle = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Erik\"");
+    assertEquals(callerId, idOf(handle, "workflowId"), handle.body());
+    final var callerWorkflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Erik\"");
+    assertEquals(callerId, idOf(callerWorkflow, "workflowId"), callerWorkflow.body());
+
+    // the bridge names the called instance as the workflow of its own aggregate. The search
+    // runs where VanillaBP wrote nothing down, and it finds the called instance as well
+    assertEquals(
+        List.of(ownId),
+        bridge
+            .workflowsOfAggregate(MODULE_ID, OwnCaseWorkflowService.BPMN_PROCESS_ID, caseNumber)
+            .stream()
+            .map(WorkflowReference::workflowId)
+            .toList());
+
+    // the three calls of BusinessCockpitService which read VanillaBP's note of the start first,
+    // once for each kind of case
+    final var ownTaskId = idOf(ownTask, "userTaskId");
+    final var handleId = idOf(handle, "userTaskId");
+    CockpitServer.forgetRequests();
+    transactions
+        .executeWithoutResult(status -> {
+          final var attachedOwn = ownCaseAggregates.findById(caseNumber).orElseThrow();
+          ownCaseWorkflowService.businessCockpit().aggregateChanged(attachedOwn);
+          ownCaseWorkflowService.businessCockpit().aggregateChanged(attachedOwn, ownTaskId);
+          final var attachedCaller = callingAggregates.findById(aggregate.getId()).orElseThrow();
+          callingWorkflowService.businessCockpit().aggregateChanged(attachedCaller);
+          callingWorkflowService.businessCockpit().aggregateChanged(attachedCaller, handleId);
+        });
+    CockpitServer.awaitRequest("/workflow/%s/updated".formatted(ownId), ownCase);
+    final var ownTaskUpdated = CockpitServer.awaitRequest("/usertask/%s/updated".formatted(ownTaskId), ownCase);
+    assertEquals(ownId, idOf(ownTaskUpdated, "workflowId"), ownTaskUpdated.body());
+    CockpitServer.awaitRequest("/workflow/%s/updated".formatted(callerId), "\"customer\":\"Erik\"");
+    final var handleUpdated = CockpitServer
+        .awaitRequest("/usertask/%s/updated".formatted(handleId), "\"customer\":\"Erik\"");
+    assertEquals(callerId, idOf(handleUpdated, "workflowId"), handleUpdated.body());
+
+    final var read = List
+        .of(
+            Optional
+                .of(
+                    aUserTaskOnceTheStorageHoldsIt(
+                        () -> ownCaseWorkflowService
+                            .businessCockpit()
+                            .getUserTask(ownCaseAggregates.findById(caseNumber).orElseThrow(), ownTaskId),
+                        "the task of the own case")),
+            Optional
+                .of(
+                    aUserTaskOnceTheStorageHoldsIt(
+                        () -> callingWorkflowService
+                            .businessCockpit()
+                            .getUserTask(callingAggregates.findById(aggregate.getId()).orElseThrow(), handleId),
+                        "the step")));
+    assertEquals(
+        OwnCaseWorkflowService.BPMN_PROCESS_ID,
+        read.get(0).orElseThrow(() -> new AssertionError("the task of the own case was not read")).getBpmnProcessId());
+    assertEquals(
+        CallingWorkflowService.CALLED_BPMN_PROCESS_ID,
+        read.get(1).orElseThrow(() -> new AssertionError("the step was not read")).getBpmnProcessId());
+
+  }
+
+  /**
+   * Reads a user task through the application's cockpit service until the answer holds it. The
+   * read answers nothing while the cluster's searchable storage has not written the task or its
+   * variables yet, and an application asking right after a report meets the same.
+   *
+   * @param read The read, run in a transaction of its own each time
+   * @param description What is read, for the message of a read which never answers
+   * @return The task
+   */
+  private io.vanillabp.spi.cockpit.usertask.UserTask aUserTaskOnceTheStorageHoldsIt(
+      final Supplier<Optional<io.vanillabp.spi.cockpit.usertask.UserTask>> read,
+      final String description) {
+
+    return awaitValue(
+        () -> transactions.execute(status -> read.get()).orElse(null),
+        "%s, read through getUserTask".formatted(description));
+
+  }
+
   /**
    * The key of the user task one process holds for a case of the calling workflow, once the
    * cluster's searchable storage knows it. It is searched by the CALLING case's id, which every
@@ -1009,16 +1130,25 @@ public class Camunda8CockpitIT {
 
     // the application reads the tasks of its case from the storage, the two of the called
     // processes included, and never the task of the case of its own
-    final var read = transactions
-        .execute(
-            status -> {
-              final var attached = callingAggregates.findById(aggregate.getId()).orElseThrow();
-              return List
-                  .of(
-                      callingWorkflowService.businessCockpit().getUserTask(attached, inspectId),
-                      callingWorkflowService.businessCockpit().getUserTask(attached, handleId),
-                      callingWorkflowService.businessCockpit().getUserTask(attached, ownCaseId));
-            });
+    // a read answers nothing while the storage has not written the task's variables yet, which
+    // on 8.8 can trail the task itself, so the two tasks of the case are read once it has
+    final var inspectRead = aUserTaskOnceTheStorageHoldsIt(
+        () -> callingWorkflowService
+            .businessCockpit()
+            .getUserTask(callingAggregates.findById(aggregate.getId()).orElseThrow(), inspectId),
+        "the inspection");
+    final var handleRead = aUserTaskOnceTheStorageHoldsIt(
+        () -> callingWorkflowService
+            .businessCockpit()
+            .getUserTask(callingAggregates.findById(aggregate.getId()).orElseThrow(), handleId),
+        "the handling");
+    final var read = List
+        .of(
+            Optional.of(inspectRead), Optional.of(handleRead), transactions
+                .execute(
+                    status -> callingWorkflowService
+                        .businessCockpit()
+                        .getUserTask(callingAggregates.findById(aggregate.getId()).orElseThrow(), ownCaseId)));
     final var inspect = read.get(0).orElseThrow(() -> new AssertionError("the inspection was not found"));
     assertEquals(CallingWorkflowService.EXPRESSION_CALLED_BPMN_PROCESS_ID, inspect.getBpmnProcessId());
     assertEquals(String.valueOf(version), inspect.getBpmnProcessVersion());
