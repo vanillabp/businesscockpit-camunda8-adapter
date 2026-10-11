@@ -60,7 +60,7 @@ Absent before 8.10, and not as an empty placeholder:
 - The `cancel` execution listener at the process. Camunda 8 gained it with 8.10, so a build of that
   line writes it and a cancelled case reaches the cockpit as cancelled. A build of line 8.8 or 8.9
   has nothing to write it with, and a cancelled case stays open in the cockpit with its task list
-  emptied - see [decision 11](./DECISIONS.md) and [GAPS.md](./GAPS.md).
+  emptied. See [decision 11](./DECISIONS.md) and [GAPS.md](./GAPS.md).
 
 ## How it is put together
 
@@ -83,9 +83,9 @@ adapter id and the workflow module of the run, so the workers of a module are op
 identifiers in a model are read as the ones that cluster will know. Neither is worked out here by trying
 what every configured adapter would call a process.
 
-A search which finds nothing is silence and not an ending. The searchable storage is written by an
-exporter running behind the engine, so a task or a case born a moment ago is missing from a search in
-the same way one which ended is, and nothing in the bridge can tell the two apart. Every empty
+A search which finds nothing is silence and not an ending. An exporter which runs behind the engine
+writes the searchable storage. So a task or a case born a moment ago is missing from a search in the
+same way as one which ended, and nothing in the bridge can tell the two apart. Every empty
 answer of the three `…OfAggregate` methods therefore carries a line in the log naming both readings,
 which is what [decision 8](./DECISIONS.md) asks for. A report is dropped, a read is answered with
 nothing, the cockpit keeps what it stored before, and no task of that case ends because of it. Ends
@@ -132,8 +132,8 @@ The integration tests do not start the cluster this POM pins. The image comes fr
 `camunda8-adapter-test-support`: the Camunda 8 adapter filters its own pin into
 `camunda8-cluster.properties` while building that artifact, and `ClusterUnderTest` reads the image
 from there. So a pin here says what the code is compiled against, and the adapter says what it is
-run against. Both say the same thing for as long as the two pins are equal, which is the whole
-reason the pins here are raised whenever that repository raises one, see
+run against. Both say the same thing for as long as the two pins are equal. That is the whole
+reason why the pins here are raised whenever that repository raises one, see
 [decision 10](./DECISIONS.md).
 
 While they are not equal, a line runs a client older than the cluster answering it. Nothing fails
@@ -157,19 +157,19 @@ Line 8.10 left nineteen of its thirty integration tests out until 2026-10-01, an
 out now. The REST gateway of the 8.10 pre-releases threw a `NullPointerException` while it
 converted a task listener job whose event carries no user task action, and it dropped the whole
 activate-jobs batch with it (`camunda/camunda#58193`). The two events without an action are
-`creating` and `canceling`, so a Camunda-managed user task was never finished being created there.
-Eighteen of those tests carried the tag `user-task-listener-jobs` and the `line-8.10` profile
-excluded it. Camunda closed the defect for `8.10.0`, the line was run once without the exclusion to
-see it, and the tag went away with the exclusion.
+`creating` and `canceling`, so the creation of a Camunda-managed user task never finished there.
+Eighteen of those tests carried the tag `user-task-listener-jobs`, and the `line-8.10` profile
+excluded it. Camunda closed the defect for `8.10.0`. The line was run once without the exclusion to
+check that, and the tag went away with the exclusion.
 
 The nineteenth test carried the tag `jobs-handed-out-again`, and that tag went on 2026-10-03. The
 reason written here for it was wrong, and the measurement which replaced it says the opposite. The
 cluster does hand a job whose lock ran out to a second activation, within a second of the lock. On
-`8.10.0` it hands it back to the worker which already holds it, because a client of that release
-keeps asking for jobs while a handler of the same worker runs, which Camunda fixed in it
+`8.10.0` it hands the job back to the worker which already holds it. Camunda fixed the client of
+that release, so it keeps asking for jobs while a handler of the same worker runs
 (`SUPPORT-34723`). So the test lost a race it had written for itself: it activated the job from
 outside and waited for a turn the holding worker never gave it. It needs no second participant now.
-The worker of this extension is handed its own listener job again, the run whose lock expired
+The worker of this extension is handed its own listener job again. The run whose lock expired
 answers after that, and the cluster refuses that answer. That refusal is what
 [decision 13](./DECISIONS.md) rests on, and it is unchanged. The test skips itself on 8.8 and on
 8.9, where neither the cluster nor the client has a lease.
@@ -218,15 +218,15 @@ which is the current GA line, on every line. That is what every line did until 2
 had looked, because the source POM reads right and a build of a line uses the source POM. The
 installed POM of `0.9.0-8.8-SNAPSHOT` named `io.camunda:camunda-client-java` with no version at
 all and kept its parent, and that parent said `${camunda8.version.line-8.9}`. An application on
-the 8.8 line would have been handed the 8.9 client, and the client a build was compiled against
-is the lowest cluster version it accepts, so the line promised a cluster and then took it away.
-No line is released yet, so no user ever read such a POM. `Camunda8PublishedPomTest` reads the
-published POM on every line since and holds the client in it against the client the build was
-compiled against.
+the 8.8 line would have been handed the 8.9 client. The client a build was compiled against is the
+lowest cluster version it accepts, so the line promised a cluster and then took it away. No line is
+released yet, so no user ever read such a POM. Since then `Camunda8PublishedPomTest` reads the
+published POM on every line. It compares the client in it with the client the build was compiled
+against.
 
 The same POM also names the repository, and it names the root of it in every artifact. Maven
 would append the module path to that address and to all three `scm` elements, which points at a
-page nobody can open; four `child.*.inherit.append.path` attributes in the parent switch it off.
+page nobody can open. Four `child.*.inherit.append.path` attributes in the parent switch it off.
 Where we deploy is left out of the published POM, because it is nothing a consumer can use. Both
 are part of what the test reads.
 
@@ -288,8 +288,8 @@ not for the sum of them.
 
 A pull request used to build the current GA line alone and leave the rest to the night. That was
 right while every story had a pull request of its own. Stories arrive as a wave in one pull request
-now, so the matrix runs once per wave, and a line which breaks is read by whoever wrote the change
-instead of by whoever opens the repository the next morning.
+now, so the matrix runs once per wave. A line which breaks is read by whoever wrote the change, not
+by whoever opens the repository the next morning.
 
 A line of this repository needs the adapter of the same line underneath it, and the VanillaBP
 Camunda 8 adapter publishes one snapshot, built against the current GA client. So the nightly job
@@ -299,10 +299,10 @@ proven by the adapter's own matrix. Once the adapter publishes a snapshot per li
 `camunda8-adapter.version.line-*` properties point at those and the step falls away.
 
 The cluster a line meets is the adapter's word rather than ours. Its `test-support` artifact carries
-the image and the secondary storage of its line, and the tests here start what that artifact names,
-which is why line 8.8 runs with an Elasticsearch beside the cluster and the newer lines do not. The
-last step of a line reads that image back and holds it against the client this POM pins for the
-same line, so a pin which fell behind the adapter's turns the line red instead of staying
+the image and the secondary storage of its line, and the tests here start what that artifact names.
+That is why line 8.8 runs with an Elasticsearch beside the cluster and the newer lines do not. The
+last step of a line reads that image back and compares it with the client this POM pins for the
+same line. So a pin which fell behind the adapter's turns the line red instead of staying
 invisible.
 
 What no cluster can answer is whether the lines offer the same thing. `bin/api-identity.sh` builds
@@ -315,17 +315,15 @@ release runs only while every current line is green in the full matrix: `release
 `line-matrix.yaml` as its first job and publishes nothing until it is green. Every line is a GA line
 today, so the gate waits for all of them. A preview line would be left out of it the same way the
 night leaves it out, and released all the same, because its version says alpha. And a line which
-breaks in the night opens a GitHub issue, written
-by `release-lines-issue.yaml` and labelled `release-lines`, with the line, the commit and what the
-log said. A line which is still red the next night gets a comment on that issue rather than a
+breaks in the night opens a GitHub issue. `release-lines-issue.yaml` writes it with the label
+`release-lines`, and it names the line, the commit and what the log said. A line which is still red the next night gets a comment on that issue rather than a
 second issue. See [decision 9](./DECISIONS.md).
 
 ### Version ordering, and why Renovate does not use maven versioning
 
 Maven orders the suffix as an addition rather than as a pre-release, and that is what makes the
 suffix usable at all: `0.9.0-8.8 > 0.9.0`, and `0.9.0-8.9 < 0.9.0-8.10` numerically rather than
-lexically. One
-comparison goes wrong, and it is the whole risk of a suffix: `0.9.0-8.9 < 0.10.0-8.8`, so "the
+lexically. One comparison goes wrong, and it is the whole risk of a suffix: `0.9.0-8.9 < 0.10.0-8.8`, so "the
 newest version" can cross a line boundary. Renovate reads the suffix as a compatibility value
 instead of a version part, which fixes exactly that. Extend the preset shipped here to inherit it
 in your own application:
@@ -351,13 +349,13 @@ Elasticsearch beside it through Testcontainers, so a build needs Docker and take
 Without Docker the integration tests skip themselves and the unit tests still run.
 
 Leaving the integration tests out takes `-DskipITs`. `-DskipTests` on its own skips the unit
-tests and starts them, because Failsafe 3.6.0 no longer reads that property.
+tests and still starts the integration tests, because Failsafe 3.6.0 no longer reads that property.
 
 The build reads the snapshots of the platform and of the cockpit from the snapshot repository of
 Maven Central, `https://central.sonatype.com/repository/maven-snapshots/`. The parent
 `io.vanillabp:release-parent` names that repository, and reading it needs no login. The snapshot of
 the Camunda 8 adapter is the exception. Its namespace belongs to the Camunda Community Hub, so it is
-published to `https://maven.pkg.github.com/camunda-community-hub/vanillabp-camunda8-adapter`, and
+published to `https://maven.pkg.github.com/camunda-community-hub/vanillabp-camunda8-adapter`.
 GitHub Packages asks for a token even for a public package. A local build needs that repository in
 `~/.m2/settings.xml`, with a GitHub token which has the scope `read:packages`. CI reads it through
 [.github/workflows/github-packages-settings.xml](./.github/workflows/github-packages-settings.xml).
@@ -411,9 +409,9 @@ spaces between two words, or two words a line continuation glued into one.
 
 ## What CI runs
 
-`build.yaml` builds and tests a pull request on the current GA line, which includes the integration
-tests against a cluster of that line's client, and it calls the line matrix beside that, so every
-line is built before a wave is merged. It runs in a group per pull request, so an open pull request
+`build.yaml` builds and tests a pull request on the current GA line, with the integration tests
+against a cluster of that line's client. It also calls the line matrix, so every line is built
+before a wave is merged. It runs in a group per pull request, so an open pull request
 never takes the waiting run of another one out. Three checks beside it are about the lines:
 `api-identity` proves that every line offers the same API, `renovate-configuration` validates the
 Renovate files and runs the gating check, and `line-pins-verified` reads which GA lines of the
@@ -426,8 +424,9 @@ what the section [Release lines](#release-lines) is proven by.
 snapshot artifacts share their coordinates, so what the other repositories compile against has to
 be what `main` holds. It runs in a group of its own, one publish at a time, and a publish which is
 already running is never cancelled, because two runs publishing at the same time would overwrite
-each other. `release.yaml` is started by hand, reads the live lines out of the `line-*` profiles so
-it cannot fall behind the build, and publishes each of them to Maven Central from the same commit.
+each other. `release.yaml` is started by hand. It reads the live lines out of the `line-*` profiles,
+so it cannot fall behind the build, and it publishes each of them to Maven Central from the same
+commit.
 It deploys no snapshot, so it can run beside a publish.
 
 `publish-snapshots.yaml` also publishes the two coverage reports to GitHub Pages, which is

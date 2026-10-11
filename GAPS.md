@@ -46,9 +46,9 @@ what the pre-releases did.
 user task included, because a user task is what most cases wait at.
 
 **Camunda 8 offers** it on paper. In practice the alpha this repository's 8.10 line pins never gets
-there: the `creating` listener job of a Camunda-managed user task is dropped by the REST gateway
-while it converts the job, so the task is never finished being created, the instance stays active,
-and the cancel listener of the process never runs because the cluster runs it only once every child
+there. The REST gateway drops the `creating` listener job of a Camunda-managed user task while it
+converts the job. So the creation of the task never finishes, and the instance stays active. The
+cancel listener of the process never runs, because the cluster runs it only once every child
 element has terminated.
 
 **Where it can be read:** [camunda/camunda#58193](https://github.com/camunda/camunda/issues/58193),
@@ -58,7 +58,7 @@ decision 14 in `DECISIONS.md`.
 
 **What it cost:** nothing in production, because the line was a preview then and no GA cluster carried
 the defect. What it cost here was proof. The integration test which cancels a case holding a user task
-ran on 8.8 and 8.9 alone; on 8.10 what was proven was the cancellation of a case which waits at a
+ran on 8.8 and 8.9 alone. On 8.10 what was proven was the cancellation of a case which waits at a
 timer instead (`waiting-process.bpmn`).
 
 **What would close it** was the cluster fix. It shipped, the tag and the exclusion went away, and the
@@ -74,8 +74,8 @@ the application's answer everywhere, on every engine, and it is not something th
 
 The cockpit forces that answer now. A new key without a default,
 `vanillabp.cockpit.initiator-source`, says whether the application sets the initiator itself or
-whether a workflow module knows no action a user causes, and a report which names nobody under the
-first setting fails. See `An initiator is always set, and the application is the only one who knows
+whether a workflow module knows no action a user causes. Under the first setting a report which
+names nobody fails. See `An initiator is always set, and the application is the only one who knows
 it` in the `DECISIONS.md` of `business-cockpit`.
 
 What stays true for this adapter is that it prefills nothing here, and that is correct: prefilling
@@ -95,7 +95,7 @@ listeners `creating`, `canceling` and `completing` are the same construct on 8.8
 and the job of each of them names its event type with the same literal. So what the cockpit hears about
 a user task does not depend on the line. What does depend on it is the cluster the 8.10 line pins. Its
 REST gateway fails while it converts a listener job and drops the whole batch. So the `creating`
-listener of a user task never reaches a worker, and the task is never finished being created.
+listener of a user task never reaches a worker, and the creation of the task never finishes.
 
 **Where it can be read:** [camunda/camunda#58193](https://github.com/camunda/camunda/issues/58193),
 closed and labelled `version:8.10.0`. Gap 2 is the same defect seen from the case: an instance
@@ -119,9 +119,9 @@ report is built inside the listener job it belongs to, and a details provider wh
 the lock loses that job to a second run. Both runs then answer, and the cockpit is only in the clear
 when the cluster keeps the newer one.
 
-**Camunda 8 offers** the lease of an activation from 8.10 on. A leased job carries a token, the cluster
-takes an answer only from the token it handed out last, and it refuses the older one instead of
-overwriting silently. Line 8.8 and line 8.9 have no such thing, in their clusters and in their clients:
+**Camunda 8 offers** the lease of an activation from 8.10 on. A leased job carries a token. The
+cluster takes an answer only from the token it handed out last, and it refuses the older one instead
+of overwriting silently. Line 8.8 and line 8.9 have no such thing, in their clusters and in their clients:
 the word `lease` appears nowhere in the client API of either.
 
 **Where it can be read:** the
@@ -132,8 +132,8 @@ camunda-community-hub/vanillabp-camunda8-adapter, which holds what was measured 
 
 **What it costs** a user of line 8.8 or 8.9: the cluster takes whichever answer arrives first, which is
 the answer of the run whose lock had expired. Nothing anywhere says that it happened. What the cockpit
-shows is right either way, because both runs build the same report of the same event, so the cost is
-the workflow rather than the cockpit: the transition the listener gates continues with the values of
+shows is right either way, because both runs build the same report of the same event. So the
+workflow pays and not the cockpit: the transition the listener gates continues with the values of
 the older run.
 
 **What would close it** for those lines is nothing this repository can build. The construct is not

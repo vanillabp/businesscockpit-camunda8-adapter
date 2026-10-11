@@ -68,9 +68,9 @@ at code nobody in your branch wrote. Ask the clone you built from before you bel
 git rev-list --left-right --count origin/main...HEAD
 ```
 
-On the evening of 2026-09-20 no local build under the GA coordinates could be had at all: the
-clone of `adapter-platform-integration` was 58 commits behind `main` and failed on
-`AdapterPlatformVersion`, and the published snapshots were not reachable from there either.
+On the evening of 2026-09-20 no local build under the GA coordinates worked at all. The clone of
+`adapter-platform-integration` was 58 commits behind `main` and failed on
+`AdapterPlatformVersion`. The published snapshots were not reachable from there either.
 When that happens, the pull-request build is the proof. A runner clones `main` and reads the
 published snapshots, so it has neither problem.
 
@@ -80,9 +80,9 @@ published snapshots, so it has neither problem.
 it was. What stays behind is half of an older build. The parent POM of today can end up beside
 module POMs from before the build moved to the flatten plugin's mode `oss`, which still name a
 parent and carry dependencies without a version. Neither half looks wrong on its own, and
-nothing compares them.
-Even `Camunda8PublishedPomTest` reads the POM the running build has just flattened and not the
-one lying in the repository, so a green build says nothing about the mixture. Whoever resolves
+nothing compares them. Even `Camunda8PublishedPomTest` reads the POM which the running build has
+just flattened, not the one lying in the repository. So a green build says nothing about the
+mixture. Whoever resolves
 the artifacts next is the one who finds out, and what they get to see reads like a mistake in
 their own code. On 2026-09-20 such a mixture sat in a shared `~/.m2` and cost somebody a quarter
 of an hour.
