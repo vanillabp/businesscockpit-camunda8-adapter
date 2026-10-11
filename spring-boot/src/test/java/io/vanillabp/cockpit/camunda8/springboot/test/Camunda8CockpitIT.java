@@ -60,11 +60,10 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * The Business Cockpit against a real Camunda 8 cluster, from the model this application
  * deploys to the request the cockpit server receives.
  * <p>
- * Nothing on that way is faked but the cockpit server itself: the cluster runs the workflow,
- * hands out the listener jobs the extension put into the model, the extension reads them, runs
- * the application's details provider and writes one outbox entry carrying the finished report,
- * the job is completed, the entry is sent afterwards, and what arrives at the server is
- * asserted.
+ * Only the cockpit server is faked. The cluster runs the workflow and hands out the listener
+ * jobs which the extension put into the model. The extension reads them, runs the application's
+ * details provider and writes one outbox entry with the finished report. Then the job is
+ * completed and the entry is sent. The test checks what arrives at the server.
  * <p>
  * The workflow module runs under <code>use-prefix</code>, which is the harder of the two
  * name-clash modes: every identifier the cluster knows carries the module's prefix while
@@ -72,30 +71,29 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * <p>
  * The configuration marks every user task of the processes this application claims with
  * <code>implemented-externally: true</code>. No <code>@WorkflowTask</code> method serves these
- * tasks, because people work them off in the cockpit, and a details provider does not count as
- * serving a task. Without the mark, VanillaBP ends the start. The mark stands at each task by its
- * element id, not at the workflow, because that is the narrowest place for it.
+ * tasks, because people work on them in the cockpit, and a details provider does not count as
+ * serving a task. Without the mark, VanillaBP stops the application's start. The mark is set per
+ * task by its element id, not per workflow, because that is the narrowest place for it.
  * <p>
  * One process is marked at the workflow instead: <code>UnclaimedProcess</code>. The application
- * deploys it and no workflow service claims it, so VanillaBP ends the start unless the mark says
- * that somebody else runs the process. It is here so that a test can show that such a process gets
- * no listener and is never reported. YAML comments do not survive the formatter, which is why all
- * this is written here.
+ * deploys it and no workflow service claims it, so VanillaBP stops the start unless the mark says
+ * that somebody else runs the process. A test uses it to show that such a process gets no
+ * listener and is never reported. The formatter removes YAML comments, so all this is written
+ * here.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(classes = TestApplication.class)
-// closed when the class is done: a context outliving its cluster keeps its workers polling an
-// address nobody answers
+// close the context with the class. Otherwise its workers keep polling a cluster which is
+// gone
 @DirtiesContext
 public class Camunda8CockpitIT {
 
   private static final String MODULE_ID = "c8-cockpit";
 
   /**
-   * How long a wait for the cluster's searchable storage keeps hoping. It is the slowest thing
-   * in this class by far.
+   * How long to wait for the cluster's searchable storage. Nothing in this class is slower.
    */
   private static final Duration WAITING_FOR_THE_CLUSTER = Duration.ofMinutes(4);
 
@@ -341,13 +339,13 @@ public class Camunda8CockpitIT {
   }
 
   /**
-   * What the case carries now: a report carrying an old value while the case carries the new one
-   * was read too early, and a case carrying the old value too was written over by somebody else.
+   * What the case holds now. If a report has the old value and the case has the new one, the
+   * report read the case too early. If the case has the old value too, somebody else wrote over
+   * it.
    * <p>
-   * Read through the repository alone rather than inside a transaction of the test. A read-write
-   * transaction would flush the aggregate when it commits and would make the test one more writer
-   * of the case it is watching, which is exactly what the version attribute answers with a
-   * conflict.
+   * This reads through the repository only, not inside a transaction of the test. A read-write
+   * transaction would flush the aggregate when it commits. The test would then be one more writer
+   * of the case it watches, and the version attribute answers that with a conflict.
    */
   private String storedCustomerOf(
       final TestAggregate aggregate) {
@@ -359,9 +357,9 @@ public class Camunda8CockpitIT {
   /**
    * Changes one case in a transaction of its own, the way the application does it.
    * <p>
-   * Nothing of the cockpit writes the case, so nothing collides here. A details provider is asked
-   * a question and answers it. The version attribute of {@link TestAggregate} is what would turn a
-   * second writer into a conflict rather than a silent overwrite.
+   * The cockpit never writes the case, so nothing collides here. A details provider only answers
+   * a question. If there were a second writer, the version attribute of {@link TestAggregate}
+   * would turn it into a conflict instead of a silent overwrite.
    *
    * @param aggregateId The case to change
    * @param changeAndReport Changes the attached case, and reports it where a test wants that
@@ -382,9 +380,9 @@ public class Camunda8CockpitIT {
   /**
    * Waits for a report of one kind which carries the value the application wrote.
    * <p>
-   * A report carrying the older value has two possible causes, and they need different work. The
-   * report read the case too early, or the case itself lost the change. So a failure names what
-   * the case carries now as well. See the version attribute of {@link TestAggregate}.
+   * A report with the older value has two possible causes, and each needs different work. Either
+   * the report read the case too early, or the case itself lost the change. So a failure also
+   * names what the case holds now. See the version attribute of {@link TestAggregate}.
    *
    * @param pathSuffix What the report's path has to end with
    * @param expected What its body has to carry
@@ -573,13 +571,12 @@ public class Camunda8CockpitIT {
   /**
    * Deploys the model the cluster already holds a second time, with one attribute changed.
    * <p>
-   * This is how a second version of one BPMN process gets into a test which has only one
-   * application: the application deploys version 1 while it starts, and it deploys nothing
-   * afterwards. Deploying the same bytes again would leave the cluster on version 1, because a
-   * cluster counts a version per set of bytes. So the process gets another name, which is a
-   * change no test reads and no listener depends on. Everything else stays what the extension
-   * wrote into version 1, so the jobs of version 2 carry the very job types this workflow module
-   * wired.
+   * This is how a test with only one application gets a second version of a BPMN process. The
+   * application deploys version 1 while it starts and nothing afterwards. Deploying the same
+   * bytes again would leave the cluster on version 1, because a cluster counts a new version only
+   * for new bytes. So the process gets another name. No test reads the name and no listener
+   * depends on it. Everything else stays as the extension wrote it into version 1, so the jobs of
+   * version 2 carry the same job types which this workflow module wired.
    *
    * @return The version the cluster assigned
    */
@@ -817,9 +814,9 @@ public class Camunda8CockpitIT {
     // the BPMN name is what the cockpit falls back to when nothing else produced a title
     assertTrue(userTask.body().contains("Approve the order"), userTask.body());
 
-    // The customer in that body is what the details provider read off the case, so the report
-    // shows that the provider ran on the real aggregate. It wrote nothing onto it, which is what
-    // a details provider is: a question somebody answers.
+    // The customer in that body is what the details provider read from the case, so the report
+    // shows that the provider ran on the real aggregate. The provider wrote nothing to it. A
+    // details provider only answers a question.
 
   }
 
@@ -897,10 +894,10 @@ public class Camunda8CockpitIT {
 
     final var aggregate = aStartedCallingWorkflow("Della");
 
-    // The user task sits in the CALLED process, and the workflow it is reported under has to be
-    // the calling one. Which that is the job says only from 8.9 on; on 8.8 the extension asks the
-    // cluster for the call hierarchy, and that answer comes from the searchable storage, so this
-    // is also the test of whether the answer is there by the time a listener runs.
+    // The user task sits in the CALLED process, but it has to be reported under the calling
+    // workflow. Only from 8.9 on does the job say which workflow that is. On 8.8 the extension
+    // asks the cluster for the call hierarchy, and that answer comes from the searchable storage.
+    // So this also tests whether the answer is there by the time a listener runs.
     final var userTask = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Della\"");
     final var workflow = CockpitServer.awaitRequest("/workflow/created", "\"customer\":\"Della\"");
     assertEquals(
@@ -1036,10 +1033,10 @@ public class Camunda8CockpitIT {
   }
 
   /**
-   * The key of the user task one process holds for a case of the calling workflow, once the
-   * cluster's searchable storage knows it. It is searched by the CALLING case's id, which every
-   * called process carries because the cluster copies the caller's variables into it, the
-   * process with an aggregate of its own included.
+   * The key of the user task which one process holds for a case of the calling workflow, once
+   * the cluster's searchable storage knows it. The search uses the id of the CALLING case. Every
+   * called process carries that id, because the cluster copies the caller's variables into it.
+   * This includes the process with an aggregate of its own.
    *
    * @param bpmnProcessId The process the task sits in, as the application wrote it
    * @param aggregate The calling case
@@ -1128,10 +1125,10 @@ public class Camunda8CockpitIT {
     assertEquals(workflowId, idOf(inspectReported, "workflowId"), inspectReported.body());
     assertEquals(workflowId, idOf(handleReported, "workflowId"), handleReported.body());
 
-    // the application reads the tasks of its case from the storage, the two of the called
-    // processes included, and never the task of the case of its own
-    // a read answers nothing while the storage has not written the task's variables yet, which
-    // on 8.8 can trail the task itself, so the two tasks of the case are read once it has
+    // the application reads the tasks of its case from the storage, including the two of the
+    // called processes, but never the task of the case of its own. A read answers nothing while
+    // the storage has not written the task's variables yet. On 8.8 they can come later than the
+    // task itself, so the two tasks of the case are read once the storage has them
     final var inspectRead = aUserTaskOnceTheStorageHoldsIt(
         () -> callingWorkflowService
             .businessCockpit()
@@ -1202,8 +1199,8 @@ public class Camunda8CockpitIT {
 
   /**
    * Waits until the cluster's searchable storage holds the user tasks of both rounds of one
-   * calling case. A report of a change is built from that storage, and a listener job is
-   * served before the exporter wrote the task there.
+   * calling case. A report of a change is built from that storage, and a listener job may be
+   * served before the exporter has written the task there.
    *
    * @param aggregate The calling case
    */
@@ -1452,11 +1449,11 @@ public class Camunda8CockpitIT {
       // listener job is running out under it
       awaitHeldReports(1, "the details provider to reach the held call");
 
-      // the second run needs nobody but this application. A client of this line keeps asking for
-      // jobs while a handler of the same worker runs, so the worker which holds the listener job
-      // is the one the cluster serves when the lock runs out. That run is held as well, which is
-      // what the first run needs: the cluster refuses its answer BECAUSE another activation holds
-      // the job, and a job nobody holds any more is a different answer
+      // this application alone causes the second run. A client of this line keeps asking for
+      // jobs while a handler of the same worker runs. So when the lock runs out, the cluster hands
+      // the listener job to the same worker again. That second run is held as well, and the first
+      // run needs this: the cluster refuses its answer BECAUSE another activation holds the job.
+      // A job which nobody holds any more gets a different answer
       awaitHeldReports(
           2,
           "the worker to be handed its own listener job again, which happens once the lock of the first run ran out");
@@ -1473,9 +1470,9 @@ public class Camunda8CockpitIT {
           () -> "the cluster to refuse the answer of the run whose lock had expired. The log so far: "
               + logOf(output));
 
-      // the one thing which must not happen: the refused answer turning into a failure. The
-      // listeners of this extension carry no retries, so a failure IS the incident, and it would
-      // be an incident about a report which was written and is fine. See decision 13 in the
+      // the one thing which must not happen: the refused answer turns into a failure. The
+      // listeners of this extension have no retries, so a failure IS the incident. It would be an
+      // incident about a report which was written and is fine. See decision 13 in the
       // repository's DECISIONS.md
       assertFalse(
           aLineAboutTheJobSays(output, jobKey, "failing the job"),
@@ -1504,8 +1501,8 @@ public class Camunda8CockpitIT {
               .getHasIncident(),
           "the workflow whose listener job was answered twice carries an incident");
     } finally {
-      // a report still waiting would give up minutes from here and fail its job, which would be
-      // an incident in the middle of another test
+      // a report which is still waiting would give up a few minutes later and fail its job. That
+      // would be an incident in the middle of another test
       waitingWorkflowService.stopHoldingReports();
     }
 
@@ -1535,10 +1532,10 @@ public class Camunda8CockpitIT {
   /**
    * The listener job the waiting reports of the held case are about.
    * <p>
-   * The job key is read off the reports themselves, because this test activates nothing: the
-   * cockpit names a workflow event by the key of the listener job the report was built in, and
-   * the details provider is handed that name. Two reports naming one key are the one job, handed
-   * out to this application a second time.
+   * The job key is read from the reports themselves, because this test activates nothing. The
+   * cockpit names a workflow event by the key of the listener job which built the report, and the
+   * details provider gets that name. Two reports with the same key are one job which this
+   * application was handed a second time.
    *
    * @return The key both waiting reports carry
    */
@@ -1598,18 +1595,18 @@ public class Camunda8CockpitIT {
   /**
    * Whether the log holds a line about this job which carries the given phrase.
    * <p>
-   * A reader of the log has to name the job it asks about. What a test is handed is
-   * everything the class printed since it started, not only what its own test printed. So a
-   * sentence another test provoked about its own job reads like a sentence about this one.
+   * A reader of the log has to name the job it asks about. A test gets everything the class
+   * printed since it started, not only what its own test printed. So a line which another test
+   * caused about its own job looks like a line about this one.
    * {@link #aFailingCancelListenerLeavesAnIncident()} writes 'failing the job' about a job of
    * its own. That sentence failed
    * {@link #theAnswerOfTheRunWhoseLockExpiredIsRefused(CapturedOutput)} the first night both
    * tests ran. They run on this release line alone, so the two had never met before.
    * <p>
-   * The key alone, not the words around it. The adapter writes it as <code>job 123</code> in
-   * the line about a refused answer and as <code>job '123'</code> in the line about a
-   * failure, and a test must not depend on which of the two it reads. A job key is unique in
-   * a cluster, so a line carrying it is a line about this job.
+   * It looks for the key alone, not the words around it. The adapter writes it as
+   * <code>job 123</code> in the line about a refused answer and as <code>job '123'</code> in
+   * the line about a failure, and a test must not depend on which of the two it reads. A job
+   * key is unique in a cluster, so a line with it is a line about this job.
    *
    * @param output What the class has printed so far
    * @param jobKey The job this test asks about
@@ -1641,7 +1638,7 @@ public class Camunda8CockpitIT {
   }
 
   /**
-   * What a cancelled case reaches the cockpit as, which is a question of the release line.
+   * How a cancelled case reaches the cockpit. This depends on the release line.
    * <p>
    * From 8.10 on the process carries a <code>cancel</code> execution listener, so the case is
    * closed. Before that the cluster hands out no job when an instance is terminated, so nothing
@@ -1708,10 +1705,10 @@ public class Camunda8CockpitIT {
           workflowService.businessCockpit().aggregateChanged(attached);
         });
 
-    // the report carries what the application wrote, not what the case said before it. The
-    // report of the user task may still be dispatching while this runs, and its details
-    // provider holds the case over this transaction. The version attribute of TestAggregate is
-    // what keeps that dispatch from writing the older reading back
+    // the report carries what the application wrote, not what the case held before. The report
+    // of the user task may still be dispatched while this runs, and its details provider holds
+    // the case during this transaction. The version attribute of TestAggregate keeps that
+    // dispatch from writing the older state back
     awaitReportCarrying(
         "/workflow/%s/updated".formatted(workflowId), "Emil the second", aggregate);
 
@@ -1739,13 +1736,13 @@ public class Camunda8CockpitIT {
         });
     CockpitServer.awaitQuiet();
 
-    // whether VanillaBP had written down the version by then is a race this test does not decide.
-    // Where it had, the change is reported right away. Where it had not, the change is resolved
-    // when its entry is dispatched, and the dispatch asks again while the storage has not written
-    // the workflow. Either way no report goes out without the version, because every details
-    // provider of this application names one. A report without it would carry no details, and the
-    // cockpit would replace the customer it shows with nothing. On cluster 8.8 that report went
-    // out once, which is what this test is here for
+    // this test does not decide the race of whether VanillaBP has written down the version by
+    // then. If it has, the change is reported right away. If not, the change is resolved when its
+    // entry is dispatched, and the dispatch asks again while the storage has not written the
+    // workflow. Either way no report goes out without the version, because every details provider
+    // of this application names one. A report without it would carry no details, and the cockpit
+    // would replace the customer it shows with nothing. On cluster 8.8 such a report went out
+    // once, and this test is here for that
     CockpitServer
         .matching("/workflow/%s/updated".formatted(workflowId))
         .forEach(updated -> {
@@ -1809,8 +1806,8 @@ public class Camunda8CockpitIT {
     assertNotNull(CockpitServer.awaitAnyRequest("/workflow/%s/completed".formatted(workflowId)));
     CockpitServer.forgetRequests();
 
-    // the election names the adapter which started the workflow out of the note of the start,
-    // so this finds the bridge after the end as well, for as long as that note lives
+    // the election finds the adapter which started the workflow in the note of the start. So
+    // this finds the bridge after the end as well, as long as that note is kept
     changeTheCase(
         aggregate.getId(),
         attached -> {
@@ -1820,8 +1817,8 @@ public class Camunda8CockpitIT {
 
     awaitReportCarrying(
         "/workflow/%s/updated".formatted(workflowId), "Karla the second", aggregate);
-    // a report is all it is: the cluster holds the workflow as completed. The storage says so once
-    // the exporter caught up with the end, which may come after the report
+    // it is only a report, and the workflow stays completed in the cluster. The storage says so
+    // once the exporter has caught up with the end, which may be after the report
     assertEquals(
         ProcessInstanceState.COMPLETED,
         awaitValue(
@@ -1899,8 +1896,8 @@ public class Camunda8CockpitIT {
   public void aReportCarriesTheStateOfItsEvent() {
 
     final var aggregate = aStartedWorkflowWhoseDetailsProviderIsHeld("Nora");
-    // the details provider of the user task now waits inside the listener job of that task: it
-    // holds the case as the event left it, and the transition waits with it
+    // the details provider of the user task now waits inside the listener job of that task. It
+    // holds the case as the event left it, and the transition waits as well
     gate.awaitTheHeldCall();
     CockpitServer.forgetRequests();
 
@@ -1909,12 +1906,12 @@ public class Camunda8CockpitIT {
 
     gate.letTheHeldCallFinish();
 
-    // the report is the report of its own event, so it says what the case said when the task was
-    // created. Built at the dispatch, as it used to be, it would say "Nora the second" - a state
-    // the task never had while it was coming into being
+    // the report belongs to its own event, so it says what the case held when the task was
+    // created. If it were built at the dispatch, as it used to be, it would say "Nora the
+    // second". The task never had that state while it was being created
     final var created = CockpitServer.awaitRequest("/usertask/created", "\"customer\":\"Nora");
     assertTrue(created.body().contains("\"customer\":\"Nora\""), created.body());
-    // and the change of the application is still there: nothing of the report wrote the case back
+    // and the change of the application is still there. The report did not write the case back
     assertEquals("Nora the second", storedCustomerOf(aggregate));
 
   }
@@ -1983,9 +1980,9 @@ public class Camunda8CockpitIT {
         });
 
     // the report is built inside the listener job of the user task, so a details provider which
-    // throws fails that job. The listeners of this extension carry no retries, so the cluster
-    // raises the incident at once instead of repeating quietly. Only reading happens on this way,
-    // but what is read has to be right. See decision 8 in the repository's DECISIONS.md
+    // throws fails that job. The listeners of this extension have no retries, so the cluster
+    // raises the incident at once instead of retrying quietly. This path only reads, but what it
+    // reads has to be right. See decision 8 in the repository's DECISIONS.md
     final var workflowId = workflowIdOf(
         IncidentWorkflowService.BPMN_PROCESS_ID, aggregate.getId());
     awaitValue(
@@ -2018,11 +2015,11 @@ public class Camunda8CockpitIT {
   }
 
   /**
-   * A key of the shape the cluster hands out which it cannot hold. The keys of a partition are
-   * counted up from one number, whatever they are handed out for, so a key a million past one the
-   * cluster really gave is neither a user task nor a workflow of this run. The shape matters. A
-   * number the gateway rejects as invalid is answered differently from one it simply does not
-   * hold, and it is the second answer this is for.
+   * A key which looks like the keys the cluster hands out, but which the cluster cannot hold. A
+   * partition counts all its keys up from one number, whatever they are for. So a key a million
+   * above a real one is neither a user task nor a workflow of this run. The shape matters. The
+   * gateway answers a number it rejects as invalid differently from one it does not hold, and
+   * this key is for the second answer.
    *
    * @param keyItHandedOut A key the cluster is known to hold
    * @return A key it does not
@@ -2038,17 +2035,16 @@ public class Camunda8CockpitIT {
   @DisplayName("A question about something the cluster does not hold is answered with nothing")
   public void aQuestionAboutSomethingTheClusterDoesNotHoldIsAnsweredWithNothing() {
 
-    // This is the reading side of the bridge, the one which serves BusinessCockpitService. It
-    // asks the cluster's searchable storage, and a record that storage holds none of means there
-    // is nothing to show. Asking about a key the cluster never handed out is how that answer is
-    // provoked without waiting for an exporter to fall behind. The reporting side does not come
-    // here at all: it is answered out of the listener job, which is what
-    // aReportCarriesTheStateOfItsEvent shows.
+    // This is the reading side of the bridge, which serves BusinessCockpitService. It asks the
+    // cluster's searchable storage. If the storage holds no such record, there is nothing to
+    // show. Asking about a key the cluster never handed out causes that answer without waiting
+    // for an exporter to fall behind. The reporting side never comes here. It is answered from
+    // the listener job, as aReportCarriesTheStateOfItsEvent shows.
     final var aggregate = aStartedWorkflow("Dora");
     final var unknownWorkflowId = aKeyTheClusterDoesNotHold(workflowIdOf(aggregate));
     final var unknownUserTaskId = aKeyTheClusterDoesNotHold(userTaskIdOf(aggregate));
-    // no process version: these references are about records the cluster does not hold, and a
-    // version is something only such a record would name
+    // no process version: these references are about records the cluster does not hold, and only
+    // such a record would name a version
     final var unknownUserTask = new UserTaskReference(
         "c8", MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, null, String
             .valueOf(aggregate

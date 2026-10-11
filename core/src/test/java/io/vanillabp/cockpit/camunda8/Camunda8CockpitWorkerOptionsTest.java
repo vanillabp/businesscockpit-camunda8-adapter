@@ -36,20 +36,20 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 /**
  * What a worker this extension opens carries, and what it deliberately does not.
  * <p>
- * It carries two things the client the adapter built cannot pass on: the stream timeout, which
- * the client has no equivalent for, and the job counters, which exist per worker because they
- * carry the job type. An operator therefore reads these workers next to the adapter's own
- * instead of finding a gap where they should be.
+ * It carries two things which the client built by the adapter cannot pass on. One is the stream
+ * timeout, which the client has no setting for. The other is the job counters, which exist per
+ * worker because they carry the job type. So an operator sees these workers next to the
+ * adapter's own, and not a gap where they should be.
  * <p>
- * It carries a third thing where the adapter's configuration asks for it: a lease on every
- * activation. That is one call to the same adapter, so the tests here say that the extension
- * asked and let the adapter answer whether the release line has a lease at all.
+ * It carries a third thing if the adapter's configuration asks for it: a lease on every
+ * activation. That is one call to the same adapter. So the tests here check that the extension
+ * asked, and let the adapter answer whether the release line has a lease at all.
  * <p>
  * It carries nothing else. Whether jobs are streamed, how often a worker polls and how long a
- * request may take are set on the client, where an environment variable can still overrule them,
- * and a worker naming any of them again would beat that environment variable without saying so -
- * which nothing in a running application would show. So those four setters are asserted to stay
- * untouched.
+ * request may take are set on the client, where an environment variable can still overrule
+ * them. A worker which set any of them again would silently beat that environment variable, and
+ * nothing in a running application would show it. So the test checks that those four setters
+ * stay untouched.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8CockpitWorkerOptionsTest {
@@ -157,8 +157,8 @@ public class Camunda8CockpitWorkerOptionsTest {
     workers.open(ADAPTER_ID, MODULE_ID, new Camunda8MultiInstance.Registry());
 
     // the adapter answers whether that ends in a lease, because only a client of line 8.10 and
-    // newer has one. So the expected answer is its own, and this test says that the extension
-    // asked rather than what the answer was
+    // newer has one. So the expected answer comes from the adapter, and this test checks that
+    // the extension asked, not what the answer was
     assertEquals(
         configuration.leasesItsJobs(),
         theWorkerAskedForALease(),
@@ -179,12 +179,12 @@ public class Camunda8CockpitWorkerOptionsTest {
   }
 
   /**
-   * Whether the builder was asked for a lease, read off the recorded calls rather than with a
+   * Whether the builder was asked for a lease, read from the recorded calls and not with a
    * <code>verify</code>.
    * <p>
-   * The method exists on the client of line 8.10 and on no earlier one, so naming it here would
-   * not compile on the lines which have to run this test too. What every line does have is the
-   * name the call carries.
+   * The method exists on the client of line 8.10 and on no earlier one. Calling it here would not
+   * compile on the other lines, which run this test too. But every line has the name of the
+   * call.
    */
   private boolean theWorkerAskedForALease() {
 

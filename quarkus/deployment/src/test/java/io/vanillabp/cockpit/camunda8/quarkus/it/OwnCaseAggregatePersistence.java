@@ -46,7 +46,7 @@ public class OwnCaseAggregatePersistence implements AggregatePersistenceAware<Ow
 
   }
 
-  /** The name a Camunda 8 workflow carries the aggregate's id under. */
+  /** The name under which a Camunda 8 workflow carries the aggregate's id. */
   @Override
   public String getAggregateIdName() {
 

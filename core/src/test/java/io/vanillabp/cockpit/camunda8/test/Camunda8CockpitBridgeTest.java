@@ -61,13 +61,13 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 /**
  * What the bridge answers without asking the cluster at all.
  * <p>
- * Everything else it does is a request to a cluster and is tested against a real one. What stays
- * here is the handful of answers a cluster would only be able to confirm, and the one which must
- * never reach it.
+ * Everything else it does is a request to a cluster and is tested against a real one. This test
+ * keeps the few answers which a cluster could only confirm, and the one question which must never
+ * reach it.
  * <p>
- * The filter a search is narrowed with is asserted here as well, although a cluster runs the
- * search. A condition spelled differently does not fail against a cluster. The search answers
- * nothing, and nothing reads exactly like a workflow which was never started.
+ * The filter of a search is checked here as well, although a cluster runs the search. A condition
+ * spelled differently does not fail against a cluster. The search just answers nothing, and that
+ * looks exactly like a workflow which was never started.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8CockpitBridgeTest {
@@ -109,7 +109,7 @@ public class Camunda8CockpitBridgeTest {
 
   private static final String AGGREGATE_ID_NAME = "loanId";
 
-  /** The workflow a case is, which a call activity of it started the instance below. */
+  /** The workflow of the case. A call activity of it started the instance below. */
   private static final String CALLING_INSTANCE = "2251799813685331";
 
   /** The instance the called process runs in, which is a step of that case and no case itself. */
@@ -120,8 +120,8 @@ public class Camunda8CockpitBridgeTest {
   /**
    * What the bridge wrote while a test ran.
    * <p>
-   * An empty answer of the searchable storage is answered with a line in the log and nothing else,
-   * which decision 8 asks for, so the log is the only place a test can read that answer from.
+   * If the searchable storage answers with nothing, the bridge writes a line in the log and does
+   * nothing else, as decision 8 asks. So the log is the only place where a test can read that.
    */
   private final ListAppender<ILoggingEvent> linesTheBridgeWrote = new ListAppender<>();
 
@@ -197,13 +197,13 @@ public class Camunda8CockpitBridgeTest {
         .getFactory("c8")
         .getClient()
         .newProcessInstanceSearchRequest();
-    // a search request answers itself, so what the cluster answers is stubbed once instead of
-    // through the deep stub of one particular call of 'filter' - a deep stub of a call with
-    // another argument is another mock, and that one answers an empty list
+    // a search request returns itself, so the answer of the cluster is stubbed once, not through
+    // the deep stub of one particular call of 'filter'. A deep stub of a call with another
+    // argument is another mock, and that one answers an empty list
     when(search.filter(any(Consumer.class))).thenReturn(search);
     when(search.send().join().items()).thenReturn(found);
-    // the stubbing above called 'filter' itself. What the test asserts is the one call the
-    // bridge makes, because a second call would replace the first rather than add to it
+    // the stubbing above called 'filter' itself. The test checks the one call which the bridge
+    // makes, because a second call would replace the first instead of adding to it
     clearInvocations(search);
     final var clients = new Camunda8Clients(clientFactories, scoping);
     return new Camunda8CockpitBridge(
@@ -225,8 +225,8 @@ public class Camunda8CockpitBridgeTest {
     when(workflowTaskWiring.resolveWorkflowAggregateIdName(MODULE_ID, PROCESS_ID))
         .thenReturn(AGGREGATE_ID_NAME);
     final var search = clientFactories.getFactory("c8").getClient().newUserTaskSearchRequest();
-    // a search request answers itself, like the workflow search above, so what the cluster
-    // answers is stubbed once instead of through the deep stub of one particular call
+    // a search request returns itself, like the workflow search above, so the answer of the
+    // cluster is stubbed once and not through the deep stub of one particular call
     when(search.filter(any(Consumer.class))).thenReturn(search);
     when(search.send().join().items()).thenReturn(found);
     clearInvocations(search);
@@ -350,13 +350,13 @@ public class Camunda8CockpitBridgeTest {
                 "c8", MODULE_ID, PROCESS_ID, null, AGGREGATE_ID, CALLING_INSTANCE))
         .orElseThrow();
 
-    // to VanillaBP a business key is a business key only where it says what the aggregate's @Id
-    // attribute says. So the report names that id, whatever a cluster holds beside it, and it
-    // names the same one whether it was built from a listener job or read here
+    // for VanillaBP, a business key is only the value of the aggregate's @Id attribute. So the
+    // report names that id, whatever else a cluster holds. It names the same id whether the
+    // report was built from a listener job or read here
     assertEquals(AGGREGATE_ID, prefill.businessId());
     assertEquals("2", prefill.bpmnProcessVersion());
-    // the name of the model this extension wired, on every way, so that no way needs the storage
-    // for it
+    // the name of the model this extension wired, on every path, so that no path needs the
+    // storage for it
     assertEquals("The cockpit process", prefill.bpmnProcessName());
 
   }
@@ -458,7 +458,7 @@ public class Camunda8CockpitBridgeTest {
     when(publisher.variablesTheDetailsProvidersRead(MODULE_ID, PROCESS_ID, "handle", "Handle"))
         .thenReturn(List.of("customer"));
     final var search = client().newUserTaskEffectiveVariableSearchRequest(Long.parseLong(USER_TASK_ID));
-    // a search request answers itself, see bridgeOfAScopedModule
+    // a search request returns itself, see bridgeOfAScopedModule
     when(search.filter(any(Consumer.class))).thenReturn(search);
     when(search.withFullValues()).thenReturn(search);
     final var customer = mock(Variable.class);
@@ -895,8 +895,8 @@ public class Camunda8CockpitBridgeTest {
     final var found = bridgeSearchingUserTasks(List.of(task))
         .userTasksOfAggregate(MODULE_ID, PROCESS_ID, AGGREGATE_ID, List.of());
 
-    // the cluster would not answer it, as the search names other processes. Were it answered all
-    // the same, there would be no plain id to report it by
+    // the cluster would not answer it, because the search names other processes. If it were
+    // answered anyway, there would be no plain id to report it by
     assertTrue(found.isEmpty(), found.toString());
 
   }
@@ -1166,8 +1166,8 @@ public class Camunda8CockpitBridgeTest {
   @DisplayName("A change after the end of a workflow is reported to the cockpit, and the cluster gets no command")
   public void aChangeAfterTheEndIsReportedAndSendsTheClusterNothing() {
 
-    // since the election reads the note of the start, aggregateChanged finds this bridge after
-    // the workflow ended as well, for as long as the note lives
+    // the election reads the note of the start, so aggregateChanged finds this bridge after the
+    // workflow ended as well, as long as the note is kept
     vanillaBpStartedTheWorkflow(new WorkflowStart("c8", CALLING_INSTANCE, "3", true));
     theModelIsNamed("The cockpit process");
 

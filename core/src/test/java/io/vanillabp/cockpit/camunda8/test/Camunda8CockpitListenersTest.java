@@ -32,10 +32,10 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 /**
  * What the Business Cockpit writes into a Camunda 8 model.
  * <p>
- * The user-task half of it is a compatibility promise and is therefore measured against Version
- * 1's own code rather than against a description of it: the two have to produce the same bytes,
- * because an upgrading application which deploys different bytes gets a new process version and
- * leaves its running workflows behind on the old one.
+ * The user-task half of it is a compatibility promise. So it is measured against the code of
+ * Version 1 itself, not against a description of it. The two have to produce the same bytes. An
+ * upgrading application which deploys different bytes gets a new process version, and its
+ * running workflows stay behind on the old one.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8CockpitListenersTest {
@@ -112,15 +112,15 @@ public class Camunda8CockpitListenersTest {
   }
 
   /**
-   * Both models are wired by VanillaBP's Camunda 8 adapter first, which is not a convenience of
-   * the test but the situation being measured. That adapter puts a <code>creating</code> and a
+   * VanillaBP's Camunda 8 adapter wires both models first. This is the situation being measured,
+   * not a shortcut of the test. That adapter puts a <code>creating</code> and a
    * <code>canceling</code> listener on every user task it claims, and with them the
    * <code>zeebe:taskListeners</code> container. So by the time either the Version 1 code or this
    * extension runs, the container is always there. Version 1 had a second branch for a task
    * which carried none, and it wrote a different order (<code>creating</code>,
    * <code>completing</code>, <code>canceling</code>). That branch was unreachable behind the
-   * adapter then and is unreachable now, which is why the byte-identity is measured on the
-   * branch which did run. What this extension produces for a task without a container is
+   * adapter then and is unreachable now. So the byte-identity is measured on the branch which
+   * did run. What this extension produces for a task without a container is
    * pinned separately by {@link #aTaskWithoutAContainerGetsTheOrderThisExtensionDocuments()}.
    */
   @Test

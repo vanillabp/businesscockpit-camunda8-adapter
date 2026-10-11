@@ -27,9 +27,9 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 /**
  * Which workflow a job belongs to, on a line whose jobs do not say it.
  * <p>
- * The same three questions the other lines answer from the job are answered here by the
- * cluster's call hierarchy, and two more come with asking: what happens while the searchable
- * storage is behind, and that an answer is not bought twice.
+ * The other lines answer the same three questions from the job. Here the cluster's call
+ * hierarchy answers them. Asking the cluster brings two more questions: what happens while the
+ * searchable storage is behind, and whether an answer is fetched only once.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8CallHierarchyTest {
@@ -91,9 +91,9 @@ public class Camunda8CallHierarchyTest {
 
     assertNull(hierarchy.rootProcessInstanceKeyOf(aJobOf(12345L)));
 
-    // an 8.8 cluster answers a workflow nobody called with no entries at all, which is nearly
-    // every workflow there is. Reading that as a storage which has not caught up would hold the
-    // transition of every listener job open for the whole window
+    // for a workflow nobody called, an 8.8 cluster answers with no entries at all, and that is
+    // nearly every workflow. If the extension read that as a storage which has not caught up, it
+    // would hold the transition of every listener job open for the whole window
     assertEquals(1, asked.get());
 
   }
@@ -112,7 +112,7 @@ public class Camunda8CallHierarchyTest {
 
     assertNull(hierarchy.rootProcessInstanceKeyOf(aJobOf(12345L)));
 
-    // this is the answer worth asking again for, so the lookup used its window on it
+    // this answer is worth asking again for, so the lookup kept asking within its window
     assertTrue(asked.get() > 1, "the lookup gave up after one attempt");
 
   }

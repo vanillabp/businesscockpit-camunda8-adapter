@@ -8,8 +8,8 @@ import io.vanillabp.integration.spi.AggregatePersistenceAware;
 import jakarta.enterprise.context.ApplicationScoped;
 
 /**
- * Where the test application keeps its workflow aggregates. It is in memory rather than in a
- * database, because what is under test is the extension and not a persistence.
+ * Where the test application keeps its workflow aggregates. They are in memory, not in a
+ * database, because the test is about the extension and not about persistence.
  */
 @ApplicationScoped
 public class TestAggregatePersistence implements AggregatePersistenceAware<TestAggregate> {
@@ -54,8 +54,8 @@ public class TestAggregatePersistence implements AggregatePersistenceAware<TestA
   }
 
   /**
-   * The name a Camunda 8 workflow carries the aggregate's id under. A persistence framework
-   * answers this from its mapping; a map has to say it, and everything reading a workflow of
+   * The name under which a Camunda 8 workflow carries the aggregate's id. A persistence
+   * framework answers this from its mapping. A map has to say it, and every read of a workflow of
    * this application by its business case depends on it.
    */
   @Override

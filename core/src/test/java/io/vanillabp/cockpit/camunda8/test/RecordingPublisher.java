@@ -19,9 +19,9 @@ import io.vanillabp.cockpit.extension.spi.WorkflowReference;
  * The platform-neutral half of the extension, played by the test: it writes nothing and
  * remembers what it was told.
  * <p>
- * Where a test hands it a BPMS half, it asks that half what the event says while it is being
- * told about the event, which is where the real one asks. The answer is remembered beside the
- * identifiers, so a test can assert that a report carries the state of its own event.
+ * If a test gives it a BPMS half, it asks that half what the event says at the moment it is told
+ * about the event. The real one asks at the same moment. The answer is kept next to the
+ * identifiers, so a test can check that a report carries the state of its own event.
  */
 public class RecordingPublisher implements BusinessCockpitEventPublisher {
 

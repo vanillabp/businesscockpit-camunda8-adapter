@@ -20,8 +20,8 @@ import io.vanillabp.spi.service.TaskParam;
 import io.vanillabp.spi.service.WorkflowService;
 
 /**
- * The application under test: a workflow whose user task the cockpit is to show, with a details
- * provider which enriches what the cluster reported.
+ * The application under test: a workflow with a user task for the cockpit to show, and a details
+ * provider which adds to what the cluster reported.
  */
 @Service
 @WorkflowService(workflowAggregateClass = TestAggregate.class,
@@ -41,8 +41,8 @@ public class TestWorkflowService {
   public static final String START_MESSAGE = "StartCockpitProcess";
 
   /**
-   * The detail both generations of a details provider write, each with its own value: it says
-   * which of the two ran, and the version of the deployed process is what picks between them.
+   * The detail which both generations of a details provider write, each with its own value. It
+   * says which of the two ran. The version of the deployed process picks between them.
    */
   public static final String SERVED_BY = "servedBy";
 
@@ -53,9 +53,9 @@ public class TestWorkflowService {
   public static final String SERVED_BY_LATER_VERSIONS = "the methods of the later versions";
 
   /**
-   * The detail both generations of the user-task provider fill with the process variable
+   * The detail which both generations of the user-task provider fill with the process variable
    * <code>customer</code>, read with <code>&#64;TaskParam</code>. No <code>&#64;WorkflowTask</code>
-   * method reads that variable, so only the provider's own name brings it onto the listener job.
+   * method reads that variable, so it is on the listener job only because the provider names it.
    */
   public static final String CUSTOMER_VARIABLE = "customerVariable";
 
@@ -96,12 +96,12 @@ public class TestWorkflowService {
 
   /**
    * Matched by the external form reference of the user task and by the version of the deployed
-   * process. It enriches what the cluster reported, and it writes nothing: a details provider is
-   * asked a question and answers it.
+   * process. It adds to what the cluster reported and writes nothing. A details provider only
+   * answers a question.
    * <p>
-   * The gate is what a test closes to hold this call open while it changes the same case, so that
-   * Camunda8CockpitIT#aReportCarriesTheStateOfItsEvent can say which moment a report is built
-   * from. It is open otherwise.
+   * A test closes the gate to hold this call open while it changes the same case. This lets
+   * Camunda8CockpitIT#aReportCarriesTheStateOfItsEvent show from which moment a report is built.
+   * Otherwise the gate is open.
    *
    * @param aggregate The workflow aggregate, loaded by VanillaBP
    * @param prefilled What the cluster knew about the task
@@ -123,13 +123,13 @@ public class TestWorkflowService {
   /**
    * The same task, served for every version deployed after the first one.
    * <p>
-   * It is here so that a test can see the version of the deployed process pick a method: the
-   * application deploys version 1 while it starts, a test deploys a second version, and the
-   * workflow started after that is reported by this method rather than by {@link #approve}. The
-   * two ranges do not overlap, which is what lets one task definition have two methods.
+   * A test uses it to see the version of the deployed process pick a method. The application
+   * deploys version 1 while it starts, a test deploys a second version, and the workflow started
+   * after that is reported by this method instead of {@link #approve}. The two ranges do not
+   * overlap, so one task definition can have two methods.
    * <p>
-   * What it reports is what {@link #approve} reports apart from {@link #SERVED_BY}, so that
-   * every other test reads the same report whichever version its workflow happens to run on.
+   * It reports the same as {@link #approve} except for {@link #SERVED_BY}. So every other test
+   * reads the same report, whichever version its workflow runs on.
    *
    * @param aggregate The workflow aggregate, loaded by VanillaBP
    * @param prefilled What the cluster knew about the task
@@ -189,8 +189,8 @@ public class TestWorkflowService {
   }
 
   /**
-   * The same workflow, served for every version deployed after the first one - the counterpart
-   * of {@link #approveOfALaterVersion} for the workflow.
+   * The same workflow, served for every version deployed after the first one. It is the
+   * counterpart of {@link #approveOfALaterVersion} for the workflow.
    *
    * @param aggregate The workflow aggregate
    * @param prefilled What the cluster knew about the workflow
@@ -210,9 +210,9 @@ public class TestWorkflowService {
       final PrefilledWorkflowDetails prefilled,
       final String servedBy) {
 
-    // the aggregate id is in there so that a test can see WHICH case a report is about: the
-    // cluster tells the extension the aggregate id and the extension loads this very aggregate
-    // by it, so a report carrying it is a report which found its case
+    // the aggregate id is in there so a test can see WHICH case a report is about. The cluster
+    // tells the extension the aggregate id, and the extension loads this aggregate by it. So a
+    // report with the id is a report which found its case
     prefilled
         .setDetails(
             Map

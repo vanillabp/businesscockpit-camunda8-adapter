@@ -8,9 +8,9 @@ import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 /**
  * How a test says which workflow a job belongs to. This is the 8.10 variant.
  * <p>
- * Since 8.9 the job carries its root process instance, so saying it is stubbing the job. The 8.8
- * variant has to stub a cluster request instead, which is why this helper exists once per
- * release line and why a test says what it means rather than how the line finds it out.
+ * Since 8.9 the job carries its root process instance, so the helper only stubs the job. The 8.8
+ * variant has to stub a cluster request instead. That is why this helper exists once per release
+ * line, and why a test says what it means and not how the line finds it out.
  */
 final class JobsInAHierarchy {
 

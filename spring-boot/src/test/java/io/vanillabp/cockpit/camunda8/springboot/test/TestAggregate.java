@@ -14,11 +14,11 @@ import jakarta.persistence.Version;
  * The business case of the test: what the workflow is about, and what a details provider reads
  * to describe it.
  * <p>
- * It carries a version attribute, which is what an application does where a case may have a
- * second writer. The cockpit is not one of them. A details provider is asked a question and
- * answers it, it never writes this case, and the report of an event is built while that event is
- * being observed rather than hours later. The attribute is here so that a provider which
- * accidentally wrote would read a conflict instead of overwriting the application without a word.
+ * It carries a version attribute, as an application does if a case may have a second writer.
+ * The cockpit is not such a writer. A details provider only answers a question and never writes
+ * this case, and the report of an event is built while the event happens, not hours later. The
+ * attribute is here so that a provider which wrote by accident would run into a conflict instead
+ * of silently overwriting the application.
  * <p>
  * Two of its values never reach the BPMS. The version counter belongs to the persistence of this
  * application, and the signers belong to the case the application keeps. No model of this
@@ -27,7 +27,7 @@ import jakarta.persistence.Version;
  * <p>
  * The customer still travels, so that the test application also shows a workflow which shares
  * everything it has. The <code>allow-full-sync-with-bpms</code> line of this workflow stays as
- * well, although the two annotations already make the permission unnecessary here. Taking it out
+ * well, although the two annotations already make the permission unnecessary here. Removing it
  * would prove nothing, and the five other workflows of the test application need their own line,
  * because the permission is not inherited.
  */

@@ -24,8 +24,8 @@ import io.vanillabp.cockpit.camunda8.test.CallChains;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
- * Which instance of a call hierarchy is the business case. The answer whether two processes share
- * the workflow aggregate is given by the test, the way the core gives it in the application.
+ * Which instance of a call hierarchy is the business case. The test says whether two processes
+ * share the workflow aggregate, as the core does in the application.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8BusinessCasesTest {

@@ -24,16 +24,16 @@ import io.vanillabp.spi.service.WorkflowService;
  * A workflow which waits at a timer and holds no user task, so that a test can cancel a running
  * instance.
  * <p>
- * The missing user task is what makes it usable on 8.10. An instance holding a Camunda-managed
- * user task cannot be cancelled on the alpha of that line at all (camunda/camunda#58193), and
- * the cancel listener of a process runs only once every child element has terminated.
+ * Without a user task it can be used on 8.10. On the alpha of that line, an instance holding a
+ * Camunda-managed user task cannot be cancelled at all (camunda/camunda#58193), and the cancel
+ * listener of a process runs only once every child element has terminated.
  * <p>
- * Its details provider can be made to fail, and it can be made to wait. Waiting is what lets a
- * test outlive the lock of the listener job the provider runs in, which is the one way to see
- * what the cluster does with an answer that comes too late.
+ * A test can make its details provider fail, or wait. Waiting lets a test outlive the lock of the
+ * listener job the provider runs in. That is the only way to see what the cluster does with an
+ * answer which comes too late.
  * <p>
  * The waiting holds every report of one case, and a test lets them answer one at a time, oldest
- * first. One run of a listener job is not enough to see a late answer refused: the cluster
+ * first. One run of a listener job is not enough to see a late answer refused. The cluster
  * refuses it because another run holds the job, so that other run has to be inside the provider
  * while the first one answers.
  */
@@ -134,7 +134,7 @@ public class WaitingWorkflowService {
 
   }
 
-  /** Lets the report which has been waiting longest answer, which is what sends its completion. */
+  /** Lets the report which has waited longest answer, so its completion is sent. */
   public void letTheOldestHeldReportAnswer() {
 
     final var oldest = held.poll();
@@ -197,8 +197,8 @@ public class WaitingWorkflowService {
   }
 
   /**
-   * Waits where this case is the one a test is holding. Every report of that case waits, so a
-   * test can have two runs of one listener job inside the provider at the same time.
+   * Waits if a test is holding this case. Every report of that case waits, so a test can have
+   * two runs of one listener job inside the provider at the same time.
    *
    * @param aggregateId The case this report is about
    * @param eventId What the cockpit calls the event, which a test reads to see which job the
@@ -208,8 +208,8 @@ public class WaitingWorkflowService {
       final Long aggregateId,
       final String eventId) {
 
-    // by value rather than by reference: two boxed longs of the same number are two objects
-    // unless the number is small
+    // by value, not by reference: two boxed longs of the same number are two objects unless the
+    // number is small
     if (!aggregateId.equals(heldCase.get())) {
       return;
     }

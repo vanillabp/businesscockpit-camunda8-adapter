@@ -14,7 +14,7 @@ import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
  * the 8.8 variant.
  * <p>
  * An 8.8 record of a task does not name its root process instance, so the extension asks the
- * cluster for the call hierarchy and this helper is what answers.
+ * cluster for the call hierarchy, and this helper answers.
  */
 final class TasksInAHierarchy {
 
