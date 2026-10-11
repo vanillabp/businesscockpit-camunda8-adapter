@@ -456,6 +456,27 @@ public class Camunda8CockpitJobHandlerTest {
   }
 
   @Test
+  @DisplayName("A task of a called process carries the called process and its version, not the caller's")
+  public void aTaskOfACalledProcessCarriesTheVersionOfTheCalledProcess() {
+
+    final var asked = aHandlerAskingItsBridge();
+    final var job = aUserTaskJob(ListenerEventType.CREATING);
+    isCalledByTheCaller(job, true);
+
+    handler.handle(client, job);
+
+    // the details provider of the task is picked by this pair (decision 31 in the repository's
+    // DECISIONS.md). The task belongs to the model of the called process, so the version of
+    // that model counts, which is the version its job names
+    final var reported = asked.userTaskEvents().getFirst().userTask();
+    assertEquals(PROCESS_ID, reported.bpmnProcessId());
+    assertEquals(String.valueOf(DEPLOYED_VERSION), reported.processVersion());
+    // and the case is the caller's
+    assertEquals("12345", reported.workflowId());
+
+  }
+
+  @Test
   @DisplayName("A task of a called process with an aggregate of its own is reported under its own case")
   public void aTaskOfACalledProcessWithItsOwnAggregateNamesItsOwnCase() {
 

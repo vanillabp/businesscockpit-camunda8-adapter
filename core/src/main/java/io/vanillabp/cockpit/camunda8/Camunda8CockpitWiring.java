@@ -1,6 +1,7 @@
 package io.vanillabp.cockpit.camunda8;
 
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ import io.camunda.zeebe.model.bpmn.instance.UserTask;
 import io.vanillabp.camunda8.Camunda8ProcessingContext;
 import io.vanillabp.camunda8.wiring.Camunda8TaskWiring;
 import io.vanillabp.cockpit.camunda8.Camunda8CockpitDeployments.WiredListener;
+import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
 import io.vanillabp.cockpit.extension.wiring.BusinessCockpitWiringService;
 import io.vanillabp.integration.adapter.spi.workflowtask.WorkflowTaskWiring;
 import io.vanillabp.integration.extension.spi.ExtensionWiringService;
@@ -40,6 +42,8 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
 
   private final WorkflowTaskWiring workflowTaskWiring;
 
+  private final Supplier<BusinessCockpitEventPublisher> publisher;
+
   /**
    * Creates the step this extension adds to the deployment of a workflow module.
    *
@@ -48,17 +52,20 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * @param workers The workers serving the listeners
    * @param workflowTaskWiring VanillaBP's registry of what the application declared, which is
    *          what names the workflow aggregate's id variable
+   * @param publisher The extension, which is told the user tasks of every wired model
    */
   public Camunda8CockpitWiring(
       final Camunda8Clients clients,
       final Camunda8CockpitDeployments deployments,
       final Camunda8CockpitWorkers workers,
-      final WorkflowTaskWiring workflowTaskWiring) {
+      final WorkflowTaskWiring workflowTaskWiring,
+      final Supplier<BusinessCockpitEventPublisher> publisher) {
 
     this.clients = clients;
     this.deployments = deployments;
     this.workers = workers;
     this.workflowTaskWiring = workflowTaskWiring;
+    this.publisher = publisher;
 
   }
 
@@ -230,6 +237,10 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
           if (element != null) {
             Camunda8CockpitListeners.addUserTaskListeners(element, listenerType);
           }
+          // the same values the worker reports the task with, so VanillaBP holds the task's
+          // details providers against the version the cluster gives this model, see decision 31
+          // in the repository's DECISIONS.md
+          publisher.get().userTaskWired(workflowModuleId, bpmnProcessId, taskDefinition, userTask.activityId());
           deployments
               .register(
                   adapterId,
