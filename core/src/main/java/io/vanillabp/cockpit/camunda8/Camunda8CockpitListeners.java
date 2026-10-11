@@ -35,8 +35,8 @@ import io.vanillabp.camunda8.wiring.Camunda8CancelListeners;
  * the cluster stores a new process version and every running workflow keeps the old one. See
  * decision 4 in the repository's DECISIONS.md. The execution listeners are NOT the Version 1
  * ones, and decision 1 in the repository's DECISIONS.md says why. On 8.10 the process carries a
- * second execution listener, which changes those bytes once more; decision 11 in the
- * repository's DECISIONS.md says what that costs.
+ * second execution listener, which changes those bytes once more. Decision 11 in the repository's
+ * DECISIONS.md says what that costs.
  * <p>
  * Every method here is idempotent. The deployment pipeline hands the same model instance to
  * every executable process of a file, and re-wiring an element which already carries this
@@ -229,9 +229,9 @@ public final class Camunda8CockpitListeners {
    * one at all.
    * <p>
    * Camunda 8 gained the <code>cancel</code> execution listener with 8.10, and the cluster takes
-   * it on the PROCESS element and nowhere else. It runs when an instance is terminated, after
-   * every child element has terminated and before the instance reaches its final state, which is
-   * the one moment the <code>end</code> listener beside it does not run. On 8.8 and 8.9 nothing
+   * it on the PROCESS element and nowhere else. It runs when an instance is terminated: after every
+   * child element has terminated, and before the instance reaches its final state. That is the one
+   * moment when the <code>end</code> listener beside it does not run. On 8.8 and 8.9 nothing
    * reports a cancelled workflow at all. See decision 11 in the repository's DECISIONS.md.
    * <p>
    * Which line this build is on is the adapter's answer, not a second rule of this extension.

@@ -44,8 +44,8 @@ workflow that root instance is.
 
 A workflow which was terminated rather than finished was not reported at all when this was written.
 Decision 11 replaces that half: 8.10 brought the listener, a build of that line writes it, and a
-cancelled case is now reported as cancelled. On 8.8 and 8.9 the paragraph still holds, and the
-sentence about a called process holds on every line - a cancelled called process is a step which
+cancelled case is now reported as cancelled. On 8.8 and 8.9 the paragraph still holds. The
+sentence about a called process holds on every line: a cancelled called process is a step which
 ended, not a case which closed.
 
 ## 4. The task listeners are the ones Version 1 wrote
@@ -114,23 +114,24 @@ is already in hand.
 
 That preference is gone. Decision 8 says why, and the rest of this entry stands.
 
-What line 8.8 pays for this is written where it happens. The call hierarchy is served by the
-searchable storage, so it lags behind the transition whose listener is running, and a job of a
-process which just started can be asked about before the cluster knows it. How long the lookup waits
-for the answer is the adapter's word: `vanillabp.adapters.<id>.workflow-visibility-timeout`, ten
-seconds by default and zero for no waiting at all. Waiting means asking again: the lookup repeats the
-request every 100 milliseconds until the storage answers or the window is used up
-(`ASK_AGAIN_AFTER` in `Camunda8CallHierarchy`). The storage says nothing about when it will hold the
-answer, so there is nothing to wait for other than the next attempt. It is the key the Camunda 8 adapter waits out for
-the same storage when it knows a workflow is there. A cluster whose exporter is slow is slow for both
-of them, so it is one number rather than two. It is not the distance between two attempts of a
-report, which is short on purpose and is multiplied by the attempts the outbox allows. When the
-window runs out, the lookup treats the job as a case of its own. That adds a case too many to the
-cockpit, which is better than an incident on a workflow which is doing nothing wrong (decision 5).
+What line 8.8 pays for this is written where it happens. The searchable storage serves the call
+hierarchy, so it lags behind the transition whose listener is running. A job of a process which
+just started can be asked about before the cluster knows it. How long the lookup waits for the
+answer is the adapter's word: `vanillabp.adapters.<id>.workflow-visibility-timeout`, ten seconds by
+default and zero for no waiting at all. Waiting means asking again: the lookup repeats the request
+every 100 milliseconds until the storage answers or the window is used up (`ASK_AGAIN_AFTER` in
+`Camunda8CallHierarchy`). The storage says nothing about when it will hold the answer, so there is
+nothing to wait for other than the next attempt. The Camunda 8 adapter uses the same key when it
+waits for that storage to show a workflow it knows is there. A cluster whose exporter is slow is
+slow for both of them, so it is one number rather than two. It is not the time between two attempts
+of a report. That time is short on purpose, and the outbox multiplies it by the attempts it allows.
+When the window runs out, the lookup treats the job as a case of its own. That adds a case too many
+to the cockpit, which is better than an incident on a workflow which is doing nothing wrong
+(decision 5).
 
 This is the shape every later gap of this kind takes. The per-line source directory carries how a
-line finds something out, never what it then reports. A line which cannot answer at all is what would
-end a line, and a field which arrived one minor later is not that.
+line finds something out, never what it then reports. Only a line which cannot answer at all would
+be a reason to end the line. A field which arrived one minor version later is no such reason.
 
 ## 8. A report is built from the listener job, and the searchable storage answers what is true now - narrowed by decision 19, which takes the key VanillaBP wrote down at the start
 
@@ -140,17 +141,17 @@ inside the listener job, and this entry says where the values of that report com
 
 They come from the job. An activated job carries the assignee, the candidate users and groups, the
 due date and the follow-up date of the task it is about, and it names the version of the deployed
-process. The two BPMN names are not on it, so they are read out of the model while this extension
-wires it and kept with the listener. Nothing is asked of the cluster, and asking would not help: the
-searchable storage is written by an exporter which runs behind the engine, so the event a job is
-about has not reached it while that job waits. `Camunda8EventBeingReported` is how the values reach
-the bridge, which the cockpit asks by identifiers.
+process. The two BPMN names are not on it. This extension reads them out of the model when it wires
+the model, and keeps them with the listener. Nothing is asked of the cluster, and asking would not
+help. An exporter writes the searchable storage, and that exporter runs behind the engine. So while
+a job waits, the event it is about has not reached the storage yet. The values reach the bridge
+through `Camunda8EventBeingReported`, and the cockpit asks the bridge by identifiers.
 
 What the searchable storage still answers is a question about now. `BusinessCockpitService` reads
 the tasks and the workflows of one case whenever the application asks, and the bridge searches the
-storage for them. A record it holds none of used to mean "ask again in a moment", because a report
-was dispatched moments after its event. There is no entry to hand back on this way, so the answer is
-now an empty result and a line in the log which names both readings of it. `PhaseTwoRetryLater` is
+storage for them. When the storage held no such record, that used to mean "ask again in a moment",
+because a report was dispatched moments after its event. On this way there is no entry to hand
+back, so the answer is now an empty result and a line in the log which names both readings of it. `PhaseTwoRetryLater` is
 gone from this repository.
 
 The business id of a workflow is the workflow aggregate's id, on every way a report is built and on
@@ -160,25 +161,24 @@ key with that attribute when VanillaBP starts the process, and Camunda 8.10 is t
 what a cluster holds beside that id is not a business key VanillaBP recognises, and the cockpit
 names the aggregate's id instead. The reference already carries it, so nothing is read for it.
 
-This replaces the preference the second half of decision 7 gave to what the cluster holds, which was
-written before the rule was. It also removes the one place where the two ways of building a report
+This replaces the preference which the second half of decision 7 gave to what the cluster holds.
+Decision 7 was written before the rule. It also removes the one place where the two ways of building a report
 could have said different things: a report from a listener job and a report read for
 `aggregateChanged` now name the same id. `Camunda8BusinessIds` had nothing left to answer and is
 gone from all three per-line source sets.
 
-What happens where a business key taken over from somewhere else does NOT say what the aggregate's
-`@Id` attribute says belongs to the platform, not to this extension.
+A business key can also come from somewhere else and NOT say what the aggregate's `@Id` attribute
+says. What happens then is a question for the platform, not for this extension.
 
-A details provider which fails now stops the workflow. It runs inside the listener job, the
-listeners of this extension carry no retries (decision 5), so the cluster raises an incident and the
-transition waits. That is meant. Only reading happens on this way, but what is read has to be right,
+A details provider which fails now stops the workflow. It runs inside the listener job, and the
+listeners of this extension carry no retries (decision 5). So the cluster raises an incident and
+the transition waits. That is meant. Only reading happens on this way, but what is read has to be right,
 and a defect which repetitions hide is a defect nobody fixes. The way to the cockpit server is the
 other half and stays quiet: it runs over the outbox, and a cockpit server which is down for ten
 minutes costs nobody an incident.
 
-What a user of this adapter sees differently afterwards is two things. A report carries what the
-case said when the event happened rather than what it said when the report went out, which is the
-whole point. And a report which cannot be built never goes out at all, where it used to go out
+A user of this adapter sees two things change. A report carries what the case said when the event
+happened, not what it said when the report went out. That is the whole point. And a report which cannot be built never goes out at all, where it used to go out
 late.
 
 ## 9. An old line holds up a release, not a pull request - which lines a release waits for narrowed by decision 14, which lines a pull request builds replaced by decision 15
@@ -189,7 +189,7 @@ because a pin of line 8.8 is not compiled by a build of line 8.9.
 
 Stephan's rule of 2026-09-18. The waiting is right, because nothing between two releases is
 released. Every artifact `main` produces is a SNAPSHOT, so a line which goes red in the night has
-broken nothing anybody depends on, and the morning is early enough to hear about it. That is what
+broken nothing anybody depends on. The morning is early enough to hear about it. That is what
 the matrix is for: it finds a change of the main line which does not work on another one. Running
 it on every pull request would buy hours of integration tests to learn the same thing earlier than
 anybody needs it.
@@ -200,8 +200,8 @@ The first is the release. A release runs only while every current line is green 
 tests and cluster included. The gate is that matrix itself, called from `release.yaml` before
 anything is built for publication, and not a look at what the matrix said last night. Last night's
 result is about last night's SNAPSHOTs of the VanillaBP Camunda 8 adapter and of the cockpit's
-`extensions-commons`, which every build resolves afresh, so the commit is the smaller half of what
-"the same thing" means. There is no input which switches the gate off, because a defect published
+`extensions-commons`, and every build resolves those afresh. So the commit is the smaller half of
+what "the same thing" means. There is no input which switches the gate off, because a defect published
 to Maven Central cannot be taken back.
 
 A line which is not GA yet is not asked. Line 8.10 is an alpha, it is published as a preview, and
@@ -215,8 +215,8 @@ matrix as a whole. Either way the answer comes from the workflow and not from a 
 The second is the issue. A line which breaks in the night gets a GitHub issue, so that the break is
 seen and fixed rather than scrolled past. `release-lines-issue.yaml` opens it, one per line, and
 writes the line, the commit, what the log said and a link to the run. A line which is still red the
-next night gets a comment on the issue it already has, which is found again by the label
-`release-lines` and a title naming only the line. A line which is green again gets a comment saying
+next night gets a comment on the issue it already has. The workflow finds that issue again by the
+label `release-lines` and by a title which names only the line. A line which is green again gets a comment saying
 so, and the issue stays open. A green night is not a fix: the 8.8 defect of September 2026 lost a
 workflow in about one run out of four, so three nights out of four it was green. Closing the issue
 would also mean the next red night opens a second one, and one break would end up spread over
@@ -229,17 +229,17 @@ The Camunda client this repository pins per line is the one
 `pom.xml` in a commit of its own. Nothing reads the other repository while building.
 
 By hand and not by build, because the pin is what the client API check of a pull request works on.
-That check names the enum literals and the interface methods a new client added, and what calls it
-onto a pull request is the changed property. A pin resolved during the build would move without a commit, so the one
-change nobody documents would also be the one nobody reads. Raising it by hand also keeps the two
+That check names the enum literals and the interface methods a new client added. A changed
+property is what starts it on a pull request. A pin resolved during the build would move without a
+commit, so the one change nobody documents would also be the one nobody reads. Raising it by hand also keeps the two
 repositories apart in time: the adapter can move on a day this one is mid-story.
 
 What pays for the delay is the night. The cluster the integration tests start is the adapter's
 word, taken from `camunda8-adapter-test-support`, so a pin left behind here means an older client
 answering a newer cluster. Nothing fails over it. The literals the cluster gained arrive as
 `UNKNOWN_ENUM_VALUE`, which reads like a fallback somebody wanted. So every line of the matrix ends
-by holding the image it ran against the pin it was built with, and the line is red while the two
-name different versions. The issue of decision 9 is then what asks for the pin.
+with a check: it holds the image it ran against next to the pin it was built with. The line is red
+while the two name different versions. The issue of decision 9 is then what asks for the pin.
 
 It had already happened on two lines at once when this was written. Line 8.9 pinned `8.9.18` while
 its tests ran a cluster `8.9.19`, and line 8.10 pinned `8.10.0-alpha4` against `8.10.0-alpha5`. The
@@ -250,8 +250,8 @@ now, see decision 14, and the check runs there like on every other line.
 
 Camunda 8.10 brought the `cancel` execution listener. The cluster takes it on the PROCESS element
 and nowhere else. It runs when an instance is terminated, after every child element has terminated
-and before the instance reaches its final state. That is the one moment the `end` listener beside
-it does not run, which is why a cancelled case used to stay open in the cockpit for good.
+and before the instance reaches its final state. At that moment the `end` listener beside it does
+not run. That is why a cancelled case used to stay open in the cockpit for good.
 
 So this extension writes that listener. It carries the job type of the `end` listener at the same
 process and the zero retries of decision 5. The worker which is open for that type receives the
@@ -259,8 +259,8 @@ job, and the case is reported as cancelled.
 
 Whether the line has the construct is the adapter's answer, not a second rule here.
 `Camunda8CancelListeners` of the VanillaBP Camunda 8 adapter answers it and writes the listener
-(decision 32 in the DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter; decision 28
-there says that an extension uses the adapter's own API for this). Asking it first matters. A
+(decision 32 in the DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter). Decision 28
+there says that an extension uses the adapter's own API for this. Asking it first matters. A
 cluster of 8.8 or 8.9 refuses a model which carries the listener, and that fails the deployment of
 the whole workflow module. A second copy of the rule is a rule which will be wrong in one of the two
 places.
@@ -304,8 +304,8 @@ cluster it has. The POM is what keeps that promise, because the POM is what puts
 on the application's classpath. Until 2026-09-20 it did not keep it.
 
 The published POM was a copy of the source POM with `${revision}` filled in, which is all the
-flatten mode `resolveCiFriendliesOnly` does. The client version stood in a property that the line
-profile sets, and an application activates no profile of ours, so it read the default of the file.
+flatten mode `resolveCiFriendliesOnly` does. The client version stood in a property which the line
+profile sets. An application activates no profile of ours, so it read the default of the file.
 Every line therefore published a POM asking for the client of the current GA line. Read in the
 installed artifacts of `0.9.0-8.8-SNAPSHOT`: the module POM named `io.camunda:camunda-client-java`
 with no version and kept its parent, and the parent said `${camunda8.version.line-8.9}`. An
@@ -325,8 +325,8 @@ every module carried its own copy. Maven appends the module path to the `url` an
 `scm` elements a child inherits, so each artifact named a page which does not exist, for example
 `https://github.com/vanillabp/businesscockpit-camunda8-adapter/businesscockpit-camunda8-adapter`.
 Four `child.*.inherit.append.path` attributes in the parent switch that off. Every artifact now
-names the root of the repository, the same address for all of them, and a link into a module
-directory is not what we want anyway: it breaks as soon as a module moves, and a reader finds the
+names the root of the repository, the same address for all of them. A link into a module
+directory is not what we want anyway. It breaks as soon as a module moves, and a reader finds the
 module from the root in one click. The other wrong statement was `distributionManagement`: every
 published POM named our snapshot repository. Where we deploy is nothing a consumer can use, and
 on an artifact which later sits on Maven Central it would point a reader at GitHub Packages. The
@@ -373,9 +373,9 @@ job, and the cluster takes an answer to that job only from whoever holds the new
 
 This extension asks for it. Its workers hold a listener job from the activation until the answer,
 because the report is built while the job waits, and that is the case the lease was made for. The
-case is not a rare one. A details provider which needs longer than the lock loses the job, the
-cluster hands it out again, the second run writes its entry and completes the job, and the first
-run then answers for a job somebody else holds. Without a lease the cluster has no opinion about
+case is not a rare one. Take a details provider which needs longer than the lock. Its run loses the
+job, and the cluster hands the job out again. The second run writes its entry and completes the
+job. The first run then answers for a job somebody else holds. Without a lease the cluster has no opinion about
 which of the two runs is the current one: the job goes to whoever answers first, and the other run
 is told there is no such job.
 
@@ -389,8 +389,8 @@ There is no key of the cockpit's own, and there must not be one. A lease is a pr
 type on a cluster, not of a component. Two subscribers of one type with different answers starve
 each other: once a job went to a worker with a lease, a worker without one never sees that job
 again, and no command takes the lease off it. The job types of this extension are built from the
-identifiers the cluster knows and carry no adapter id, so a second application which deployed the
-same models under the same prefix and the same tenant subscribes to exactly these types. One
+identifiers the cluster knows, and they carry no adapter id. So a second application which deployed
+the same models under the same prefix and the same tenant subscribes to exactly these types. One
 value per cluster is the only answer which cannot starve anybody. See decision 36 in the
 DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter.
 
@@ -410,21 +410,21 @@ of vanillabp/business-cockpit.
 
 Line 8.8 and line 8.9 have no lease, in their clusters and in their clients. There the first
 answer wins and the other run gets an HTTP 404, which story `1366` measured in both orders on
-`8.9.19`. The build of those lines accepts the key and ignores it, which is what lets one
-configuration serve an application that moves between lines.
+`8.9.19`. The build of those lines accepts the key and ignores it. That lets one configuration
+serve an application which moves between lines.
 
 Measured rather than read. `Camunda8CockpitIT` holds the details provider of a started case
 inside its listener job until the lock runs out, and then activates that job once more with a
 lease, the way another worker would. The held run is released afterwards, so its answer arrives
-last. On `camunda/camunda:8.10.0-alpha5` the cluster refuses it, the log says another activation
-holds the job, the job is not failed, the case reaches the cockpit as created, and the instance
-carries no incident once the newer activation completes.
+last. On `camunda/camunda:8.10.0-alpha5` the cluster refuses it, and the log says another
+activation holds the job. The job is not failed, and the case reaches the cockpit as created. Once
+the newer activation completes, the instance carries no incident.
 
 The second activation is the test's own and not a redelivery, the same way the adapter's lease
 test does it. What is under test is the ORDER of the two answers, and a redelivery cannot carry
-that order. On the preview line the test runs on, the worker holding the report is the one place
-the job does not come back, and where a repaired client does hand it back, the moment belongs to
-the cluster rather than to the test.
+that order. The test runs on the preview line. There the worker which holds the report is the one
+place the job does not come back to. Where a repaired client does hand it back, the cluster picks
+the moment, not the test.
 
 An earlier version of this entry said the cluster does not redeliver at all. That was wrong.
 Story `1346` measured it on `camunda/camunda:8.10.0-alpha5`. The cluster hands an expired job out
@@ -435,8 +435,8 @@ was held under. An open job worker gets it as readily as an activate command sen
 The one worker which did not get it back there is the worker whose handler was still holding it. It
 is offered nothing while that handler runs, with no line in its log, and it gets the job the moment
 the handler returns. That is the client of the preview line, and what a repaired client does instead
-is below. It changes nothing an application depends on either way: every other worker has the job
-about a second after the lock ran out, and a restarted application is exactly that, a new client
+is below. Either way it changes nothing an application depends on. Every other worker has the job
+about a second after the lock ran out, and a restarted application is exactly that: a new client
 with new workers. So what a shutdown left to its lock does come back.
 
 The race two runs have over one answer needs no second worker. A client which polls while its
@@ -446,8 +446,8 @@ seconds, and a details provider which held its job for 45 seconds in one run and
 the other. The same worker had the job back 957 ms and 1142 ms after the lock ran out. Both runs
 went through to the end, and both would have written their outbox entry.
 
-The answer which reached the cluster first was the one it kept, in both orders, and the run which
-came second got `Command 'COMPLETE' rejected with code 'NOT_FOUND'` as an HTTP 404. A job which was
+In both orders the cluster kept the answer which reached it first. The run which came second got
+`Command 'COMPLETE' rejected with code 'NOT_FOUND'` as an HTTP 404. A job which was
 finished long ago answers exactly the same way, so nothing tells anybody that two runs did the same
 work. On those lines the idempotency key of the outbox entry is the whole of the protection.
 
@@ -464,13 +464,13 @@ releases up to 8.9.17, and in both 8.10 alphas. Story `1366` ran the same measur
 `8.10.0-alpha5` and got no second activation within two minutes, with a lease and without one,
 because that client asked for nothing while the handler held.
 
-Story `1362` chased the older form down, and it is the client, not the cluster and not the
+Story `1362` tracked the older form down. The cause is the client, not the cluster and not the
 transport. `JobWorkerImpl` schedules the next poll after a poll which brought jobs only when no job
 is left open. Otherwise the polling comes back through `handleJobFinished()`, which runs after the
 handler returns. A handler which hangs therefore leaves nothing scheduled, and the worker goes quiet
-at its first empty poll after that. Measured at the gateway: not one activation request over two
-minutes, over REST and over gRPC, while a command sent by hand got the job at once, and the same
-worker had the job 20 seconds after its handler returned.
+at its first empty poll after that. Measured at the gateway: not one activation request in two
+minutes, over REST and over gRPC. A command sent by hand got the job at once, and the same worker
+had the job 20 seconds after its handler returned.
 
 The client would build itself one job worker execution thread, and an application here does not
 run on it. The VanillaBP Camunda 8 adapter hands the client an executor of its own, which schedules
@@ -496,8 +496,8 @@ Camunda-managed user task carry the tag `user-task-listener-jobs`, and the `line
 
 Before this the whole line was left out of the matrix, and the argument for that was the same one:
 a line which is always red stops being read. What it cost was everything else the line says.
-Nineteen of the thirty integration tests need such a task, so eleven were thrown away with them,
-and among those eleven are the deployment, the start of a case, the execution listeners, the search
+Nineteen of the thirty integration tests need such a task, so the other eleven were thrown away with
+them. Among those eleven are the deployment, the start of a case, the execution listeners, the search
 in the secondary storage, and the two things which exist on 8.10 alone: the cancel listener of the
 process of decision 11 and the job lease of decision 13. Those two are the reason the line exists,
 and they had no automatic proof anywhere. Two defects of this line were found by hand in September
@@ -515,10 +515,10 @@ repositories doing the same thing two ways would make every reader learn it twic
 in the DECISIONS.md of that repository.
 
 A red preview line holds up no pull request and no release. That line is built against an alpha
-which Camunda rewrites under us, and a defect of the alpha may cost a night, it may not cost a
-release of the GA lines. So the matrix hands out `broken-ga-lines` beside its own result: the job
-`lines-verified` needs every line and is what the night reads, and the job `ga-lines` reports which
-of the GA lines broke. The release gate reads the second, and so does the pull-request check of a
+which Camunda rewrites under us. A defect of the alpha may cost a night, but it may not cost a
+release of the GA lines. So the matrix hands out `broken-ga-lines` beside its own result. The job
+`lines-verified` needs every line and is what the night reads. The job `ga-lines` reports which of
+the GA lines broke. The release gate reads the second, and so does the pull-request check of a
 moved pin. The preview line is still released, as it always was. Its version says alpha, and
 nothing claims it was proven. This narrows decision 9, which asked the release to wait for every
 line of the matrix while the matrix held GA lines only.
@@ -546,17 +546,16 @@ matrix, and `pin-change` stays as a job which writes into the log whether a pin 
 
 Decision 9 let a pull request build the current GA line alone and left the other lines to the
 night. What paid for that was the runtime, and the way we work changed under it. The gate came
-when every story was its own pull request, and the matrix once per story would have been
-unpayable. Stories arrive as a wave in one pull request since 2026-09-22, so the matrix runs once
-per wave.
+when every story was its own pull request, and the matrix once per story would have cost too much.
+Since 2026-09-22 stories arrive as a wave in one pull request, so the matrix runs once per wave.
 
 The lines build beside each other, so a pull request waits for the slowest of them and not for
 their sum. Measured over three lines on the nights of 2026-09-22, 24 and 25: between 7m47s and
-8m16s in total, with line 8.8 the slowest at 7m24s to 7m56s, while a pull-request build on its
-own took between 5m03s and 8m16s in the same days. So the matrix costs about the time the pull
-request had anyway, plus two more runners. The 42 minutes which the comment in
-`line-matrix.yaml` names as its worst run are from before the tag which leaves the 8.10 tests
-out, and nobody should plan with that number.
+8m16s in total, with line 8.8 the slowest at 7m24s to 7m56s. A pull-request build on its own took
+between 5m03s and 8m16s in the same days. So the matrix costs about the time the pull request had
+anyway, plus two more runners. The comment in `line-matrix.yaml` names 42 minutes as its worst
+run. That number is from before the tag which leaves the 8.10 tests out, and nobody should plan
+with it.
 
 What the old rule cost was harder to see. A pull request was green on one line and the night
 found the same code red on another, and by then whoever wrote it had moved on. Waiting for the
@@ -568,9 +567,9 @@ looked at while the other lines are still running.
 
 The pin guard of a line now speaks on every pull request, and it stays red rather than warning.
 Stephan decided that on 2026-10-01, when story 1392 raised the pin of line 8.8 and asked the
-question. The cost is visible: the client pin of a line is raised by hand, the adapter moves its
-own pins by Renovate, so a pin which fell behind turns a pull request red which has nothing to do
-with it, until somebody raises it. A warning would buy that pull request its green run back and
+question. The cost is visible. The client pin of a line is raised by hand, while the adapter moves
+its own pins by Renovate. So a pin which fell behind turns a pull request red which has nothing to
+do with it, until somebody raises it. A warning would buy that pull request its green run back and
 give up what decision 10 is for. An older client against a newer cluster breaks nothing and
 proves less, and a warning is exactly how that stayed unseen on two lines at once.
 
@@ -583,10 +582,10 @@ always, and a broken GA line would have been built, counted and still invisible.
 A red preview line does not colour the run of a pull request either. The job of that line in
 the matrix carries `continue-on-error`, so the result it hands out is a success and the job of
 the caller stays green with it. The preview line is the only line which gets that. The night
-still sees a break: every line writes down what it did, the job which sorts them reports all
-broken lines in its `broken-all` output, and that is what the night reads instead of the job
-result. `continue-on-error` changes the result a job hands out, it does not change
-`job.status` inside the job, so the file that line wrote still says `failure`. For the same
+still sees a break. Every line writes down what it did, and the job which sorts them reports all
+broken lines in its `broken-all` output. That output is what the night reads instead of the job
+result. `continue-on-error` changes the result a job hands out. It does not change `job.status`
+inside the job, so the file that line wrote still says `failure`. For the same
 reason `release-lines-issue.yaml` reads the steps of a line job as well as its conclusion,
 because the API reports that forced success too. Stephan decided this on 2026-10-01, after
 pull request 78 was red while its required check was green and could not be merged.
@@ -608,37 +607,37 @@ and while no line is a preview line they say the same thing as `broken`. Taking 
 mean writing them again for 8.11, and the reason they exist is written down where they are.
 
 One of the two tag exclusions of line 8.10 went with the pre-releases. The REST gateway of those
-dropped a whole activate-jobs batch as soon as it met a task listener job whose event carries no
-user task action, so a Camunda-managed user task was never finished being created
+pre-releases dropped a whole activate-jobs batch as soon as it met a task listener job whose event
+carries no user task action. So the creation of a Camunda-managed user task never finished
 (`camunda/camunda#58193`). Nineteen of the thirty integration tests were left out over it,
 eighteen by the tag `user-task-listener-jobs` and one by `jobs-handed-out-again`. Camunda closed
 that defect for `8.10.0`.
 
 The exclusion was not simply deleted on the strength of a closed issue. Decision 14 asked for a
-measurement at every pin move, and this is what the measurement said: the line was run once with
-no exclusion at all, every test which needs a user task passed, and one test failed. So that tag
-went, the line runs twenty-nine of its thirty tests now, and the other tag stayed. The test it
-holds needs the cluster to offer a listener
-job whose lock ran out to a second activation, and `camunda/camunda:8.10.0` does not. Three runs
+measurement at every pin move, and this is what the measurement said. The line was run once with
+no exclusion at all. Every test which needs a user task passed, and one test failed. So that tag
+went, the line now runs twenty-nine of its thirty tests, and the other tag stayed. The test behind
+that tag needs the cluster to offer a listener job whose lock ran out to a second activation, and
+`camunda/camunda:8.10.0` does not. Three runs
 on 2026-10-01 failed on it, two of them after waiting about 122 seconds and one after 41 seconds
-in a socket timeout of the client. The cluster log held nothing at all about the job, which is
-what tells this apart from the old defect: that one wrote an uncaught NullPointerException into
-the log every thirty seconds. The cause is open and the candidates are written down in the
+in a socket timeout of the client. The cluster log held nothing at all about the job. That tells
+this apart from the old defect, which wrote an uncaught NullPointerException into the log every
+thirty seconds. The cause is open and the candidates are written down in the
 profile. Nothing else was switched off for it.
 
 That exclusion is a property now and no longer a setting inside the line profile. A profile
-cannot carry it any more, because a build without a profile is the current GA line: the exclusion
-would be missing from exactly the build `.github/workflows/build.yaml` runs before it publishes,
-which is where the red test turned up first. So the tags a line leaves out are
+cannot carry it any more, because a build without a profile is the current GA line. The exclusion
+would be missing from exactly the build which `.github/workflows/build.yaml` runs before it
+publishes, and that is where the red test turned up first. So the tags a line leaves out are
 `camunda8.line.excluded-test-tags`, surefire and failsafe both read it, and every line profile
 sets it. Measured both ways on 2026-10-01: a build without a profile is green, and line 8.9 with
 an empty value runs every test it has.
 
-What this costs is the thing decision 14 bought. A defect of the 8.10 cluster now reddens a pull
-request which has nothing to do with it, which is why the one test above is excluded rather than
-left to redden every wave. That is the price of a GA line and the same price the other two lines
-carry, and the alternative would be a line nobody has to believe. A pre-release is rewritten
-under us and a GA release is not, which is the whole difference between the two cases.
+What this costs is the thing decision 14 bought. A defect of the 8.10 cluster now turns a pull
+request red which has nothing to do with it. That is why the one test above is excluded rather
+than left to turn every wave red. That is the price of a GA line, the same price the other two
+lines pay. The alternative would be a line nobody has to believe. A pre-release is rewritten under
+us and a GA release is not, and that is the whole difference between the two cases.
 
 Stephan decided this on 2026-10-01, with the GA of 8.10 and the adapter's own move behind it.
 
@@ -652,8 +651,8 @@ extension's own handler.
 
 This closes the question decision 13 left open. There was no release carrying both halves while
 that entry was written: 8.9 had the repaired client and no lease, and the 8.10 pre-releases had
-the lease and a client which went quiet. `8.10.0` carries both, Camunda fixed the client in it
-(`SUPPORT-34723`), and the answer is that the lease settles the race the same way for one worker
+the lease and a client which went quiet. `8.10.0` carries both, because Camunda fixed the client
+in it (`SUPPORT-34723`). The answer is that the lease settles the race the same way for one worker
 as for two. The run which holds the job wins. The run whose lock expired is refused with
 `409 INVALID_STATE`, "the supplied lease token does not match", and the adapter drops that answer
 instead of failing the job.
@@ -666,9 +665,9 @@ client which had stopped asking, and it is gone.
 
 The test is built on this and needs no second participant. It holds the report of a started case
 inside its listener job, waits for the worker to be handed that same job again, and holds the
-second report too. Then it lets the first one answer: the log says another activation holds the
-job, nothing says the job was failed, the case reaches the cockpit as created, and the instance
-carries no incident once the second run answers. The report of that case is built twice, once per
+second report too. Then it lets the first one answer. The log says another activation holds the
+job, and nothing says the job was failed. The case reaches the cockpit as created, and once the
+second run answers, the instance carries no incident. The report of that case is built twice, once per
 run, which is what the hold lets happen on purpose.
 
 The job key comes out of the reports rather than out of an activation. The cockpit names a
@@ -717,7 +716,7 @@ change: that repository declares nothing, and its `version` already carries the 
 
 Two things stay as they are. The customer of the test aggregate still travels, so that the test
 application also shows a workflow which shares everything it has. And `allow-full-sync-with-bpms`
-stays on `CockpitProcess`, although the permission has no effect there any more: `FullSyncCheck`
+stays on `CockpitProcess`, although the permission has no effect there any more. `FullSyncCheck`
 returns as soon as the aggregate holds something back, so the startup runs with the line and
 without it. The other workflows of the test application need their own line, because the
 permission is not inherited, and one switch fewer in a test proves nothing. The same line is
@@ -726,12 +725,10 @@ the same reason.
 
 One question is left for Stephan. Following the rule all the way would keep the customer out of
 the BPMS as well, and then the annotation belongs on the class. The test application would stop
-showing the full sync case, and six workflows carry the permission for it, which looks like
-intent rather than an oversight.
+showing the full sync case. Six workflows carry the permission for it, and that looks like intent
+rather than an oversight.
 
 Decided while story 1391 was built, on 2026-10-03.
-
-Where this is referred to, each in its own words rather than by number:
 
 The reasoning is written in its own words where a reader meets it, so no source, test or document
 cites a decision number for it:
@@ -747,7 +744,7 @@ Decided on 2026-10-03, while story 1326 was built.
 
 `BusinessCockpitService.aggregateChanged` names a case by its aggregate id. The bridge needs the key
 of the workflow for the report. Until now it searched the cluster's searchable storage by the
-aggregate id variable. That storage is written by an exporter which runs behind the engine. So a
+aggregate id variable. An exporter which runs behind the engine writes that storage. So a
 change reported right after a start, from the first service task of a workflow for example, found
 nothing, and the report was dropped with a warning.
 
@@ -771,11 +768,11 @@ cockpit.
 
 So the key does not yet make a report possible while the exporter is behind. That needs the version
 from somewhere else than the storage. The platform's note of the start would be the place, because
-Camunda 8 answers the create command with the version, but the note carries no version today.
+Camunda 8 answers the create command with the version. But the note carries no version today.
 
-An empty answer covers every case where VanillaBP does not know. Nobody started the workflow, it
-started before VanillaBP wrote such notes, the note is older than
-`vanillabp.delivery.workflow-start-retention`, the process does not belong to this application. These
+An empty answer covers every case where VanillaBP does not know. Nobody started the workflow, or it
+started before VanillaBP wrote such notes, or the note is older than
+`vanillabp.delivery.workflow-start-retention`, or the process does not belong to this application. These
 cannot be told apart, so the bridge reads nothing into an empty answer. It searches the storage the way
 it always did and says both readings in the log when that finds nothing. A key which is not a number is
 no key of this cluster, and it is treated like an empty answer.
@@ -808,8 +805,8 @@ first call would be an assignment and not a no-op. And a `404` does not mean tha
 existed, because the engine forgets an instance which ended.
 
 Decision 8 says that the bridge searches the storage for the tasks and the workflows of a case
-whenever the application asks. For a workflow whose key VanillaBP wrote down that no longer holds:
-the workflow is read by that key and nothing is searched. The rest of decision 8 stands. An empty
+whenever the application asks. That no longer holds for a workflow whose key VanillaBP wrote down.
+Such a workflow is read by that key, and nothing is searched. The rest of decision 8 stands. An empty
 result still comes with a line in the log, which names the one reading left where VanillaBP knows the
 key and both readings everywhere else. So decision 8 is narrowed by this entry and not replaced, and its
 headline says so.
@@ -886,8 +883,9 @@ decision 20 says. Everything else answers nothing, and the bridge reads nothing.
 writes an outbox entry without a report, and its dispatch calls `workflowsOfAggregate`, which reads
 the storage by key or searches it, the way decisions 19 and 20 describe. Where the storage holds no
 record yet, the answer is empty, and the extension asks again a little later, for up to ten minutes.
-After that the extension logs an error and leaves the entry blocked in the outbox. So the change of decision 19 is no longer dropped while the exporter is behind. It is reported once
-the storage holds the workflow.
+After that the extension logs an error and leaves the entry blocked in the outbox. So the change of
+decision 19 is no longer dropped while the exporter is behind. It is reported once the storage holds
+the workflow.
 
 The bridge throws no `PhaseTwoRetryLater` itself. An empty answer at the dispatch is what tells the
 extension to try again, and the window is the extension's. A record the storage does not hold is
@@ -1181,8 +1179,8 @@ task sits in. This is the platform's rule as well, decision 123 of `adapter-plat
 
 Why the four values must come from one process:
 
-- A class serves every process it declares. So a details provider is found by the case's process
-  as well, wherever one workflow service declares both processes, and the wrong id does not show
+- A class serves every process it declares. So wherever one workflow service declares both
+  processes, a details provider is found by the case's process as well. The wrong id does not show
   while a provider is bound. It shows wherever VanillaBP keeps something per process: the version
   range of a provider per (class, process), the catalogue of version tags, the delivery record, the
   election's hint and the name of an element. The version of the called model paired with the id
@@ -1200,8 +1198,8 @@ process it reaches. The Camunda 8 adapter draws the same line for such a call. A
 workflow aggregate of its own is left out: it is a case of its own, although the cluster copies the
 caller's variables into it, the aggregate's id included.
 
-The processes go into the search, and the search does not run without them to sort the answer out
-afterwards. Without a process condition the search reads every task of the tenant whose process
+The processes go into the search itself. The search does not run without them and sort the answer
+out afterwards. Without a process condition the search reads every task of the tenant whose process
 carries a variable of that name and value. Under `name-clash-avoidance: none` other workflow
 modules and other applications share that tenant, and such tasks would push the wanted ones off the
 page. 8.10 asks once, with `bpmnProcessId` set to "one of these ids". The 8.8 and 8.9 clients only
@@ -1258,13 +1256,13 @@ instance whose process shares its aggregate with no other process this extension
 module, which is a called process with an aggregate of its own. Neither costs a request. Every other
 called instance needs the chain: one call-hierarchy request, and one request per process definition
 in it. Both answers never change, so they are remembered. The chain comes from the searchable
-storage, which runs behind the engine, so the lookup waits for it as long as the adapter's
-`workflow-visibility-timeout` says, like the 8.8 lookup of the root (decision 3). If that window runs
+storage, which runs behind the engine. So the lookup waits for it as long as the adapter's
+`workflow-visibility-timeout` says, like the 8.8 lookup of the root (decision 7). If that window runs
 out, the root of the hierarchy is taken, which is what every called process got before, and the
 reason is logged.
 
 The code is `Camunda8BusinessCases`, once for all lines. The 8.9 and 8.10 lines needed no request
-for a called process before; they pay this one now where a process shares its aggregate with
+for a called process before. They pay this one now where a process shares its aggregate with
 another one.
 
 `Camunda8BusinessCasesTest` shows the walk, `Camunda8CockpitJobHandlerTest` the reports of both

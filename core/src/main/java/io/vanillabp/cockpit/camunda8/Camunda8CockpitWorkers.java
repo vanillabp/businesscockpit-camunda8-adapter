@@ -25,14 +25,14 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * <p>
  * A worker asks the cluster for the variables a report needs and for nothing else. Most of what
  * a report needs travels on the job itself, so a job which carries fewer variables is a user task
- * which appears sooner. The variables are the one the workflow aggregate's id is carried in and,
- * for a worker serving user tasks, two more kinds. The first kind is what the details providers
- * of those tasks read with <code>&#64;TaskParam</code>. The application's Business Cockpit
- * extension says which names those are. It asks VanillaBP, per workflow module and BPMN process,
- * which providers are bound for the task. The second kind is the multi-instance context of the
- * task, in the variables the adapter put into the deployed model for its own workers. So a listener job carries what a
- * provider of this process reads, and not every variable of the workflow. See decision 26 and
- * decision 27 in the repository's DECISIONS.md.
+ * which appears sooner. One variable carries the id of the workflow aggregate. A worker which
+ * serves user tasks asks for two more kinds. The first kind is what the details providers of those
+ * tasks read with <code>&#64;TaskParam</code>. The application's Business Cockpit extension says
+ * which names those are. It asks VanillaBP, per workflow module and BPMN process, which providers
+ * are bound for the task. The second kind is the multi-instance context of the task. It is in the
+ * variables which the adapter put into the deployed model for its own workers. So a listener job
+ * carries what a provider of this process reads, and not every variable of the workflow. See
+ * decision 26 and decision 27 in the repository's DECISIONS.md.
  * <p>
  * The pipeline starts this extension once per configured Camunda 8 adapter a module was
  * deployed to, and its processing context says which adapter that is. So a start opens the
@@ -44,10 +44,10 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * adapter's, under the adapter id they belong to and under the listener type as their job type.
  * <p>
  * They also lease their activations where the adapter leases its own. A listener job is held
- * from the activation until the answer, so a report which outlives the lock is exactly the case
- * the lease was built for: the cluster hands the job out again, the second run answers first,
- * and the late answer of the first run is refused rather than overwriting it. Whether a lease is
- * asked for is the adapter's answer, not this extension's, and it is given per adapter id in
+ * from the activation until the answer, so a report which outlives the lock is exactly the case the
+ * lease was built for. The cluster hands the job out again, and the second run answers first. The
+ * late answer of the first run is then refused and does not overwrite it. The adapter decides
+ * whether a lease is asked for, not this extension. It is set per adapter id in
  * <code>vanillabp.adapters.&lt;id&gt;.job-lease</code>. See decision 13 in the repository's
  * DECISIONS.md.
  * <p>
@@ -202,8 +202,8 @@ public class Camunda8CockpitWorkers {
             builder, cluster.scope().adapterId(), listenerType, cluster.configuration(), metrics);
     // a listener job is held from the activation until the answer, which is the case a lease
     // is for. The adapter decides whether one is asked for: it knows whether its release line
-    // has a lease and what the application configured, and two components leasing the same job
-    // type with different opinions starve each other
+    // has a lease and what the application configured. Two components which lease the same job type
+    // with different opinions starve each other
     builder = Camunda8Workers.leaseTheActivations(builder, cluster.configuration());
     final var tenantId = cluster.scope().tenantIdOf(workflowModuleId);
     if (tenantId != null) {

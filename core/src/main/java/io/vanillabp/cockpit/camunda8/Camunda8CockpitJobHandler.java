@@ -33,18 +33,17 @@ import io.vanillabp.integration.extension.spi.handler.HandlerMultiInstance;
  * The handler turns the job into the identifiers the cockpit addresses a task or a workflow by,
  * reads off the job what the cluster says about it, and writes one outbox entry carrying the
  * finished report. The cockpit builds that report here, which means the application's details
- * provider runs here too. What does NOT happen here is talking to the cockpit server: a listener
- * job holds the transition it belongs to open for as long as this method runs, and the entry is
- * sent afterwards by the outbox.
+ * provider runs here too. This method does NOT talk to the cockpit server. A listener job holds its
+ * transition open for as long as this method runs, so the outbox sends the entry afterwards.
  * <p>
- * Everything a report needs about the task is on the job. The cluster hands out the assignee,
- * the candidates and the two dates with the job, the version of the deployed process comes with
- * it, and the two BPMN names were read out of the model while this extension wired it
+ * Everything a report needs about the task is on the job. The cluster hands out the assignee, the
+ * candidates and the two dates with the job, and the version of the deployed process comes with it
+ * too. The two BPMN names were read out of the model while this extension wired it
  * ({@link Camunda8CockpitDeployments.WiredListener}). The cluster's searchable storage is not
- * asked, and it could not answer: it is written by an exporter which runs behind the engine, so
- * the event this job reports has not reached it while the job is being served. What the storage
- * does answer is a question about now, which is what
- * <code>BusinessCockpitService.getUserTask</code> asks. See {@link Camunda8CockpitBridge}.
+ * asked, and it could not answer. An exporter writes that storage and runs behind the engine, so
+ * the event this job reports has not reached it while the job is being served. The storage answers
+ * a question about now, and that is what <code>BusinessCockpitService.getUserTask</code> asks. See
+ * {@link Camunda8CockpitBridge}.
  * <p>
  * The values travel to the cockpit's BPMS half through {@link Camunda8EventBeingReported},
  * because the cockpit asks that half for them while it builds the report, and it asks by
@@ -62,10 +61,10 @@ import io.vanillabp.integration.extension.spi.handler.HandlerMultiInstance;
  * the next instance of the application gets the listener once that lock expires.
  * <p>
  * Every other failure fails the job with no retry left, which raises an incident at once rather
- * than repeating quietly. That is deliberate, and it is what Version 1 did. Since the report is
- * built here, a details provider which throws is such a failure: only reading happens on this
- * way, but what is read has to be right, and a defect which repetitions hide is a defect nobody
- * fixes. See decision 5 and decision 8 in the repository's DECISIONS.md.
+ * than repeating quietly. That is deliberate, and it is what Version 1 did. The report is built
+ * here, so a details provider which throws is such a failure. This way only reads, but what it
+ * reads has to be right. And a defect which repetitions hide is a defect nobody fixes. See decision
+ * 5 and decision 8 in the repository's DECISIONS.md.
  */
 public class Camunda8CockpitJobHandler implements JobHandler {
 
@@ -308,7 +307,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
    * <p>
    * The job carries the fields a person sees on a task: who it is assigned to, who may claim it
    * and the two dates. The two BPMN names are not on it and were read out of the model while
-   * this extension wired the process. Nothing is asked of the cluster, which is the point: the
+   * this extension wired the process. Nothing is asked of the cluster, and that is the point. The
    * event this job reports is not in the cluster's searchable storage yet.
    * <p>
    * The process variables are the ones the job carries. The worker asked the cluster for what
@@ -373,11 +372,11 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   /**
    * The rounds of the multi-instance elements enclosing a user task, outermost first.
    * <p>
-   * The adapter answers this, out of the elements it collected while it wired the model and the
+   * The adapter answers this. It uses the elements it collected while it wired the model, and the
    * values of the task. What is left here is a copy from one record into another. The adapter
    * answers what a BPMS reports about a task, and the platform's handler layer takes what a call
-   * into application code runs in. They are separate contracts, although they carry the same
-   * three values.
+   * into application code runs in. They are separate contracts, although they carry the same three
+   * values.
    * <p>
    * A listener job and a task read from the searchable storage both answer it the same way, so
    * {@link Camunda8CockpitBridge} calls it as well.
@@ -414,7 +413,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
    * <p>
    * The business id is the workflow aggregate's id, which the reference already carries. To
    * VanillaBP a business key is a business key only where it says what the aggregate's
-   * <code>&#64;Id</code> attribute says, so the cockpit names that id and never what the cluster
+   * <code>&#64;Id</code> attribute says. So the cockpit names that id and never what the cluster
    * holds beside it. The answer is therefore the same on every release line and on every way a
    * report is built. See decision 8 in the repository's DECISIONS.md.
    * <p>
@@ -479,9 +478,9 @@ public class Camunda8CockpitJobHandler implements JobHandler {
    * What happened to the workflow.
    * <p>
    * A cancelled workflow says so with the job of the <code>cancel</code> listener at its
-   * process, which 8.10 brought and which the adapter recognises for us. It is asked first,
-   * because the case has to be closed rather than refreshed, and because the literal its event
-   * type carries has no name on the older clients.
+   * process. That listener came with 8.10, and the adapter recognises it for us. It is asked first,
+   * because the case has to be closed rather than refreshed. Also, the literal its event type
+   * carries has no name on the older clients.
    * <p>
    * The other two listeners of this extension are <code>end</code> listeners, and what they sit
    * on tells them apart: the process itself ends the workflow, a start event begins it.
@@ -507,11 +506,11 @@ public class Camunda8CockpitJobHandler implements JobHandler {
   }
 
   /**
-   * The version of the deployed BPMN process this job comes from, which is what picks between
-   * details providers serving different versions of one model.
+   * The version of the deployed BPMN process this job comes from. It picks between the details
+   * providers which serve different versions of one model.
    * <p>
    * A job always names it, and it is the version of the job's OWN process. For a task of a
-   * called process that is the called model, which is also the model the reference names - the
+   * called process that is the called model, which is also the model the reference names. The
    * workflow the report is filed under is the case above it (see decision 3 in the repository's
    * DECISIONS.md), but the process id and the version belong together.
    *

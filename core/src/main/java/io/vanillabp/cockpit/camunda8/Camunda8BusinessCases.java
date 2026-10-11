@@ -35,12 +35,12 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * called process which started a moment ago can be served before the storage holds it. So the
  * lookup waits as long as the Camunda 8 adapter waits for the same storage
  * (<code>workflow-visibility-timeout</code>), like the 8.8 variant of
- * {@link Camunda8CallHierarchy}. If that window runs out, the root of the hierarchy is taken,
- * which is what every called process got before decision 30, and the reason is logged.
+ * {@link Camunda8CallHierarchy}. If that window runs out, the lookup takes the root of the
+ * hierarchy and logs the reason. Before decision 30, every called process got that root.
  * <p>
- * What the cluster answered is remembered per process instance and per process definition. Both
- * cannot change: the hierarchy of an instance is settled when it is created, and a deployed
- * definition keeps its id.
+ * What the cluster answered is remembered per process instance and per process definition. Neither
+ * can change. The hierarchy of an instance is settled when it is created, and a deployed definition
+ * keeps its id.
  */
 final class Camunda8BusinessCases {
 

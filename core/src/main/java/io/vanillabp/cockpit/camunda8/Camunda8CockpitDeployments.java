@@ -48,16 +48,15 @@ public class Camunda8CockpitDeployments {
    * @param elementId The BPMN element the listener sits on, which is a user task, a start event
    *          or the process itself
    * @param elementName The BPMN name of that element, which a report of a user task carries as
-   *          the title the cockpit falls back to. A job says which element it comes from and
-   *          never what that element is called, so the name is taken out of the model while it
-   *          is being wired and kept here
+   *          the title the cockpit falls back to. A job says which element it comes from but never
+   *          what that element is called. So the name is taken out of the model while it is being
+   *          wired, and kept here
    * @param bpmnProcessName The BPMN name of the process, the other fallback title. It is taken
    *          out of the model for the same reason
    * @param aggregateIdName The process variable the workflow aggregate's id is carried in
    * @param taskDefinition The task definition of the user task the listener sits on, as the
-   *          application wrote it, which is what a <code>&#64;UserTaskDetailsProvider</code>
-   *          method is matched by. <code>null</code> for a listener at the process or at a start
-   *          event
+   *          application wrote it. A <code>&#64;UserTaskDetailsProvider</code> method is matched by
+   *          it. <code>null</code> for a listener at the process or at a start event
    */
   public record WiredListener(
                               String listenerType,

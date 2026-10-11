@@ -38,18 +38,18 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * this one means the searchable storage has not caught up yet.</li>
  * </ul>
  * <p>
- * Only the third answer is waited for. It is served by the searchable storage, which lags behind
- * the transition whose listener is running, so a job of a process which started a moment ago can
- * be asked about before the cluster holds it. How long the lookup waits is the adapter's word.
+ * Only the third answer is waited for. The searchable storage serves it, and that storage lags
+ * behind the transition whose listener is running. So a job of a process which started a moment ago
+ * can be asked about before the cluster holds it. The adapter says how long the lookup waits.
  * <code>vanillabp.adapters.&lt;id&gt;.workflow-visibility-timeout</code> is what the Camunda 8
- * adapter waits out for the same storage when it knows a workflow is there, ten seconds by
- * default, and zero switches the waiting off here as it does there. A cluster whose exporter is
- * slow is slow for both of them, so it is one number and not two.
+ * adapter waits out for the same storage when it knows a workflow is there, ten seconds by default,
+ * and zero switches the waiting off here as it does there. A cluster whose exporter is slow is slow
+ * for both of them, so it is one number and not two.
  * <p>
  * Waiting inside a listener job holds that job's transition open, and this is the one thing the
  * extension still waits for there. That is why the wait happens only when the cluster has nothing
- * to say yet, and why a deployment which cannot afford it sets the adapter's key to zero. Nothing
- * else a report needs is read from that storage: it is built from the job. See
+ * to say yet. It is also why a deployment which cannot afford it sets the adapter's key to zero.
+ * Nothing else a report needs is read from that storage: it is built from the job. See
  * {@link Camunda8CockpitJobHandler}.
  * <p>
  * That is why the empty answer may not be read as a gap. Every ordinary workflow would pay the
@@ -65,8 +65,8 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * Every answer costs a request, so what the cluster said is remembered per process instance. The
  * relation cannot change, because an instance's root is settled when it is created. And one of
  * these belongs to one cluster rather than to one worker, so the workers of a workflow share what
- * any of them asked. A workflow is served by several of them - one for its start event and one
- * per task definition - and they all ask about the same instance.
+ * any of them asked. Several of them serve one workflow, one for its start event and one per task
+ * definition, and they all ask about the same instance.
  */
 final class Camunda8CallHierarchy {
 
@@ -224,7 +224,7 @@ final class Camunda8CallHierarchy {
     }
     // the cluster answered, so this is settled. An answer with no entries says the instance
     // stands in no call hierarchy, which makes it its own root. Waiting for entries to turn up
-    // would wait for something the cluster already said there is none of
+    // would wait for something the cluster already said does not exist
     if ((hierarchy == null) || hierarchy.isEmpty()) {
       return processInstanceKey;
     }
