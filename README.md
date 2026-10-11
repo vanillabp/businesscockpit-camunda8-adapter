@@ -45,8 +45,8 @@ answer for on at least one of the release lines built here. What this extension 
 such a gap is in [`DECISIONS.md`](./DECISIONS.md), and each entry names the decision it belongs to.
 
 Beside them stands the machinery. `test-coverage-report` measures each platform separately, and its
-`coverage-gate` breaks the build below 85 %. Then there are the four GitHub Actions workflows, the
-release-line machinery both of the sections below describe, the formatting rules every VanillaBP
+`coverage-gate` breaks the build below 85 %. Then there are the six GitHub Actions workflows
+described under [What CI runs](#what-ci-runs), the release-line machinery both of the sections below describe, the formatting rules every VanillaBP
 repository shares, and the license and notice files.
 
 What the integration tests of both platforms need comes from two published artifacts rather than from
@@ -115,7 +115,7 @@ means there:
 |  Channel   |   Version    | Camunda 8 adapter line | Client pin | Tested against |
 |------------|--------------|------------------------|------------|----------------|
 | bugfix     | `0.x.y-8.8`  | `-8.8`                 | `8.8.40`   | `8.8.40`       |
-| bugfix     | `0.x.y-8.9`  | `-8.9`                 | `8.9.21`   | `8.9.21`       |
+| bugfix     | `0.x.y-8.9`  | `-8.9`                 | `8.9.22`   | `8.9.22`       |
 | current GA | `0.x.y-8.10` | `-8.10`                | `8.10.0`   | `8.10.0`       |
 
 There is no preview line at the moment. 8.10 was the preview line until Camunda released
@@ -239,10 +239,11 @@ Code that cannot be shared goes into a per-line source directory added by `build
 that cannot compile against every supported client, and code that uses something only a newer
 cluster has.
 
-Two of those exist today. In both of them line 8.8 asks the cluster for what the newer clients put
-into the job: which workflow a job belongs to when its process was called by another one
-(`Camunda8CallHierarchy`), and the business key a workflow is shown under (`Camunda8BusinessIds`).
-What a report says is the same on every line. What it costs is not. How long line 8.8 waits for the
+Two of those exist today. `Camunda8CallHierarchy` says which workflow a job belongs to when its
+process was called by another one. The clients of 8.9 and 8.10 find that in the job, and line 8.8
+asks the cluster for it. `Camunda8UserTaskSearch` searches the user tasks of a case. The 8.10
+client names all processes of the case in one request, and lines 8.8 and 8.9 send one request per
+process. What a report says is the same on every line. What it costs is not. How long line 8.8 waits for the
 cluster's answer is the adapter's `vanillabp.adapters.<id>.workflow-visibility-timeout`, the same key
 the adapter waits out for the same storage. See [decision 7](./DECISIONS.md).
 
@@ -428,10 +429,13 @@ each other. `release.yaml` is started by hand. It reads the live lines out of th
 so it cannot fall behind the build, and it publishes each of them to Maven Central from the same
 commit.
 It deploys no snapshot, so it can run beside a publish.
+`client-api-changes.yaml` runs on every pull request and comments on the one which raises a client
+pin, see [Release lines](#release-lines). `release-lines-issue.yaml` runs after each nightly run of
+the matrix and opens or updates the GitHub issue of a line which broke.
 
 `publish-snapshots.yaml` also publishes the two coverage reports to GitHub Pages, which is
 what the badges at the top of this page link to. The number is the current GA line and nothing
-else: the publish names no `line-*` profile, and a build without one is line 8.9. The nightly
+else: the publish names no `line-*` profile, and a build without one is line 8.10. The nightly
 matrix builds and tests the other lines, but it writes no report.
 
 ## Noteworthy & Contributors
