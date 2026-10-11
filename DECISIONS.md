@@ -1272,3 +1272,17 @@ kinds of called process. `Camunda8CockpitIT` shows it on a cluster: one call rea
 caller's aggregate, one a process with an aggregate of its own. It also checks the three calls of
 `BusinessCockpitService` which read VanillaBP's note of the start first (`aggregateChanged` twice and
 `getUserTask`), for both kinds of case.
+
+## 31. The wiring names the user tasks of a model, so their providers are checked against its version
+
+Built by story 1476 on 2026-10-11, with decision 64 of the Business Cockpit.
+
+The Business Cockpit ends the start where a user task of the deployed model has details providers
+but none of them covers the version the cluster gave the model. VanillaBP does that check. It knows
+the providers, but not the user tasks of a model. So `Camunda8CockpitWiring#wireBpmn` names every
+user task it adds a listener to (`BusinessCockpitEventPublisher#userTaskWired`). It passes the same
+values the worker reports later: the plain task definition and the element id.
+
+A user task of a called process is reported with the called process and with the version its job
+names, not with the caller's. The version of a task provider refers to the model the task belongs
+to. `Camunda8CockpitJobHandlerTest` holds that.

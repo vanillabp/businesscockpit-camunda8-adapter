@@ -132,6 +132,8 @@ public class Camunda8CockpitProducer {
    * @param workers The workers serving them
    * @param workflowTaskWiring VanillaBP's registry, which names the workflow aggregate's id
    *          variable of a BPMN process
+   * @param publisher The extension, which is told the user tasks of every wired model. It is
+   *          resolved when the first model is wired
    * @return This extension's place in VanillaBP's deployment pipeline, taken for a workflow
    *         module which runs on Camunda 8 and for no other
    */
@@ -142,9 +144,10 @@ public class Camunda8CockpitProducer {
       final Camunda8Clients clients,
       final Camunda8CockpitDeployments deployments,
       final Camunda8CockpitWorkers workers,
-      final WorkflowTaskWiring workflowTaskWiring) {
+      final WorkflowTaskWiring workflowTaskWiring,
+      final Instance<BusinessCockpitEventPublisher> publisher) {
 
-    return new Camunda8CockpitWiring(clients, deployments, workers, workflowTaskWiring);
+    return new Camunda8CockpitWiring(clients, deployments, workers, workflowTaskWiring, publisher::get);
 
   }
 
