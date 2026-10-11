@@ -42,31 +42,29 @@ import jakarta.inject.Inject;
 import jakarta.transaction.UserTransaction;
 
 /**
- * The Camunda 8 half of the Business Cockpit inside a booted Quarkus application: the extension
- * is enabled, its listeners sit in the deployed model, its workers serve the jobs those
- * listeners produce, and what the workflow does reaches the cockpit server.
+ * The Camunda 8 half of the Business Cockpit inside a booted Quarkus application. The extension
+ * is enabled, its listeners sit in the deployed model, its workers serve the jobs which those
+ * listeners create, and what the workflow does reaches the cockpit server.
  * <p>
- * It runs the same way through as the Spring Boot test of this repository, and it exists
- * because a platform-neutral half being right says nothing about a platform's glue ever calling
- * it.
+ * It takes the same path as the Spring Boot test of this repository. It exists because a correct
+ * platform-neutral half does not prove that a platform's glue code ever calls it.
  * <p>
- * The cluster is started in a static initializer rather than by the Testcontainers extension:
- * the application's configuration needs the mapped ports, and the extension below reads its
- * runtime properties while its field is initialized, which happens before any extension
- * callback runs.
+ * The cluster is started in a static initializer, not by the Testcontainers extension. The
+ * application's configuration needs the mapped ports. The extension below reads its runtime
+ * properties when its field is initialized, and that happens before any extension callback runs.
  * <p>
- * That initializer is what makes the Docker check a condition of its own here, where the Spring
- * Boot test says {@code @Testcontainers(disabledWithoutDocker = true)} and is done: a machine
- * without Docker has to reach the skip without a container ever being asked for.
+ * Because of that initializer, the Docker check is a condition of its own here. The Spring Boot
+ * test only needs {@code @Testcontainers(disabledWithoutDocker = true)}. Here a machine without
+ * Docker has to reach the skip without ever asking for a container.
  * <p>
  * The configuration marks every user task of the processes this application claims with
  * <code>implemented-externally: true</code>. No <code>@WorkflowTask</code> method serves these
- * tasks, because people work them off in the cockpit, and a details provider does not count as
- * serving a task. Without the mark, VanillaBP ends the start. The mark stands at each task by its
- * element id, not at the workflow, because that is the narrowest place for it. The process nobody
- * here claims gets no mark at its tasks, since VanillaBP asks nothing of them. It gets the mark at
- * the workflow instead, because VanillaBP ends the start for a deployed process nobody claims. YAML
- * comments do not survive the formatter, which is why this is written here.
+ * tasks, because people work on them in the cockpit, and a details provider does not count as
+ * serving a task. Without the mark, VanillaBP stops the application's start. The mark is set per
+ * task by its element id, not per workflow, because that is the narrowest place for it. The
+ * process nobody here claims gets no mark at its tasks, since VanillaBP asks nothing of them. It
+ * gets the mark at the workflow instead, because VanillaBP stops the start for a deployed process
+ * which nobody claims. The formatter removes YAML comments, so this is written here.
  */
 @ExtendWith(SuppressOutputExtension.class)
 @SuppressOutputExtension.SuppressBackgroundOutput
@@ -79,7 +77,7 @@ public class Camunda8CockpitTest {
 
   /**
    * The BPMN process of the file which no workflow aggregate of this application claims. The test
-   * configuration marks it as implemented externally, because the start would end otherwise.
+   * configuration marks it as implemented externally, because otherwise the start would stop.
    */
   private static final String UNCLAIMED_PROCESS_ID = "IncidentDetailsProcess";
 
@@ -92,11 +90,11 @@ public class Camunda8CockpitTest {
   /**
    * Where the addresses of the cluster are published.
    * <p>
-   * This class is initialized twice, once while the application is built and again inside the
-   * class loader of the running application. So a cluster started unconditionally would be two
-   * clusters, and the copy running the tests would look at the empty one. The first copy starts
-   * it and writes its addresses down. The second finds them and touches Testcontainers not at
-   * all.
+   * This class is initialized twice: once while the application is built, and again inside the
+   * class loader of the running application. If each copy started a cluster, there would be two
+   * clusters, and the copy which runs the tests would look at the empty one. So the first copy
+   * starts the cluster and writes its addresses down. The second copy finds them and does not
+   * use Testcontainers at all.
    */
   private static final String REST_ADDRESS_PROPERTY = "businesscockpit.test.cluster.rest";
 
@@ -106,9 +104,9 @@ public class Camunda8CockpitTest {
   private static final String GRPC_ADDRESS_PROPERTY = "businesscockpit.test.cluster.grpc";
 
   /**
-   * Whether this machine can run the cluster these tests need. Read by the condition above and
-   * by the initializer below, which is why it is a method rather than a constant: a machine
-   * without Docker skips the class instead of failing while it is loaded.
+   * Whether this machine can run the cluster these tests need. The condition above and the
+   * initializer below both read it. It is a method and not a constant, so a machine without
+   * Docker skips the class instead of failing while it is loaded.
    *
    * @return Whether Docker answers
    */
@@ -131,8 +129,8 @@ public class Camunda8CockpitTest {
     }
     final var camunda = ClusterUnderTest.cluster();
     camunda.start();
-    // stopped by this copy of the class rather than by a test callback: the copy which
-    // starts the cluster is the one built with the application, and no test ever runs in it
+    // this copy of the class stops the cluster, not a test callback. The copy which starts the
+    // cluster is the one built with the application, and no test ever runs in it
     Runtime.getRuntime().addShutdownHook(new Thread(camunda::stop));
     System
         .setProperty(
@@ -151,10 +149,10 @@ public class Camunda8CockpitTest {
       .withApplicationRoot(
           jar -> jar
               // names its H2 database 'c8-cockpit-quarkus'. That is safe while this is the only
-              // test class booting the application. A second class using the file would share
-              // the database without anybody noticing, so it should bring a
-              // 'TestApplication.forTestClass' along, the way the Camunda 7 and the Process
-              // Engine API adapters of the cockpit give each test class a database of its own
+              // test class which boots the application. A second class using the file would
+              // share the database without anybody noticing. So it should bring a
+              // 'TestApplication.forTestClass', the way the Camunda 7 and the Process Engine API
+              // adapters of the cockpit give each test class a database of its own
               .addAsResource("business-cockpit.yaml", "application.yaml")
               .addAsResource("c8-cockpit/processes/cockpit-process.bpmn")
               .addAsResource("c8-cockpit/processes/calling-process.bpmn")
@@ -174,8 +172,8 @@ public class Camunda8CockpitTest {
               .addClass(OwnCaseWorkflowService.class))
       .overrideRuntimeConfigKey(
           "vanillabp.cockpit.rest.base-url", CockpitServer.baseUrl())
-      // the fallbacks are what a machine without Docker gets, and nothing ever connects to
-      // them: this field is built while the class is loaded, and the class is skipped
+      // a machine without Docker gets the fallbacks, and nothing ever connects to them. This
+      // field is built while the class is loaded, and then the class is skipped
       .overrideRuntimeConfigKey(
           "vanillabp.adapters.c8.rest-address",
           System.getProperty(REST_ADDRESS_PROPERTY, "http://localhost:8080"))
@@ -301,13 +299,12 @@ public class Camunda8CockpitTest {
   /**
    * Deploys the model the cluster already holds a second time, with one attribute changed.
    * <p>
-   * This is how a second version of one BPMN process gets into a test which has only one
-   * application: the application deploys version 1 while it starts, and it deploys nothing
-   * afterwards. Deploying the same bytes again would leave the cluster on version 1, because a
-   * cluster counts a version per set of bytes. So the process gets another name, which is a
-   * change no test reads and no listener depends on. Everything else stays what the extension
-   * wrote into version 1, so the jobs of version 2 carry the very job types this workflow module
-   * wired.
+   * This is how a test with only one application gets a second version of a BPMN process. The
+   * application deploys version 1 while it starts and nothing afterwards. Deploying the same
+   * bytes again would leave the cluster on version 1, because a cluster counts a new version only
+   * for new bytes. So the process gets another name. No test reads the name and no listener
+   * depends on it. Everything else stays as the extension wrote it into version 1, so the jobs of
+   * version 2 carry the same job types which this workflow module wired.
    *
    * @return The version the cluster assigned
    */
@@ -415,9 +412,10 @@ public class Camunda8CockpitTest {
   }
 
   /**
-   * The key of the user task one process holds for a case of the calling workflow. It is searched
-   * by the CALLING case's id, which every called process carries, because the cluster copies the
-   * caller's variables into it. That includes the process with an aggregate of its own.
+   * The key of the user task which one process holds for a case of the calling workflow. The
+   * search uses the id of the CALLING case. Every called process carries that id, because the
+   * cluster copies the caller's variables into it. This includes the process with an aggregate of
+   * its own.
    *
    * @param bpmnProcessId The process the task sits in, as the application wrote it
    * @param aggregate The calling case
@@ -498,10 +496,10 @@ public class Camunda8CockpitTest {
     assertTrue(inspectReported.body().contains(CallingWorkflowService.SERVED_BY_LATER_MODELS), inspectReported.body());
     assertEquals(workflowId, idOf(inspectReported, "workflowId"), inspectReported.body());
 
-    // the application reads the tasks of its case, the ones of the called processes included,
-    // and never the task of the case of its own. A read answers nothing while the storage has not
-    // written a task's variables yet, which on 8.8 can trail the task itself, so the two tasks of
-    // the case are awaited first
+    // the application reads the tasks of its case, including the ones of the called processes,
+    // but never the task of the case of its own. A read answers nothing while the storage has not
+    // written a task's variables yet. On 8.8 they can come later than the task itself, so the
+    // test first waits for the two tasks of the case
     awaitValue(() -> readsTheTask(started, inspectId) ? Boolean.TRUE : null,
         "the inspection, read through getUserTask");
     awaitValue(() -> readsTheTask(started, handleId) ? Boolean.TRUE : null, "the handling, read through getUserTask");
@@ -559,8 +557,8 @@ public class Camunda8CockpitTest {
 
   /**
    * Waits until the cluster's searchable storage holds the user tasks of both rounds of one
-   * calling case. A report of a change is built from that storage, and a listener job is
-   * served before the exporter wrote the task there.
+   * calling case. A report of a change is built from that storage, and a listener job may be
+   * served before the exporter has written the task there.
    *
    * @param aggregate The calling case
    */
@@ -667,7 +665,7 @@ public class Camunda8CockpitTest {
 
   /**
    * The process instance of the CALLING workflow of one case. Both instances carry the
-   * aggregate's id, because a called process inherits the variables of its caller, so the search
+   * aggregate's id, because a called process inherits the variables of its caller. So the search
    * says which of the two is meant: the one nobody called.
    * <p>
    * The process is named as well, because every workflow aggregate of this application counts its
@@ -749,9 +747,9 @@ public class Camunda8CockpitTest {
     final var scopedProcessId = "%s__%s".formatted(MODULE_ID, UNCLAIMED_PROCESS_ID);
     final var model = deployedModelOf(scopedProcessId);
 
-    // a listener of this extension carries no retries, so a job nobody serves would stop the
-    // workflow where it sits. The line 'implemented-externally' lets the start go on, but it
-    // makes nobody here serve the process
+    // a listener of this extension has no retries, so a job which nobody serves would stop the
+    // workflow where it is. The line 'implemented-externally' lets the start go on, but it does
+    // not make anybody here serve the process
     assertEquals(List.of(), executionListenerTypesOf(model, scopedProcessId));
     assertEquals(List.of(), executionListenerTypesOf(model, "IncidentStart"));
     assertFalse(
@@ -921,9 +919,9 @@ public class Camunda8CockpitTest {
         userTask.body());
     assertTrue(userTask.body().contains("\"candidateGroups\":[\"approvers\"]"), userTask.body());
 
-    // the details provider ran on the real aggregate and changed it. What this shows is the
-    // provider running and nothing about a database: the persistence of this application is a
-    // map which hands out the very object the provider was given
+    // the details provider ran on the real aggregate and changed it. This only shows that the
+    // provider ran, and nothing about a database. The persistence of this application is a map
+    // which hands out the same object the provider was given
     assertEquals(TestWorkflowService.APPROVE_NOTE, aggregates.byId(started.getId()).getNote());
 
   }
@@ -1052,16 +1050,16 @@ public class Camunda8CockpitTest {
   @DisplayName("A question about something the cluster does not hold is answered with nothing")
   public void aQuestionAboutSomethingTheClusterDoesNotHoldIsAnsweredWithNothing() throws Exception {
 
-    // the reading side of the bridge, the one which serves BusinessCockpitService: it asks the
-    // cluster's searchable storage, and a record that storage holds none of means there is
-    // nothing to show. Asking about a key the cluster never handed out provokes that answer
-    // without waiting for an exporter to fall behind
+    // the reading side of the bridge, which serves BusinessCockpitService. It asks the cluster's
+    // searchable storage. If the storage holds no such record, there is nothing to show. Asking
+    // about a key the cluster never handed out causes that answer without waiting for an
+    // exporter to fall behind
     final var started = aStartedWorkflow("Dora");
-    // the keys of a partition are counted up from one number whatever they are handed out for, so
-    // a key a million past a real one is neither a user task nor a workflow of this run
+    // a partition counts all its keys up from one number, whatever they are for. So a key a
+    // million above a real one is neither a user task nor a workflow of this run
     final var unknownKey = String.valueOf(Long.parseLong(userTaskIdOf(started)) + 1_000_000L);
-    // no process version: these references are about records the cluster does not hold, and a
-    // version is something only such a record would name
+    // no process version: these references are about records the cluster does not hold, and only
+    // such a record would name a version
     final var unknownUserTask = new UserTaskReference(
         ADAPTER_ID, MODULE_ID, TestWorkflowService.BPMN_PROCESS_ID, null, String.valueOf(started
             .getId()), unknownKey, unknownKey, TestWorkflowService.TASK_DEFINITION, TestWorkflowService.BPMN_TASK_ID);
@@ -1084,8 +1082,8 @@ public class Camunda8CockpitTest {
 
     final var started = aStartedWorkflow("Bert");
     final var userTaskId = userTaskIdOf(started);
-    // a read answers nothing while the storage has not written the task's variables yet, which
-    // on 8.8 can trail the task itself
+    // a read answers nothing while the storage has not written the task's variables yet. On 8.8
+    // they can come later than the task itself
     awaitValue(() -> {
       try {
         transaction.begin();

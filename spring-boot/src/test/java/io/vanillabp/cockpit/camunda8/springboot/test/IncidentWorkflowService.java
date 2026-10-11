@@ -14,12 +14,12 @@ import io.vanillabp.spi.service.WorkflowService;
 /**
  * A workflow whose details provider always fails.
  * <p>
- * The cockpit builds its report at the moment of the event, which on Camunda 8 is inside the
- * listener job of the task. A provider which throws therefore fails that job, and a listener of
- * this extension carries no retries, so the cluster raises an incident and the transition waits
- * for somebody to look at it. That is meant: only reading happens on this way, but what is read
- * has to be right, and a defect which repetitions hide is a defect nobody fixes. See decision 8
- * in the repository's DECISIONS.md.
+ * The cockpit builds its report at the moment of the event. On Camunda 8 that is inside the
+ * listener job of the task. So a provider which throws fails that job. A listener of this
+ * extension has no retries, so the cluster raises an incident, and the transition waits for
+ * somebody to look at it. This is intended. This path only reads, but what it reads has to be
+ * right, and nobody fixes a defect which retries hide. See decision 8 in the repository's
+ * DECISIONS.md.
  */
 @Service
 @WorkflowService(workflowAggregateClass = IncidentAggregate.class,

@@ -10,9 +10,9 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListenerEventTyp
  * <p>
  * The <code>end</code> listener reports an instance which ran to its end, and every line has
  * one. The <code>cancel</code> listener beside it reports an instance somebody terminated, and
- * 8.10 is the first line whose cluster takes such a listener. Its event type has no name on the
- * 8.8 and 8.9 clients, so the answer lives once per line and the test says what it means rather
- * than which literal a line spells it with. See decision 11 in the repository's DECISIONS.md.
+ * 8.10 is the first line whose cluster accepts such a listener. Its event type has no name on
+ * the 8.8 and 8.9 clients. So the answer exists once per line, and the test says what it means,
+ * not which literal a line spells it with. See decision 11 in the repository's DECISIONS.md.
  */
 final class ProcessListenersOfTheLine {
 

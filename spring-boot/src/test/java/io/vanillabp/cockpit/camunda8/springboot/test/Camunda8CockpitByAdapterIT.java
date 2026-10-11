@@ -37,17 +37,17 @@ import io.vanillabp.cockpit.extension.test.support.CockpitServer;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
- * The same way through as {@link Camunda8CockpitIT}, on the name-clash avoidance an application
- * gets when it configures none.
+ * The same path as {@link Camunda8CockpitIT}, under the name-clash avoidance which an
+ * application gets when it configures none.
  * <p>
  * That default is <code>by-adapter</code>, which on Camunda 8 means a TENANT named after the
- * workflow module. That is Version 1's behaviour, so it is the mode an application which upgrades
- * runs under unless it decides otherwise. What it costs the test is a cluster which asks for
+ * workflow module. That is how Version 1 behaved, so an application which upgrades runs under this
+ * mode unless it decides otherwise. For the test this means a cluster which asks for
  * credentials, because Camunda refuses to start with multi-tenancy on and its API unprotected.
  * <p>
- * What is asserted here and nowhere else: the identifiers stay PLAIN in the model and in every
- * report, and the listener jobs still reach the extension although they are handed out for a
- * tenant. A worker which had not subscribed for it would never see them.
+ * Only this test checks two things. The identifiers stay PLAIN in the model and in every report.
+ * And the listener jobs still reach the extension, although they are handed out for a tenant. A
+ * worker which had not subscribed for that tenant would never see them.
  * <p>
  * Its configuration marks the user tasks and <code>UnclaimedProcess</code> the same way, for the
  * reasons {@link Camunda8CockpitIT} gives. The application deploys that process here as well.
@@ -56,8 +56,8 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 @SuppressOutputExtension.SuppressBackgroundOutput
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(classes = TestApplication.class, properties = "spring.config.name=by-adapter")
-// closed when the class is done: a context outliving its cluster keeps its workers polling an
-// address nobody answers
+// close the context with the class. Otherwise its workers keep polling a cluster which is
+// gone
 @DirtiesContext
 public class Camunda8CockpitByAdapterIT {
 
@@ -74,8 +74,9 @@ public class Camunda8CockpitByAdapterIT {
         + CAMUNDA.getHost()
         + ":"
         + CAMUNDA.getMappedPort(8080);
-    // before the application boots: the adapter looks the tenant up before it deploys into it,
-    // and a tenant which does not exist ends that boot naming the mode which needs none
+    // before the application boots: the adapter looks the tenant up before it deploys into it.
+    // If the tenant does not exist, the boot stops with a message which names the mode that
+    // needs no tenant
     ClusterUnderTest.createTenant(restAddress, MODULE_ID);
     registry.add("vanillabp.adapters.c8.rest-address", () -> restAddress);
     registry
@@ -169,7 +170,7 @@ public class Camunda8CockpitByAdapterIT {
     final var model = Bpmn
         .readModelFromStream(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
 
-    // nothing is prefixed under this mode: the tenant is what keeps the modules apart, so the
+    // nothing is prefixed under this mode, because the tenant keeps the modules apart. So the
     // listener types of the cockpit are the ones Version 1 wrote, character for character
     final var taskListenerTypes = ((UserTask) model
         .getModelElementById(TestWorkflowService.BPMN_TASK_ID))

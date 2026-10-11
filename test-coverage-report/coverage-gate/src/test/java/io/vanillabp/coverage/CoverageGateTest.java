@@ -16,24 +16,24 @@ import io.vanillabp.integration.test.utils.PrintsWhenPassing;
 /**
  * The coverage gate: it breaks the build when a platform's aggregated coverage
  * drops below the threshold, so a drop is noticed while it happens instead of a year
- * later. The threshold is 85 in every VanillaBP repository while the rule is 90, which
- * keeps one repository's bad week from being answered by editing the number.
+ * later. The threshold is 85 in every VanillaBP repository while the rule is 90. So a
+ * repository with one bad week does not have to answer it by editing the number.
  * <p>
  * JaCoCo's own <code>check</code> goal cannot do this: it judges ONE module's classes
  * against ONE execution-data file, while both numbers of this repository come from
  * aggregated reports spanning many modules. So the gate reads exactly the report which
  * is published, and report and gate can never disagree.
  * <p>
- * The completeness test comes first for a reason: a threshold
- * checked against an incomplete aggregate fails builds for coverage which exists and
- * is only not counted, and nobody can fix that by writing a test.
+ * The completeness test comes first for a reason. A threshold checked against an
+ * incomplete aggregate fails builds for coverage which exists but is not counted, and
+ * nobody can fix that by writing a test.
  * <p>
  * This is the one test class in VanillaBP which prints while it passes, and therefore the
  * one without {@code SuppressOutputExtension}. Everywhere else a passing test says nothing,
- * because output nobody reads hides the output somebody has to. Here the passing run IS the
- * measurement: it is the only place the build states where each platform stands against the
- * rule, and a repository sitting between the threshold and the rule has a gap which would
- * otherwise be visible only to whoever opens the report.
+ * because output nobody reads hides the output somebody has to read. Here the passing run IS
+ * the measurement. It is the only place where the build says how each platform stands against
+ * the rule. Without it, a repository between the threshold and the rule would have a gap which
+ * only somebody who opens the report could see.
  */
 @PrintsWhenPassing(
   "the measurement is the result - what each platform reached belongs in the log of every "
@@ -44,8 +44,8 @@ public class CoverageGateTest {
   private static final Path ROOT = CoverageGate.repositoryRoot("coverage.repository.root");
 
   /**
-   * What a report is expected to show, as opposed to the threshold, which is where the
-   * build stops. Reported on every run, never asserted: a build breaking at the rule
+   * What a report should show. The threshold is different: it is where the build stops.
+   * This value is reported on every run and never asserted. A build which broke at the rule
    * would leave a repository nothing to do but edit the rule.
    */
   private static final double RULE = Double.parseDouble(System.getProperty("coverage.rule"));
@@ -96,10 +96,10 @@ public class CoverageGateTest {
   }
 
   /**
-   * A run which stops before <code>verify</code> writes no report, and the gate says so
-   * and skips instead of failing over a file this run could not have written. It stays
-   * loud about it: the line is printed and the test is reported as skipped, so nobody
-   * reads a green run as a checked one.
+   * A run which stops before <code>verify</code> writes no report. The gate says so and
+   * skips, instead of failing over a file this run could not have written. It does not
+   * stay quiet: the line is printed and the test is reported as skipped, so nobody reads a
+   * green run as a checked one.
    * <p>
    * The threshold is read per platform, because a report exists per platform. Both
    * properties hold the same 85 in every VanillaBP repository, and that number is the

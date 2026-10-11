@@ -54,13 +54,12 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * What one listener job of a Camunda 8 cluster means to the cockpit, and what happens when it
  * means nothing.
  * <p>
- * The cluster is mocked here rather than started: what is under test is the translation from a
- * job into the identifiers a report is made of, and a cluster would only make the same
- * assertions slower. That the listeners really produce these jobs is what the integration tests
- * are for.
+ * The cluster is mocked here, not started. The test is about turning a job into the identifiers
+ * of a report, and a cluster would only make the same checks slower. The integration tests show
+ * that the listeners really create these jobs.
  * <p>
- * The drain is real, because the answer to the cluster goes through it: a handler registers its
- * job there and a shutdown is what decides whether a failure is reported at all.
+ * The drain is real, because the answer to the cluster goes through it. A handler registers its
+ * job there, and a shutdown decides whether a failure is reported at all.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8CockpitJobHandlerTest {
@@ -70,8 +69,8 @@ public class Camunda8CockpitJobHandlerTest {
   private static final String PROCESS_ID = "CockpitProcess";
 
   /**
-   * A process which calls the one above. Whether the two share the workflow aggregate is the
-   * core's answer, which each test of a called process gives.
+   * A process which calls the one above. The core answers whether the two share the workflow
+   * aggregate, and each test of a called process sets that answer.
    */
   private static final String CALLING_PROCESS_ID = "CallingProcess";
 
@@ -82,8 +81,8 @@ public class Camunda8CockpitJobHandlerTest {
   private static final String FORM_REFERENCE = "approve";
 
   /**
-   * The BPMN names the model carries. A job never says them, so they are read out of the model
-   * while the process is wired and travel in the wired listener.
+   * The BPMN names in the model. A job never carries them, so they are read from the model while
+   * the process is wired, and the wired listener keeps them.
    */
   private static final String PROCESS_NAME = "The order process";
 
@@ -109,8 +108,8 @@ public class Camunda8CockpitJobHandlerTest {
 
   /**
    * An election which knows no workflow, so the bridge reads only what the job and the cluster
-   * say. That is what an application looks like whose workflows started before VanillaBP wrote
-   * down their keys.
+   * say. An application looks like this if its workflows started before VanillaBP wrote down
+   * their keys.
    */
   private static final WorkflowElection NOTHING_WRITTEN_DOWN = (
       workflowModuleId,
@@ -201,8 +200,8 @@ public class Camunda8CockpitJobHandlerTest {
     JobsInAHierarchy.isItsOwnRoot(clientFactories, ADAPTER_ID, job, 12345L);
     when(job.getVariablesAsMap()).thenReturn(Map.of(AGGREGATE_ID_NAME, AGGREGATE_ID));
     // how long the lock of this job still holds. The answer to the cluster is repeated while
-    // the cluster rejects it for being busy, and what bounds that repetition is the lock: an
-    // unstubbed deadline is zero, which reads as a job somebody else may already have
+    // the cluster rejects it for being busy, and the lock limits that repetition. An unstubbed
+    // deadline is zero, and that looks like a job somebody else may already have
     when(job.getDeadline()).thenReturn(Long.valueOf(Instant.now().plusSeconds(60).toEpochMilli()));
     return job;
 
@@ -216,8 +215,7 @@ public class Camunda8CockpitJobHandlerTest {
         "Approve");
     final var userTask = mock(UserTaskProperties.class);
     when(userTask.getUserTaskKey()).thenReturn(999L);
-    // what the cluster hands out with a task listener's job, which is what a report is built
-    // from
+    // what the cluster hands out with the job of a task listener. A report is built from this
     when(userTask.getAssignee()).thenReturn(ASSIGNEE);
     when(userTask.getCandidateUsers()).thenReturn(List.of("carla"));
     when(userTask.getCandidateGroups()).thenReturn(List.of("approvers"));
@@ -229,9 +227,9 @@ public class Camunda8CockpitJobHandlerTest {
   }
 
   /**
-   * A handler whose reports are answered by a real bridge of the same cluster, which is how the
-   * cockpit puts a report together: it is told about the event and asks the BPMS half what the
-   * event says, on the thread the job runs on.
+   * A handler whose reports are answered by a real bridge of the same cluster. This is how the
+   * cockpit builds a report: it is told about the event and asks the BPMS half what the event
+   * says, on the thread the job runs on.
    *
    * @return What the publisher recorded, bridge answers included
    */
@@ -330,10 +328,10 @@ public class Camunda8CockpitJobHandlerTest {
     handler.handle(client, aUserTaskJob(ListenerEventType.CANCELING));
     handler.handle(client, aUserTaskJob(ListenerEventType.COMPLETING));
     handler.handle(client, aUserTaskJob(ListenerEventType.ASSIGNING));
-    // Camunda adds listener events inside a release line without calling it breaking, and
-    // a client older than the cluster answers UNKNOWN_ENUM_VALUE for one it has no literal
-    // for. That is a change of the task and nothing more specific, like every other event
-    // this extension did not ask for
+    // Camunda adds listener events inside a release line and does not count that as breaking.
+    // A client older than the cluster answers UNKNOWN_ENUM_VALUE for an event it has no literal
+    // for. Like every other event this extension did not ask for, it is a change of the task and
+    // nothing more specific
     handler.handle(client, aUserTaskJob(ListenerEventType.UNKNOWN_ENUM_VALUE));
 
     assertEquals(
@@ -380,8 +378,8 @@ public class Camunda8CockpitJobHandlerTest {
     assertEquals(List.of("approvers"), values.candidateGroups());
     assertEquals(DUE_DATE, values.dueDate());
     assertEquals(FOLLOW_UP_DATE, values.followUpDate());
-    // the two BPMN names are not on a job. They were read out of the model while the process
-    // was wired, and they are the title the cockpit falls back to
+    // the two BPMN names are not on a job. They were read from the model while the process was
+    // wired, and the cockpit uses them as the title when it has no other
     assertEquals(TASK_NAME, values.bpmnTaskName());
     assertEquals(PROCESS_NAME, values.bpmnProcessName());
     assertEquals(String.valueOf(DEPLOYED_VERSION), values.bpmnProcessVersion());
@@ -389,8 +387,8 @@ public class Camunda8CockpitJobHandlerTest {
     assertEquals("12345", values.workflowId());
     assertNull(values.subWorkflowId());
 
-    // nothing of this came from the cluster's searchable storage, which could not answer it: the
-    // exporter writes that storage after the transition this job gates
+    // nothing of this came from the cluster's searchable storage, which could not answer it. The
+    // exporter writes that storage only after the transition which this job holds up
     verify(
         clientFactories.getFactory(ADAPTER_ID).getClient(), never())
         .newUserTaskGetRequest(anyLong());
@@ -538,8 +536,8 @@ public class Camunda8CockpitJobHandlerTest {
             .join())
         .thenReturn(record);
 
-    // the same thread asks about the very task it just reported, and is answered by the cluster
-    // rather than out of an event which is over
+    // the same thread asks about the task it just reported, and the cluster answers, not an event
+    // which is already over
     final var afterwards = bridge
         .prefilledUserTaskDetails(
             new UserTaskReference(
@@ -592,8 +590,8 @@ public class Camunda8CockpitJobHandlerTest {
 
     handler.handle(client, job);
 
-    // and not UPDATED, which is what every listener event but 'end' used to be read as. An
-    // update refreshes a case the cockpit goes on showing as open
+    // and not UPDATED, as every listener event except 'end' used to be read. An update refreshes
+    // a case, and the cockpit keeps showing it as open
     assertEquals(
         List.of(WorkflowEventKind.CANCELLED),
         publisher.workflowEvents().stream().map(RecordingPublisher.WorkflowEvent::kind).toList());
@@ -740,8 +738,8 @@ public class Camunda8CockpitJobHandlerTest {
   @DisplayName("The drain holds the job while its handler runs and is empty when it returns")
   public void theDrainKnowsWhatIsRunning() {
 
-    // what makes a shutdown wait for this handler instead of closing the client under it. The
-    // drain is asked while the work is happening, which is what the publisher is asked for too
+    // this makes a shutdown wait for this handler instead of closing the client under it. The
+    // drain is asked while the work happens, at the same time as the publisher
     final var runningWhileTheWorkHappened = new ArrayList<Camunda8Drain.InFlightJob>();
     final var watchingHandler = new Camunda8CockpitJobHandler(
         new Camunda8Clients(clientFactories, null)

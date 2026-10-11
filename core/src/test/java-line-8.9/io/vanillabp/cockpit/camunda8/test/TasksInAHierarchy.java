@@ -9,8 +9,8 @@ import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
  * How a test says which workflow a user task read from the searchable storage belongs to. This is
  * the 8.9 variant.
  * <p>
- * Since 8.9 the record of a task names its root process instance, so saying it is stubbing
- * the record. The 8.8 variant has to stub a cluster request instead.
+ * Since 8.9 the record of a task names its root process instance, so the helper only stubs the
+ * record. The 8.8 variant has to stub a cluster request instead.
  */
 final class TasksInAHierarchy {
 

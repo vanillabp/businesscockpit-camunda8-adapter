@@ -22,8 +22,8 @@ public class OwnCaseWorkflowService {
   public static final String BPMN_PROCESS_ID = "OwnCaseProcess";
 
   /**
-   * Names the case a call activity started. VanillaBP did not start it, so the application
-   * names it, out of the caller's id the cluster copied into it.
+   * Names the case which a call activity started. VanillaBP did not start it, so the application
+   * names it, using the caller's id which the cluster copied into it.
    *
    * @param callersId The id of the calling case
    * @return The case of its own

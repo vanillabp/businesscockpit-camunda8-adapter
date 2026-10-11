@@ -12,10 +12,10 @@ import io.vanillabp.camunda8.client.Camunda8ClientFactoryRegistry;
 /**
  * How a test says which workflow a job belongs to. This is the 8.8 variant.
  * <p>
- * An 8.8 job does not carry its root process instance, so the extension asks the cluster for the
- * call hierarchy and this helper is what answers. Saying it this way keeps the tests of the
- * handler about the handler: they say a job is called by another workflow, and each line stubs
- * whatever it reads that from.
+ * An 8.8 job does not carry its root process instance. So the extension asks the cluster for the
+ * call hierarchy, and this helper answers. This keeps the tests of the handler about the handler.
+ * They say that a job is called by another workflow, and each line stubs whatever it reads that
+ * from.
  */
 final class JobsInAHierarchy {
 

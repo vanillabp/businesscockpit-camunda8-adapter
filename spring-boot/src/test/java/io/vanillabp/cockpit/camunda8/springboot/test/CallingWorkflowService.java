@@ -19,20 +19,24 @@ import io.vanillabp.spi.service.MultiInstanceTotal;
 import io.vanillabp.spi.service.WorkflowService;
 
 /**
- * A workflow which has one of its steps done by a process of its own.
+ * A workflow which has some of its steps done by processes of their own.
  * <p>
- * Both processes are served by this one service and share one workflow aggregate, which is how
- * VanillaBP decomposes a process: the detail sits elsewhere, the business case does not. The
- * cockpit shows the case, so the called process is a step of it and never a case of its own -
- * see decision 3.
+ * This one service serves the calling process and three called processes, and they all share one
+ * workflow aggregate. This is how VanillaBP splits up a process: the details move elsewhere, the
+ * business case stays. The cockpit shows the case, so such a called process is a step of it and
+ * never a case of its own. See decision 3.
  * <p>
- * The user task lives in the CALLED process, which is what makes it interesting: whichever
- * workflow the cockpit hangs that task on has to be the calling one.
+ * The user task of the first called process is what makes this worth testing. The cockpit has to
+ * put that task under the calling workflow.
  * <p>
- * A second called process is reached by a call activity naming it by an expression. Its user
- * task is served by two details providers, one for the first version of its model and one for
- * every later one. Only the version of the CALLED model picks between them, so a report naming
- * the calling process with that version would pick a provider nobody meant.
+ * A second called process is reached by a call activity which names it by an expression. Its
+ * user task is served by two details providers, one for the first version of its model and one
+ * for every later one. Only the version of the CALLED model picks between them. A report which
+ * named the calling process with that version would pick a provider nobody meant.
+ * <p>
+ * A third called process is reached once per round by a multi-instance call activity. The calling
+ * process also calls the process of {@link OwnCaseWorkflowService}. That process has a workflow
+ * aggregate of its own, so it is a case of its own and no step of this one (decision 30).
  */
 @Service
 @WorkflowService(workflowAggregateClass = CallingAggregate.class,
@@ -175,8 +179,7 @@ public class CallingWorkflowService {
 
   /**
    * The provider of the user task in the process reached once per round. It reads no variable,
-   * only the round, and the round reaches the task only through what the call activity hands
-   * down.
+   * only the round. The round reaches the task only through what the call activity hands down.
    *
    * @param aggregate The workflow aggregate, which is the CALLING workflow's case
    * @param prefilled What the cluster knew about the task

@@ -19,9 +19,9 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 /**
  * Which workflow a job belongs to, on a line whose jobs say it themselves (8.10).
  * <p>
- * The same three questions are asked of every line, and the 8.8 variant of this test answers
- * them with a cluster it has to ask. What the lines have in common is the answer, which is the
- * point of testing them separately.
+ * Every line gets the same three questions. The 8.8 variant of this test answers them by asking
+ * a cluster. All lines must give the same answers, and that is why each line is tested on its
+ * own.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8CallHierarchyTest {
@@ -78,7 +78,7 @@ public class Camunda8CallHierarchyTest {
     when(job.getProcessInstanceKey()).thenReturn(12345L);
     when(job.getRootProcessInstanceKey()).thenReturn(12345L);
 
-    // what the cluster handed out while this object was built is not what is under test here
+    // this test is not about what the cluster handed out while this object was built
     clearInvocations(clientFactories);
 
     hierarchy.rootProcessInstanceKeyOf(job);

@@ -27,15 +27,16 @@ import jakarta.enterprise.inject.Instance;
 /**
  * Which Camunda 8 adapter ids get a bridge.
  * <p>
- * The answer is VanillaBP's ({@code MigrationAdapterProperties#adapterIdsOfType}), and the two
- * cases below are the ones a hand-rolled filter over the configured adapter TYPES misses: an id
- * which is only named in <code>prioritized-adapters</code>, which is what a migration writes for
- * the engine it is moving away from, and an application which configured nothing at all, whose
- * single adapter dependency IS the configuration. In both the adapter builds its client and this
- * half used to build no bridge, so every event of that cluster was reported to nobody.
+ * VanillaBP gives the answer ({@code MigrationAdapterProperties#adapterIdsOfType}). The two
+ * cases below are the ones which a hand-written filter over the configured adapter TYPES misses.
+ * One is an id which is only named in <code>prioritized-adapters</code>. A migration writes that
+ * for the engine it is moving away from. The other is an application which configured nothing at
+ * all, where the single adapter dependency IS the configuration. In both cases the adapter builds
+ * its client, but this half used to build no bridge. So every event of that cluster was reported
+ * to nobody.
  * <p>
- * The Spring Boot half asks the same thing through the platform's registrar support, which needs
- * a bound environment; this is the shape which can be asked without booting anything.
+ * The Spring Boot half asks the same through the platform's registrar support, which needs a
+ * bound environment. This form can be asked without booting anything.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8BridgesPerAdapterIdTest {

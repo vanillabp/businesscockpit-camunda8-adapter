@@ -11,7 +11,7 @@ import io.camunda.zeebe.model.bpmn.instance.zeebe.ZeebeExecutionListenerEventTyp
  * Only the <code>end</code> listener, which reports an instance that ran to its end. A
  * <code>cancel</code> listener arrived with 8.10. A cluster of this line refuses a model which
  * carries one, and this line's client has no event type to name one with either. So an
- * instance somebody terminates goes without a word here. See decision 11 in the repository's
+ * instance which somebody terminates is not reported here. See decision 11 in the repository's
  * DECISIONS.md.
  */
 final class ProcessListenersOfTheLine {

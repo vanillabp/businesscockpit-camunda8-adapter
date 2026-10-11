@@ -31,15 +31,15 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 /**
  * What closes the workers of this extension when nothing else does.
  * <p>
- * The ordinary way they stop is the deployment pipeline stopping workflow processing of their
- * workflow module. A shutdown path which never gets that far used to leave them open, and the
- * adapter then closed its client under them: the listener jobs they were serving are cut off and
- * the activation requests they parked at the cluster stay parked, which costs the next instance
- * of the application a whole job timeout before it sees the first job.
+ * Usually they stop when the deployment pipeline stops the workflow processing of their
+ * workflow module. A shutdown which never got that far used to leave them open, and then the
+ * adapter closed its client under them. The listener jobs they were serving were cut off, and
+ * their activation requests stayed parked at the cluster. The next instance of the application
+ * then waited a whole job timeout before it saw the first job.
  * <p>
- * So the adapter's client factory is told these workers are open, and it closes what is still
- * open before it closes the client. The factory here is the real one, because that promise is
- * what the test is about; only the client it would build is mocked away.
+ * So the adapter's client factory is told that these workers are open, and it closes what is
+ * still open before it closes the client. The factory here is the real one, because the test is
+ * about that promise. Only the client it would build is mocked.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8CockpitWorkersShutdownTest {
@@ -64,8 +64,8 @@ public class Camunda8CockpitWorkersShutdownTest {
   @BeforeEach
   public void aWiredWorkflowModule() {
 
-    // unconfigured on purpose: an adapter with no connection properties builds no client at
-    // all, so closing this factory closes nothing but what was registered with it
+    // unconfigured on purpose: an adapter without connection properties builds no client at
+    // all, so closing this factory closes only what was registered with it
     adapterOfThisCluster = spy(
         new Camunda8ClientFactory(ADAPTER_ID, new Camunda8AdapterConfiguration()));
     final var clusterClient = mock(CamundaClient.class, RETURNS_DEEP_STUBS);

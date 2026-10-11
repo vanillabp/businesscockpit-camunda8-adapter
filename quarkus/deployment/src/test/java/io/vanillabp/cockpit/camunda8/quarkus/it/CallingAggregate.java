@@ -1,8 +1,8 @@
 package io.vanillabp.cockpit.camunda8.quarkus.it;
 
 /**
- * The business case of a workflow which has a step done by a called process. One case, two
- * process instances: the cockpit is to show the case and not the step.
+ * The business case of a workflow which has steps done by called processes. One case, several
+ * process instances: the cockpit should show the case and not the steps.
  */
 public class CallingAggregate {
 
