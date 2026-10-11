@@ -1063,19 +1063,20 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   /**
    * Says out loud that a search of one aggregate found nothing, and that this reads two ways.
    * <p>
-   * Both ways into this class ask about now. The application reports a change inside its own
-   * transaction, and a workflow started by that very transaction is not searchable yet: Camunda 8
-   * receives the start command after the commit, and its searchable storage learns about it later
-   * still. The application also reads a task through
+   * Both ways into these searches ask about now. A changed user task is searched when the outbox
+   * sends its entry, in a transaction of its own, and only for a task VanillaBP wrote nothing down
+   * about. The searchable storage may not hold that task yet, because the exporter which writes it
+   * runs behind the engine. The extension then asks again a little later, for up to ten minutes,
+   * so this warning can come once per attempt. The application also reads a task through
    * <code>BusinessCockpitService.getUserTask</code>, where the same lag hides a task which is
-   * wide awake. Waiting for the exporter would hold a business transaction or a web request open
-   * for it, so neither way waits.
+   * wide awake. Waiting for the exporter would hold that web request or business transaction
+   * open, so it does not wait either.
    * <p>
    * What is left is to say both readings, because nothing here can tell them apart. Decision 8
-   * asks for exactly that: an empty result and a line in the log naming what it may mean. A
-   * report is dropped, a read is answered with nothing, the cockpit keeps what it stored before,
-   * and no task ends because of it. The start of a workflow and the end of a task are reported by
-   * this extension's own listeners either way.
+   * asks for exactly that: an empty result and a line in the log naming what it may mean. The
+   * cockpit keeps what it stored before, a read is answered with nothing, and no task ends because
+   * of it. The start of a workflow and the end of a task are reported by this extension's own
+   * listeners either way. See decisions 21 and 22 for when these searches run.
    *
    * @param what What was searched for, for the message
    */

@@ -83,8 +83,8 @@ public class Camunda8PublishedPomTest {
    * Which of the three line builds is asking, repeated in every failure message.
    * <p>
    * A failure names the coordinates of the artifact, and outside a release ours say nothing
-   * about the line. A pull request builds '0.9.0-SNAPSHOT' on every line, so the same message
-   * fits all three, and a reader of a red build has to guess. The Camunda client which the
+   * about the line. A pull request builds the same snapshot version on every line, so the same
+   * message fits all three, and a reader of a red build has to guess. The Camunda client which the
    * active line profile chose tells them apart.
    */
   private String theRunOfThisBuild() {

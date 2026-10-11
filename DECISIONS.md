@@ -917,8 +917,7 @@ stay.
 Decided on 2026-10-05, while story 1443 was built.
 
 This entry narrows decision 21, which left user tasks alone, and decision 8 for the read of one task
-by its key. Whoever moves this entry into the log adds it to the headline of decision 21, in the form
-the log uses already, like "- what it says about user tasks narrowed by decision 22".
+by its key.
 
 ### What changes
 
