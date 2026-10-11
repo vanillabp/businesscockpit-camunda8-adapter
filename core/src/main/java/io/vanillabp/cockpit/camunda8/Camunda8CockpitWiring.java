@@ -150,8 +150,8 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
 
     final var scopedBpmnProcessId = process.getId();
     final var listenerType = Camunda8CockpitListeners.listenerTypeOf(scopedBpmnProcessId);
-    // read once, and read here: a job names the process it comes from and never what the
-    // process is called, while a report which produced no title of its own shows that name
+    // read once, and read here: a job names the process it comes from but never what the process is
+    // called. A report which produced no title of its own shows that name
     final var bpmnProcessName = nameOrIdentifier(process.getName(), bpmnProcessId);
 
     Camunda8CockpitListeners
@@ -287,10 +287,10 @@ public class Camunda8CockpitWiring implements ExtensionWiringService<BpmnModelIn
    * What a report shows where neither a template nor a details provider produced a title.
    * <p>
    * It is the BPMN name of the element, and where the model carries none it is the identifier
-   * the application wrote. An identifier says more on a screen than an empty line, and it is
-   * also what the cluster's searchable storage answers for such an element, so a report does not
-   * change its title depending on where it was built. The plain identifier, never the one the
-   * cluster knows: name-clash avoidance is nothing a person reading the cockpit has to see.
+   * the application wrote. An identifier says more on a screen than an empty line. It is also what
+   * the cluster's searchable storage answers for such an element, so a report does not change its
+   * title depending on where it was built. It is the plain identifier, never the one the cluster
+   * knows. A person reading the cockpit does not need to see name-clash avoidance.
    *
    * @param name What the model says, which may be nothing
    * @param identifier The identifier to fall back to

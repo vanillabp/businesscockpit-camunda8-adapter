@@ -56,9 +56,9 @@ public class Camunda8Clients {
 
     /**
      * The handover between the worker which observes an event of this cluster and the bridge
-     * which is asked what that event says. Both hold this one cluster, which is why it lives
-     * here: a workflow module is wired per adapter id, and the two halves are given the same
-     * cluster on both platforms.
+     * which is asked what that event says. Both hold this one cluster, so the handover lives here.
+     * A workflow module is wired per adapter id, and on both platforms the two halves get the same
+     * cluster.
      *
      * @return What a listener job of this cluster is saying right now
      */
@@ -69,9 +69,9 @@ public class Camunda8Clients {
     }
 
     /**
-     * Which workflow a job of this cluster belongs to, which is not the job's own process
-     * instance when that instance was called by another one. How it is found differs per release
-     * line, see {@link Camunda8CallHierarchy} in the per-line sources.
+     * Which workflow a job of this cluster belongs to. That is not the job's own process instance
+     * when another instance called it. How it is found differs per release line, see
+     * {@link Camunda8CallHierarchy} in the per-line sources.
      * <p>
      * It belongs to the cluster and not to a worker, because what it answers is a property of a
      * process instance. Every worker of a workflow asks about the same instances, so a lookup per

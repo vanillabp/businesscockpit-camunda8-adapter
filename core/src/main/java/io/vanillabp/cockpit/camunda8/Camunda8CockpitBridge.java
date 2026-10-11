@@ -40,39 +40,38 @@ import io.vanillabp.integration.extension.spi.handler.HandlerMultiInstance;
  * <ul>
  * <li><b>What an event says.</b> A report is built while a listener job of this cluster is being
  * served, and the values of that event are on the job. The worker read them off it and left them
- * in {@link Camunda8EventBeingReported}, so they are answered from there. The cluster is not
- * asked, and it could not answer: its searchable storage is written by an exporter which runs
- * behind the engine, so the event being reported has not reached it while the job waits.</li>
+ * in {@link Camunda8EventBeingReported}, so they are answered from there. The cluster is not asked,
+ * and it could not answer. An exporter writes its searchable storage and runs behind the engine. So
+ * the event being reported has not reached that storage while the job waits.</li>
  * <li><b>What is true now.</b> <code>BusinessCockpitService.getUserTask</code> and
  * <code>aggregateChanged</code> ask about a task or a case the application names, at the moment
  * it asks. Nothing is being reported then, so the answer comes from the searchable storage.</li>
  * </ul>
- * The <code>…OfAggregate</code> methods only ever serve the second kind, so they search the
- * storage without asking, apart from {@link #workflowsOfAggregateRightAway}, which reads nothing.
+ * The <code>…OfAggregate</code> methods only ever serve the second kind, so they search the storage
+ * without asking. The exception is {@link #workflowsOfAggregateRightAway}, which reads nothing.
  * Most of these questions arrive when the extension dispatches an outbox entry, and only
  * <code>getUserTask</code> asks in the application's own time.
  * <p>
  * <b>A record the storage holds none of.</b> That is silence and not an ending. The exporter which
- * writes the storage runs behind the engine, so a task or a case born a moment ago is missing from
- * a search in the same way one which ended is, and nothing here can tell the two apart. So an
- * empty result travels on with a line in the log naming both readings, which is what decision 8
- * asks for, and no caller may read the end of a task into it. An end reaches the cockpit through
- * this extension's own listeners.
+ * writes the storage runs behind the engine. So a task or a case born a moment ago is missing from
+ * a search just like one which ended, and nothing here can tell the two apart. An empty result
+ * therefore travels on with a line in the log which names both readings, as decision 8 asks. No
+ * caller may read the end of a task into it. An end reaches the cockpit through this extension's
+ * own listeners.
  * <p>
- * <b>Which workflow a case is.</b> VanillaBP writes down the key of a workflow and the version it
- * runs on when it starts it, and {@link WorkflowElection#workflowStartOf} reads that note without
- * asking any BPMS. Where it names both, the bridge takes them as they are and asks the cluster
- * nothing, so a change reported a moment after the start reaches the cockpit although the storage
- * has not written the workflow yet. The process name of such a report comes from the model this
- * extension wired, and not from the storage.
+ * <b>Which workflow a case is.</b> When VanillaBP starts a workflow, it writes down its key and the
+ * version it runs on. {@link WorkflowElection#workflowStartOf} reads that note without asking any
+ * BPMS. Where the note names both, the bridge takes them as they are and asks the cluster nothing.
+ * So a change reported a moment after the start reaches the cockpit, although the storage has not
+ * written the workflow yet. The process name of such a report comes from the model this extension
+ * wired, and not from the storage.
  * <p>
  * Where the note names less, a change of the aggregate cannot be named in the application's
  * transaction without the storage. {@link #workflowsOfAggregateRightAway} then answers nothing,
- * and the extension resolves the change when its outbox entry is dispatched. There the bridge
- * reads the workflow by its key, or searches the storage where VanillaBP knows no key, and an
- * empty answer makes the extension ask again a little later. The version is what picks the
- * application's details provider, so a workflow is never referenced without one it could still
- * get.
+ * and the extension resolves the change when its outbox entry is dispatched. There the bridge reads
+ * the workflow by its key. Where VanillaBP knows no key, it searches the storage. An empty answer
+ * makes the extension ask again a little later. The version picks the application's details
+ * provider, so a workflow is never referenced without a version it could still get.
  * <p>
  * <b>A changed user task.</b> Its report needs the assignee, the candidates and the dates, and
  * outside a listener job only the storage knows them. So the bridge builds no such report in the
@@ -214,10 +213,10 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * <p>
    * The request asks for the effective variables of the task. Those are the variables the task
    * sees, from its own scope up to its process instance, and where two scopes hold the same name
-   * the inner one wins. That is what a job carries as well. Where nobody reads a variable, the
-   * task sits in no multi-instance element of its own process, and no caller names the process by
-   * an expression, nothing is asked. Such a caller may hand its rounds down to the task, so then
-   * the variable which carries them is asked for as well.
+   * the inner one wins. That is what a job carries as well. Nothing is asked where all three hold:
+   * nobody reads a variable, the task sits in no multi-instance element of its own process, and no
+   * caller names the process by an expression. Such a caller may hand its rounds down to the task.
+   * So where there is one, the variable which carries the rounds is asked for as well.
    * <p>
    * The names are asked for with the workflow module and the BPMN process of the reference,
    * because the extension picks the details provider by those two.
@@ -370,11 +369,10 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   /**
    * What a report says about a workflow outside an event of this cluster.
    * <p>
-   * The business id is the aggregate's id, as on every other way: a business key is only a
-   * business key to VanillaBP where it says what the aggregate's <code>&#64;Id</code> attribute
-   * says, so what the cluster holds is not read here (decision 8). The process name is the one
-   * this extension read out of the model while wiring it, so that a report needs no record of the
-   * storage for it.
+   * The business id is the aggregate's id, as everywhere else. To VanillaBP a business key is only
+   * a business key where it says what the aggregate's <code>&#64;Id</code> attribute says. So what
+   * the cluster holds is not read here (decision 8). The process name is the one this extension
+   * read out of the model while wiring it, so a report needs no record of the storage for it.
    *
    * @param workflow The workflow a report is being built for
    * @param version The version of the model the workflow runs on, or <code>null</code>
@@ -396,10 +394,10 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * asked about by its key.
    * <p>
    * The dispatch of a changed aggregate or a changed user task asks this way, and it asks again a
-   * little later while the answer is empty. The extension says so in its own log, once at the
-   * first attempt and once more where it gives up, so a line per attempt here would only repeat
-   * it. <code>BusinessCockpitService.getUserTask</code> reads a task by its key as well, but only
-   * after a search found it, and an empty search says both readings out loud itself.
+   * little later while the answer is empty. The extension says so in its own log, once at the first
+   * attempt and once more where it gives up. A line per attempt here would only repeat it.
+   * <code>BusinessCockpitService.getUserTask</code> reads a task by its key as well, but only after
+   * a search found it. An empty search names both readings in the log itself.
    *
    * @param what What was read, for the message
    * @param notFound The cluster's answer, or <code>null</code> for an empty search
@@ -627,15 +625,14 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * What VanillaBP wrote down when it started the workflow of one aggregate on this cluster: the
    * key and, where it knows it, the version.
    * <p>
-   * The answer says what was true at the start. It does not say that the workflow still runs, so
-   * it is used to read that workflow and to name it in a report, and never sent to the cluster as
-   * a command. That is also why it serves a change reported after the workflow ended: the
+   * The answer says what was true at the start. It does not say that the workflow still runs. So it
+   * is used to read that workflow and to name it in a report, but it is never sent to the cluster
+   * as a command. That is also why it serves a change reported after the workflow ended: the
    * cockpit hears of it, the cluster does not.
    * <p>
    * A note of another adapter is left out. During a migration that is a workflow of another
-   * cluster, and its key would be read on this one. A note which names no adapter is taken, because
-   * that is a key VanillaBP knows from its election cache, and the key itself still has to be one
-   * of this BPMS.
+   * cluster, and its key would be read on this one. A note which names no adapter is taken. Its key
+   * comes from VanillaBP's election cache, and the key itself still has to be one of this BPMS.
    * <p>
    * An empty version is read the same way whether it is "not yet" or "never"
    * ({@link WorkflowStart#versionsAreReported}): the workflow is read by its key. Camunda 8 counts
@@ -695,10 +692,10 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * The workflow VanillaBP started for one aggregate, read from the storage by its key, where
    * VanillaBP wrote down no version for it.
    * <p>
-   * A workflow which started a moment ago is not in the storage yet. Then it is not referenced,
-   * because the report would go out without the version, and the version is what picks the
-   * application's details provider. The log says that this is the exporter running behind,
-   * which is the one reading left when VanillaBP knows the key.
+   * A workflow which started a moment ago is not in the storage yet. Then it is not referenced. The
+   * report would go out without the version, and the version picks the application's details
+   * provider. The log says that the exporter is running behind. When VanillaBP knows the key, that
+   * is the only reading left.
    *
    * @param workflowKey The key VanillaBP wrote down
    * @return The workflow, or empty where the storage does not hold it yet
@@ -777,9 +774,9 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * The user tasks of one aggregate this cluster holds.
    * <p>
    * A task of a case sits in the process of the case or in a process the case calls with a call
-   * activity. The second kind is how VanillaBP splits a large process into smaller ones: the
-   * called process shares the case's workflow aggregate, and the cluster copies the aggregate's
-   * id variable into it, so the variable condition finds its tasks as well. So the search names
+   * activity. The second kind is how VanillaBP splits a large process into smaller ones. The called
+   * process shares the case's workflow aggregate, and the cluster copies the variable with the
+   * aggregate's id into it. So the variable condition finds its tasks as well, and the search names
    * every process which may hold a task of the case. See {@link #processesOfTheCase}.
    * <p>
    * The processes go INTO the search, and the search is not run without them and sorted out
@@ -904,12 +901,13 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * which declares the called process only, and not the case's process, is not found by the
    * case's id at all.</li>
    * <li>The wrong id breaks whatever VanillaBP keeps per process. A provider's version range is
-   * checked against the version of the process it is declared for, per (class, process). The version of the called model paired with the id of the
-   * case's process would match a range nobody wrote, so the wrong provider runs, or only one
-   * naming no version, or none. The catalogue of version tags, the delivery record and the
-   * election's hint are kept per process as well. So is the name of an element, which VanillaBP
-   * looks up per (workflow module, process, element): asked with the case's process, it answers
-   * no name for an element of a called process, and says nothing about it.</li>
+   * checked against the version of the process it is declared for, per (class, process). The
+   * version of the called model paired with the id of the case's process would match a range nobody
+   * wrote. Then the wrong provider runs, or only one which names no version, or none. The catalogue
+   * of version tags, the delivery record and the election's hint are kept per process as well. So
+   * is the name of an element, which VanillaBP looks up per (workflow module, process, element):
+   * asked with the case's process, it answers no name for an element of a called process, and says
+   * nothing about it.</li>
    * <li><code>taskDefinition</code> is turned back into what the application wrote with the
    * process the task belongs to, because <code>use-prefix</code> scopes it by that process.
    * <code>bpmnTaskId</code> is an element id, which exists in the called model only.</li>
@@ -918,19 +916,17 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * </ul>
    * The platform's rule is the same: a task and an element are always named by the process which
    * holds them, for a called process by its own id. See decision 29 in the repository's
-   * DECISIONS.md. VanillaBP
-   * binds a <code>&#64;WorkflowTask</code> of a called process that way on Camunda 8, Camunda 7
-   * and the Process-Engine-API alike. So does the listener of this extension, which reads all
-   * four values off the job of the task. A task reported first by its listener and later from the
-   * storage is therefore served by the same details provider both times.
+   * DECISIONS.md. VanillaBP binds a <code>&#64;WorkflowTask</code> of a called process that way on
+   * Camunda 8, Camunda 7 and the Process-Engine-API alike. So does the listener of this extension,
+   * which reads all four values off the job of the task. A task reported first by its listener and
+   * later from the storage is therefore served by the same details provider both times.
    * <p>
-   * <b>The case, not the process.</b> <code>workflowId</code> is the business case, which is the
-   * highest instance above the task reached by calls which share the workflow aggregate (see
-   * decisions 3 and 30 in the repository's DECISIONS.md), the same instance the listener
-   * reports. <code>subWorkflowId</code>, filled in by {@link #prefilledUserTaskDetails}, is the
-   * instance the task really sits in where that is another one. The case is tied to the
-   * aggregate by <code>workflowAggregateId</code> and <code>workflowId</code> and never by the
-   * process id.
+   * <b>The case, not the process.</b> <code>workflowId</code> is the business case. That is the
+   * highest instance above the task which can be reached by calls that share the workflow aggregate
+   * (see decisions 3 and 30 in the repository's DECISIONS.md). The listener reports the same
+   * instance. <code>subWorkflowId</code>, filled in by {@link #prefilledUserTaskDetails}, is the
+   * instance the task really sits in where that is another one. The case is tied to the aggregate
+   * by <code>workflowAggregateId</code> and <code>workflowId</code> and never by the process id.
    *
    * @param workflowModuleId The workflow module
    * @param workflowAggregateId The aggregate the search was about
@@ -1022,12 +1018,12 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * the cluster raises by one every time a model is deployed under a process id it already
    * holds.
    * <p>
-   * The searchable storage answers no version at all for a record whose process definition it
-   * has not written yet, and that is why this is not a plain conversion. Such a record carries
-   * no version, and the reference says so by carrying none: the platform then serves the report
-   * with a details provider which names no version, and passes over every provider which names
-   * one. The text <code>"null"</code> would lose against every version range just the same, but
-   * it would read like a version somebody deployed, in a message and on a screen alike.
+   * This is not a plain conversion. The searchable storage answers no version at all for a record
+   * whose process definition it has not written yet. The reference then carries no version either.
+   * The platform serves such a report with a details provider which names no version, and passes
+   * over every provider which names one. The text <code>"null"</code> would lose against every
+   * version range just the same. But in a message and on a screen it would read like a version
+   * somebody deployed.
    *
    * @param version What the cluster answered
    * @return The version as a string, or <code>null</code> where the cluster named none

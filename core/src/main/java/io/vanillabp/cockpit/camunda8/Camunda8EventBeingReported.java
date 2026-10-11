@@ -18,15 +18,15 @@ import io.vanillabp.cockpit.extension.spi.WorkflowDetailsPrefill;
  * values never leave the call which produced them, and the cluster is not asked about an event it
  * has not written down yet.
  * <p>
- * Held per thread, because that is the length of one report. A worker of this extension runs many
- * jobs at once, each on a thread of its own, and a report which read another job's values would be
- * about another case entirely. What is held is put back the way it was found when the report is
- * done, so a report which somehow starts inside another one leaves that one intact.
+ * The values are held per thread, because one report runs on one thread. A worker of this extension
+ * runs many jobs at once, each on a thread of its own. A report which read another job's values
+ * would be about another case entirely. What is held is put back the way it was found when the
+ * report is done, so a report which somehow starts inside another one leaves that one intact.
  * <p>
  * Every answer here names the task or the workflow it belongs to, and it is given out only to a
  * question about that one. An application's details provider may read a second task while it runs
- * ({@code BusinessCockpitService.getUserTask}), and that read is a question about now rather than
- * about this event. It gets what it asks for, from the cluster, because nothing is held for it.
+ * ({@code BusinessCockpitService.getUserTask}), and that read asks about now, not about this event.
+ * Nothing is held for it, so it gets its answer from the cluster.
  * <p>
  * One of these belongs to one configured adapter id, so two clusters cannot read each other's
  * events.
