@@ -23,30 +23,86 @@ start event still gates the transition, and by then the variables are written.
 The `end` listener at the process stays where Version 1 had it. What this costs an application which
 upgrades is decision 4.
 
-## 2. Which cluster a call is about is said by the processing context - the detour of the first version superseded by decision 6
+## 2. Which cluster a call is about is said by the processing context
 
 VanillaBP's deployment pipeline tells an extension that a workflow module is being wired, and later
-that it is starting. `Camunda8ProcessingContext` names the adapter id and the workflow module of
-that run. A worker belongs to a cluster, and this is what says which one.
+that it is starting. Two facts this half needs are the adapter's to state: which configured adapter
+a pipeline call belongs to, and which workflow module its run is for. `Camunda8ProcessingContext`
+carries both, and every step reads them from there. A worker belongs to a cluster, and this is what
+says which one. Nothing is guessed from a model.
 
-The first version of this half had no such answer to read. It asked the adapters which workflow
-modules they had opened and opened its workers per module across all of them. To learn which
-spelling of a BPMN process a model carried, it tried what every configured adapter would call it.
-Decision 6 says what that cost and what replaced it.
+The identifiers in a model are the ones the cluster it was prepared for will know. So one adapter's
+scope is asked what a BPMN process is called there: the scope of the adapter whose run this is. The
+first version of this half had no such answer to read. It built a candidate list of what every
+configured Camunda 8 adapter would call the process, and it took the first spelling the model held.
+That list turns ambiguous as soon as two adapter ids avoid name clashes differently, and the plain id
+stood in it as a fallback, so a model of one cluster could be taken for another's.
 
-## 3. A called process is a step, not a case - what a cancelled workflow reports superseded by decision 11, only a process sharing the caller's aggregate is a step since decision 30
+The workers follow. They are opened per adapter id and workflow module, and what was wired is
+remembered under the same pair. So a worker subscribes to exactly what its own cluster's models
+carry. The first version opened them once per workflow module, across every cluster the adapters
+said held it, and subscribed each of those clusters to the job types of all of them.
 
-The cockpit shows business cases. A process started by a call activity is part of the case above it.
-It carries the same workflow aggregate, so reporting its start and its end would show a second case
-which nobody opened. An execution-listener job therefore reports nothing when its process instance
-has a root instance above it, and a user task of such a process is reported as a task of the
-workflow that root instance is.
+## 3. A called process is a step where it shares the caller's aggregate, and a case of its own where it does not
 
-A workflow which was terminated rather than finished was not reported at all when this was written.
-Decision 11 replaces that half: 8.10 brought the listener, a build of that line writes it, and a
-cancelled case is now reported as cancelled. On 8.8 and 8.9 the paragraph still holds. The
-sentence about a called process holds on every line: a cancelled called process is a step which
-ended, not a case which closed.
+The cockpit shows business cases. A process started by a call activity which carries the workflow
+aggregate of its caller is part of the case above it. Reporting its start and its end would show a
+second case which nobody opened. So an execution-listener job reports nothing for such an instance,
+and a user task of such a process is reported as a task of the case above it.
+
+A called process with an aggregate of its own is a business case of its own. The core starts it as
+a workflow of its own and builds its aggregate, and the cockpit shows it that way too. This follows
+decision 61 of `business-cockpit`: notifications form one group per case, and only a process with
+its own aggregate forms a group of its own.
+
+**The case of an instance** is the highest instance above it which can be reached by calls that
+share the aggregate. The walk starts at the instance and goes up the call hierarchy. It stops at the
+first caller which does not share the aggregate. So in a chain Order → Shipping → Packing, where
+Packing works on Shipping's aggregate and Shipping has its own, the case of Packing is Shipping.
+
+**The core decides which processes share an aggregate.** The extension asks
+`WorkflowTaskWiring#workflowsShareTheWorkflowAggregate` with the plain process ids, the same answer
+the Camunda 8 adapter uses for its call activities. The extension does not build a check of its own.
+It does not use `BpmsInitiatedStartInvoker#startsAWorkflowOfItsOwn`: that answer is `true` for a
+process nobody declares and for an id left over after a rename, and neither says anything about the
+caller. A process the core does not know shares nothing. So a call from a process nobody claims
+starts a case of its own. VanillaBP does not design for processes it did not deploy, so this is
+accepted.
+
+What follows from it:
+
+- The listener of the start event and of the end of a called process with an aggregate of its own
+  reports the workflow, with the called instance as `workflowId`. Its report is sent at its start,
+  like the one of a case nobody called.
+- A user task in such a process names that instance as `workflowId` and no `subWorkflowId`. A user
+  task of a step names the case as `workflowId` and the instance it sits in as `subWorkflowId`
+  (decision 29).
+- `workflowsOfAggregate` drops a called instance found by the search only where the instance shares
+  the aggregate of its caller.
+- A task read from the searchable storage (`referenceOf`) names the same case as its listener did.
+- A cancelled step is a step which ended, not a case which closed. How a cancelled case is reported
+  is decision 11: from 8.10 on it is reported as cancelled, and on 8.8 and 8.9 a case which was
+  terminated rather than finished is not reported at all.
+
+**Where the call hierarchy comes from.** The extension reads it from the cluster only where the
+answer can differ from the instance itself. An instance nobody called is its own case. So is an
+instance whose process shares its aggregate with no other process this extension wired for the
+module, which is a called process with an aggregate of its own. Neither costs a request. Every other
+called instance needs the chain: one call-hierarchy request, and one request per process definition
+in it. Both answers never change, so they are remembered. The chain comes from the searchable
+storage, which runs behind the engine. So the lookup waits for it as long as the adapter's
+`workflow-visibility-timeout` says, like the 8.8 lookup of the root (decision 7). If that window runs
+out, the root of the hierarchy is taken as the case, and the reason is logged.
+
+The code is `Camunda8BusinessCases`, once for all lines. The 8.9 and 8.10 lines read the root of a
+job from the job and need no request for that. They pay the requests above where a process shares
+its aggregate with another one.
+
+`Camunda8BusinessCasesTest` shows the walk, `Camunda8CockpitJobHandlerTest` the reports of both
+kinds of called process. `Camunda8CockpitIT` shows it on a cluster: one call reaches a step on the
+caller's aggregate, one a process with an aggregate of its own. It also checks the three calls of
+`BusinessCockpitService` which read VanillaBP's note of the start first (`aggregateChanged` twice and
+`getUserTask`), for both kinds of case.
 
 ## 4. The task listeners are the ones Version 1 wrote
 
@@ -74,21 +130,9 @@ would stop that workflow where it sits.
 
 ## 6. The adapter says whose call this is, so nothing is guessed from a model
 
-Two of the facts this half needs are the adapter's to state: which configured adapter a pipeline call
-belongs to, and which workflow module its run is for. `Camunda8ProcessingContext` carries both now,
-and every step reads them from there.
-
-What that ends is a guess with no upper bound on how wrong it could be. The identifiers in a model
-are the ones the cluster it was prepared for will know. So this half used to build a candidate list
-of what every configured Camunda 8 adapter would call the process, and it took the first spelling the
-model held. That list turns ambiguous as soon as two adapter ids avoid name clashes differently, and
-the plain id stood in it as a fallback, so a model of one cluster could be taken for another's. Now
-one adapter's scope is asked, the one whose run this is.
-
-The workers follow. They used to be opened once per workflow module, across every cluster the
-adapters said held it, and each of those clusters was subscribed to the job types of all of them.
-They are opened per adapter id and workflow module instead, and what was wired is remembered under
-the same pair. So a worker subscribes to exactly what its own cluster's models carry.
+*Merged into decision 2 on 2026-10-12, before the 1.0 release.* Decision 2 now says that the
+processing context names the adapter id and the workflow module of a call, and that the workers are
+opened per adapter id and workflow module.
 
 ## 7. A line differs in what it costs, not in what it reports - where the business id is read from superseded by decision 8
 
@@ -366,18 +410,18 @@ client to surefire instead, see the configuration in `core/pom.xml`.
 
 See [What an application pins itself](./README.md#what-an-application-pins-itself).
 
-## 13. The cockpit's workers lease what the adapter leases - extended by decision 17, which closes the question it left open
+## 13. The cockpit's workers lease what the adapter leases
 
 Camunda 8.10 gave a job activation a lease. A worker which asks for one gets a token with every
 job, and the cluster takes an answer to that job only from whoever holds the newest token.
 
 This extension asks for it. Its workers hold a listener job from the activation until the answer,
 because the report is built while the job waits, and that is the case the lease was made for. The
-case is not a rare one. Take a details provider which needs longer than the lock. Its run loses the
-job, and the cluster hands the job out again. The second run writes its entry and completes the
-job. The first run then answers for a job somebody else holds. Without a lease the cluster has no opinion about
-which of the two runs is the current one: the job goes to whoever answers first, and the other run
-is told there is no such job.
+case is not a rare one. Take a details provider which needs longer than the lock. The cluster hands
+an expired job out again about a second after the lock ran out. It does so for a listener job and
+for an ordinary service task job, with a lease and without one, and it does not care which worker
+name the job was held under. The second run writes its entry and completes the job. The first run
+then answers for a job somebody else holds.
 
 It is asked for through `Camunda8Workers.leaseTheActivations` of the VanillaBP Camunda 8 adapter,
 the same entry point the worker options come from. That method decides, and this extension does
@@ -394,6 +438,37 @@ the same models under the same prefix and the same tenant subscribes to exactly 
 value per cluster is the only answer which cannot starve anybody. See decision 36 in the
 DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter.
 
+#### One worker is both runs
+
+The race two runs have over one answer needs no second worker. A client which polls while its
+handler works activates its own expired job again, so one worker is both runs, and the newer run of
+the pair is the extension's own handler. Whether a worker polls while its handler holds a job
+belongs to the client, not to the cluster. Camunda repaired it in 8.8.37, in 8.9.18 and in `8.10.0`
+(`SUPPORT-34723`). Every line this repository pins carries the repaired client, so every line races
+with itself. The old form is in the 8.8 releases up to 8.8.36, in the 8.9 releases up to 8.9.17,
+and in the 8.10 pre-releases. Story `1362` tracked it down: `JobWorkerImpl` schedules the next poll
+after a poll which brought jobs only when no job is left open. A handler which hangs therefore left
+nothing scheduled, and the worker went quiet until its handler returned.
+
+The client would build itself one job worker execution thread, and an application here does not
+run on it. The VanillaBP Camunda 8 adapter hands the client an executor of its own, which schedules
+the polls on threads nothing else uses. So a handler never sits on the thread a poll needs, and only
+an adapter whose execution slots are all busy stops asking for more. See decision 18 in the
+DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter.
+
+A second worker is the plainer way to get the same race. Every other worker on the job type is
+offered the job in the same moment: a second pod of the application, a second adapter id in one
+application where the name mode `use-prefix` or `none` leaves both ids on one job type, or an
+extension with listener workers of its own, which is this extension.
+
+#### What the lease settles, and what is left without one
+
+On 8.10 the lease settles the race the same way for one worker as for two. The run which holds the
+job wins. The run whose lock expired is refused with `409 INVALID_STATE`, "the supplied lease token
+does not match". Measured on 2026-10-01 in six cluster runs against `camunda/camunda:8.10.0`, one of
+them a pair which changed nothing but the client: with `8.10.0` the holding worker had the job back
+after 5798 ms, with `8.10.0-alpha5` an outsider took it after 5243 ms.
+
 A refused answer is not an incident. `Camunda8ListenerJobs.completeOrFail` of the adapter carries
 the token and recognises the refusal, drops the answer with one line, and lets the handler return
 as if the cluster had accepted it. So the job stays with the run holding it, no retry is counted
@@ -409,83 +484,31 @@ a fraction of one. Either way a person sees one created case. See decision 26 in
 of vanillabp/business-cockpit.
 
 Line 8.8 and line 8.9 have no lease, in their clusters and in their clients. There the first
-answer wins and the other run gets an HTTP 404, which story `1366` measured in both orders on
-`8.9.19`. The build of those lines accepts the key and ignores it. That lets one configuration
-serve an application which moves between lines.
+answer wins and the other run gets `Command 'COMPLETE' rejected with code 'NOT_FOUND'` as an HTTP
+404. Story `1366` measured that in both orders on cluster and client `8.9.19`, with one worker
+which had its own job back about a second after the lock ran out. A job which was finished long ago
+answers exactly the same way, so nothing tells anybody that two runs did the same work. On those
+lines the idempotency key of the outbox entry is the whole of the protection. The build of those
+lines accepts the key and ignores it. That lets one configuration serve an application which moves
+between lines.
 
-Measured rather than read. `Camunda8CockpitIT` holds the details provider of a started case
-inside its listener job until the lock runs out, and then activates that job once more with a
-lease, the way another worker would. The held run is released afterwards, so its answer arrives
-last. On `camunda/camunda:8.10.0-alpha5` the cluster refuses it, and the log says another
-activation holds the job. The job is not failed, and the case reaches the cockpit as created. Once
-the newer activation completes, the instance carries no incident.
+#### How it is tested
 
-The second activation is the test's own and not a redelivery, the same way the adapter's lease
-test does it. What is under test is the ORDER of the two answers, and a redelivery cannot carry
-that order. The test runs on the preview line. There the worker which holds the report is the one
-place the job does not come back to. Where a repaired client does hand it back, the cluster picks
-the moment, not the test.
+`Camunda8CockpitIT` needs no second participant. It holds the report of a started case inside its
+listener job, waits for the worker to be handed that same job again, and holds the second report too.
+Then it lets the first one answer. The log says another activation holds the job, and nothing says
+the job was failed. The case reaches the cockpit as created, and once the second run answers, the
+instance carries no incident. The report of that case is built twice, once per run, which is what
+the hold lets happen on purpose.
 
-An earlier version of this entry said the cluster does not redeliver at all. That was wrong.
-Story `1346` measured it on `camunda/camunda:8.10.0-alpha5`. The cluster hands an expired job out
-again about a second after the lock ran out. It does so for a listener job and for an ordinary
-service task job, with a lease and without one, and it does not care which worker name the job
-was held under. An open job worker gets it as readily as an activate command sent by hand.
+The job key comes out of the reports rather than out of an activation. The cockpit names a workflow
+event by the key of the listener job the report was built in, so a details provider is handed that
+name. Two held reports naming one key are one job which was handed out twice.
 
-The one worker which did not get it back there is the worker whose handler was still holding it. It
-is offered nothing while that handler runs, with no line in its log, and it gets the job the moment
-the handler returns. That is the client of the preview line, and what a repaired client does instead
-is below. Either way it changes nothing an application depends on. Every other worker has the job
-about a second after the lock ran out, and a restarted application is exactly that: a new client
-with new workers. So what a shutdown left to its lock does come back.
-
-The race two runs have over one answer needs no second worker. A client which polls while its
-handler works activates its own expired job again, so one worker is both runs. Story `1366`
-measured that on cluster and client `8.9.19`: one pod, one client, one worker, a lock of 30
-seconds, and a details provider which held its job for 45 seconds in one run and for 75 seconds in
-the other. The same worker had the job back 957 ms and 1142 ms after the lock ran out. Both runs
-went through to the end, and both would have written their outbox entry.
-
-In both orders the cluster kept the answer which reached it first. The run which came second got
-`Command 'COMPLETE' rejected with code 'NOT_FOUND'` as an HTTP 404. A job which was
-finished long ago answers exactly the same way, so nothing tells anybody that two runs did the same
-work. On those lines the idempotency key of the outbox entry is the whole of the protection.
-
-A second worker is no longer a condition then. It is the plainer way to get a race, and every
-other worker on the job type is offered the job in the same moment: a second pod of the
-application, a second adapter id in one application where the name mode `use-prefix` or `none`
-leaves both ids on one job type, or an extension with listener workers of its own, which is this
-extension.
-
-Whether a worker polls while its handler holds a job belongs to the client, not to the cluster.
-Camunda repaired it in 8.8.37 and in 8.9.18, and this repository pins 8.8.39 and 8.9.21, so both
-released lines race with themselves. The old form is in the 8.8 releases up to 8.8.36, in the 8.9
-releases up to 8.9.17, and in both 8.10 alphas. Story `1366` ran the same measurement on
-`8.10.0-alpha5` and got no second activation within two minutes, with a lease and without one,
-because that client asked for nothing while the handler held.
-
-Story `1362` tracked the older form down. The cause is the client, not the cluster and not the
-transport. `JobWorkerImpl` schedules the next poll after a poll which brought jobs only when no job
-is left open. Otherwise the polling comes back through `handleJobFinished()`, which runs after the
-handler returns. A handler which hangs therefore leaves nothing scheduled, and the worker goes quiet
-at its first empty poll after that. Measured at the gateway: not one activation request in two
-minutes, over REST and over gRPC. A command sent by hand got the job at once, and the same worker
-had the job 20 seconds after its handler returned.
-
-The client would build itself one job worker execution thread, and an application here does not
-run on it. The VanillaBP Camunda 8 adapter hands the client an executor of its own, which schedules
-the polls on threads nothing else uses. So a handler never sits on the thread a poll needs, and
-only an adapter whose execution slots are all busy stops asking for more. See decision 18 in the
-DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter. That is why the measurement ran
-eight handler threads rather than the client's one.
-
-What cannot be measured today is whether a lease settles the race a worker has with itself. No
-release carries both halves: 8.9 has the repaired worker and no lease, and 8.10 has the lease and
-the worker which stays quiet. That question stays open until there is a repaired 8.10, and nothing
-here stands in for the answer.
-
-The test skips itself where the build does not lease. It needs no user task, so it runs on the
-preview line in the nightly matrix, which is where this is proven every night since decision 14.
+The test skips itself on 8.8 and on 8.9 through its assumption about the lease. Line 8.10 leaves no
+test out, and no line of this repository does. The property `camunda8.line.excluded-test-tags` is
+empty everywhere and stays, because the next line which needs an exclusion needs it in three places
+at once.
 
 ## 14. The preview line is built every night, and a red one holds up nothing - narrowed by decision 16, which holds while no line is a preview line
 
@@ -643,46 +666,8 @@ Stephan decided this on 2026-10-01, with the GA of 8.10 and the adapter's own mo
 
 ## 17. One worker is both runs of a job whose lock ran out
 
-A lock which runs out under a running handler gives the same job back to the worker which holds
-it. The cluster offers it about a second after the lock, and the client of 8.10.0 is asking at
-that moment, because it keeps polling while a handler of the same worker runs. So the race two
-runs have over one answer needs nobody but one application, and the newer run of the pair is the
-extension's own handler.
-
-This closes the question decision 13 left open. There was no release carrying both halves while
-that entry was written: 8.9 had the repaired client and no lease, and the 8.10 pre-releases had
-the lease and a client which went quiet. `8.10.0` carries both, because Camunda fixed the client
-in it (`SUPPORT-34723`). The answer is that the lease settles the race the same way for one worker
-as for two. The run which holds the job wins. The run whose lock expired is refused with
-`409 INVALID_STATE`, "the supplied lease token does not match", and the adapter drops that answer
-instead of failing the job.
-
-What the cluster does was never the open part. It hands a job whose lock ran out to a second
-activation within a second of the lock, with a lease and without one. An earlier version of
-decision 13 said it does not, and story `1346` already corrected that. What stayed wrong was the
-sentence about the holding worker being the one place the job does not come back. That was a
-client which had stopped asking, and it is gone.
-
-The test is built on this and needs no second participant. It holds the report of a started case
-inside its listener job, waits for the worker to be handed that same job again, and holds the
-second report too. Then it lets the first one answer. The log says another activation holds the
-job, and nothing says the job was failed. The case reaches the cockpit as created, and once the
-second run answers, the instance carries no incident. The report of that case is built twice, once per
-run, which is what the hold lets happen on purpose.
-
-The job key comes out of the reports rather than out of an activation. The cockpit names a
-workflow event by the key of the listener job the report was built in, so a details provider is
-handed that name. Two held reports naming one key are one job which was handed out twice, and
-that is the proof the test used to buy with an activation of its own.
-
-Line 8.10 therefore leaves no test out, and no line of this repository does. The property
-`camunda8.line.excluded-test-tags` is empty everywhere and stays, because the next line which
-needs an exclusion needs it in three places at once. The test skips itself on 8.8 and on 8.9
-through its assumption about the lease, which is unchanged.
-
-Measured on 2026-10-01 in six cluster runs against `camunda/camunda:8.10.0`, one of them a pair
-which changed nothing but the client: with `8.10.0` the holding worker had the job back after
-5798 ms, with `8.10.0-alpha5` an outsider took it after 5243 ms.
+*Merged into decision 13 on 2026-10-12, before the 1.0 release.* Decision 13 now says that one
+worker is both runs of such a job, and that the lease settles the race for one worker as for two.
 
 ## 18. The test application sends the BPMS only what a model reads
 
@@ -738,55 +723,115 @@ cites a decision number for it:
 - `quarkus/deployment/src/test/java/io/vanillabp/cockpit/camunda8/quarkus/it/TestAggregate.java`,
   class javadoc and the javadoc of `signers`
 
-## 19. The key of a workflow comes from VanillaBP before the storage is searched - what a start written down with its version reports narrowed by decision 20 and by decision 21, which reports a change the note cannot name later instead of dropping it
+## 19. A change of a case reads nothing in the application's transaction, and VanillaBP's note of the start comes before the storage
 
-Decided on 2026-10-03, while story 1326 was built.
+`BusinessCockpitService.aggregateChanged(aggregate)` and `aggregateChanged(aggregate, userTaskIds)`
+name a case by its aggregate id, and both run in the application's transaction. The bridge needs the
+key of the workflow and its version for the report, and for a user task its assignee, its candidates
+and its dates. Only the cluster's searchable storage knows all of that. An exporter which runs behind
+the engine writes that storage. So a read there right after a start, or while the exporter stands
+still, finds nothing. And a storage which is down fails the transaction which reads it.
 
-`BusinessCockpitService.aggregateChanged` names a case by its aggregate id. The bridge needs the key
-of the workflow for the report. Until now it searched the cluster's searchable storage by the
-aggregate id variable. An exporter which runs behind the engine writes that storage. So a
-change reported right after a start, from the first service task of a workflow for example, found
-nothing, and the report was dropped with a warning.
+So the bridge reads nothing in the application's transaction. Where it cannot answer without a
+read, the Business Cockpit extension writes an outbox entry without a report, and the report is built
+when the entry is dispatched (decision 43 of `business-cockpit`). That is where the storage is read.
 
-VanillaBP now writes down the key of a workflow when it starts it, and
-`WorkflowElection#workflowIdOf` reads that note. It asks no BPMS, waits for nothing and throws
-nothing. The bridge asks it first.
+This narrows decision 8, which says that the bridge searches the storage for the tasks and the
+workflows of a case whenever the application asks. That no longer holds for a workflow whose key
+VanillaBP wrote down, and nothing is searched in the application's transaction. The rest of decision
+8 stands.
 
-A key means VanillaBP started exactly this workflow. `workflowsOfAggregate` reads that one workflow
-by its key and does not search. The read is needed for the version, because the version picks the
-application's details provider for the report.
+#### The note of the start
 
-If the storage does not hold the workflow yet, the change is NOT reported. Only the storage knows the
-version a workflow runs on. A report without it is served by a details provider which names no
-version, and an application whose providers all name one gets a report without details. The cockpit
-replaces what it shows with that report, so the customer it showed is gone. A first version of this
-entry sent such a report, and on cluster 8.8 it arrived with `"details":{}` while the case held its
-customer. A report the cockpit never gets leaves the old details in place, which is the smaller harm.
-The log says it with a warning of its own: VanillaBP started the workflow, so the exporter running
-behind is the one reading left. A change reported once the storage holds the workflow reaches the
-cockpit.
+VanillaBP writes down the key and the version of a workflow when it starts it, together with the
+adapter (decision 110 of `adapter-platform-integration`). `WorkflowElection#workflowStartOf` reads
+that note. It asks no BPMS, waits for nothing and throws nothing. The bridge asks it first, once per
+question.
 
-So the key does not yet make a report possible while the exporter is behind. That needs the version
-from somewhere else than the storage. The platform's note of the start would be the place, because
-Camunda 8 answers the create command with the version. But the note carries no version today.
+The extension asks the bridge `workflowsOfAggregateRightAway` first. The bridge answers it out of the
+note alone. Where the note names a key of this cluster AND a version, the bridge references the
+workflow with them and asks the cluster nothing. So a change reported a moment after the start, while
+the exporter is behind, reaches the cockpit with its version. Everything else answers nothing, and
+the bridge reads nothing.
 
-An empty answer covers every case where VanillaBP does not know. Nobody started the workflow, or it
-started before VanillaBP wrote such notes, or the note is older than
-`vanillabp.delivery.workflow-start-retention`, or the process does not belong to this application. These
-cannot be told apart, so the bridge reads nothing into an empty answer. It searches the storage the way
-it always did and says both readings in the log when that finds nothing. A key which is not a number is
-no key of this cluster, and it is treated like an empty answer.
+At the dispatch, `workflowsOfAggregate` reads the storage. Where the note has a key and no version,
+it reads that one workflow by its key, for the version, and does not search. Where there is no note,
+it searches the storage by the aggregate id variable, the way it always did. Where the storage holds
+no record yet, the answer is empty, and the extension asks again a little later, for up to ten
+minutes. After that the extension logs an error and leaves the entry blocked in the outbox. The
+bridge throws no `PhaseTwoRetryLater` itself. An empty answer at the dispatch is what tells the
+extension to try again, and the window is the extension's. A read by key which finds no record is said
+with a debug line, not with a warning. The extension says it once at the first attempt and once more
+where it gives up, so a warning per attempt would only repeat it. A search which finds nothing still
+warns and names both readings of an empty answer, as decision 8 asks for.
 
-A key says what was true at the start. It does not say that the workflow still runs. The bridge uses it
-to name the workflow in a report and never sends it to the cluster as a command.
+`prefilledWorkflowDetails` reads nothing for a reference which names its version. The version is the
+one of the reference, which is the one that picked the details provider. The business id is the
+aggregate's id (decision 8). The process name is the one this extension read out of the model while
+wiring it. That name and the one the storage holds are the same attribute of the same model, except
+where a model was renamed while a workflow of an older version still runs. A report then shows the
+name of the model wired now. That is accepted, because it lets the main way build a report without
+any read. A reference without a version is read by its key, for the version, and the name comes from
+the model there as well. Where the storage holds no record of it, the answer is empty.
 
-`userTasksOfAggregate` and `userTaskOfAggregate` still search. The key of a workflow names no task, and
-a task the storage has not written yet cannot be found by any key VanillaBP holds.
+A report is never sent without a version. The version picks the application's details provider. A
+report without it is served by a details provider which names no version, so an application whose
+providers all name one gets a report without details. The cockpit replaces what it shows with that
+report, and the customer it showed is gone. A first version of this rule sent such a report, and on
+cluster 8.8 it arrived with `"details":{}` while the case held its customer. So an empty version is
+read by the key, from the storage, whatever `WorkflowStart#versionsAreReported` says. That flag tells
+"not yet" (true) from "never" (false). On Camunda 8 the cluster counts a version for every workflow,
+and the Camunda 8 adapter keeps a catalog, so its notes always say "not yet". The platform answers
+"never" for a note which names no adapter, and for an adapter which said nothing about versions at
+all. In both the storage still knows the version, and every details provider of the application may
+name one.
+
+A note which names another adapter is left out, and the storage is searched as if there were no note.
+During a migration between two clusters that is a workflow of the other cluster, and its key would be
+read on this one. A note which names no adapter is still taken, because the key itself still has to be
+one of this BPMS, which `workflowKeyOf` checks. A key which is not a number is no key of this cluster,
+and it is treated like no note.
+
+No note covers every case where VanillaBP does not know. Nobody started the workflow, or it started
+before VanillaBP wrote such notes, or the note is older than
+`vanillabp.delivery.workflow-start-retention`, or the process does not belong to this application.
+These cannot be told apart, so the bridge reads nothing into it, and it searches the storage at the
+dispatch.
+
+A key says what was true at the start. It does not say that the workflow still runs. The bridge uses
+it to name the workflow in a report and never sends it to the cluster as a command. Since decision 5
+of `adapter-platform-integration`, `adapterIdOfWorkflow` reads the note first and no longer throws
+after a workflow ended, for as long as the note lives. So `aggregateChanged` reaches this bridge
+after the end as well. The note names the workflow, the storage still holds the history of the ended
+workflow, and the cockpit gets an update of the ended case. Nothing is sent to the cluster. That is
+what an application asks for when it changes a case after its end.
+
+#### User tasks
+
+The bridge answers `false` to `reportsAChangedUserTaskRightAway`. So the extension asks the bridge
+nothing in the application's transaction. It names the tasks from what VanillaBP wrote down when it
+delivered them, and it writes an outbox entry without a report for each of them. When the entry is
+dispatched, the extension calls `prefilledUserTaskDetails`, which reads the task by its key. A task
+VanillaBP wrote nothing down about is searched first, with `userTaskOfAggregate` or
+`userTasksOfAggregate`. That is a task delivered before VanillaBP wrote such notes, a task named by an
+id of another BPMS, or a task of a called process without a note of the start. Where the storage holds
+no record yet, the answer is empty, and the extension asks again in the same way as for a workflow.
+
+The workflow of a task from the delivery log is the case: the note of the start names it, also for a
+task of a called process. That is the workflow a listener job reports for the task, so the
+sub-workflow `prefilledUserTaskDetails` reports for a called process stays the same.
+
+A read of one task by its key which finds no record is said with a debug line, as for a workflow. The
+searches `userTasksOfAggregate` and `userTaskOfAggregate` still warn where they find
+nothing, with both readings, as decision 8 asks for. At the dispatch that may be a warning per
+attempt. `BusinessCockpitService.getUserTask` reads a task by its key only after a search found it.
+
+#### What was weighed and not taken
 
 Camunda 8.10 can assign a business id to a running process instance, and sending the same id again is
-documented as a no-op the broker answers itself. That looked like a way to check a workflow without the
-storage. It replaces none of the three places where the cockpit waited for the storage, as they stood
-on 2026-09-19:
+documented as a no-op the broker answers itself. That looked like a way to check a workflow without
+the storage. It replaces none of the three places where the cockpit waited for the storage, as they
+stood on 2026-09-19:
 
 1. `workflowsOfAggregate` and `userTasksOfAggregate` search by aggregate id. Their input is the
    aggregate id, not a key. The command needs the key of the instance, which is exactly what the
@@ -804,157 +849,21 @@ Two more facts against it. The platform assigns no business id when it starts an
 first call would be an assignment and not a no-op. And a `404` does not mean that an instance never
 existed, because the engine forgets an instance which ended.
 
-Decision 8 says that the bridge searches the storage for the tasks and the workflows of a case
-whenever the application asks. That no longer holds for a workflow whose key VanillaBP wrote down.
-Such a workflow is read by that key, and nothing is searched. The rest of decision 8 stands. An empty
-result still comes with a line in the log, which names the one reading left where VanillaBP knows the
-key and both readings everywhere else. So decision 8 is narrowed by this entry and not replaced, and its
-headline says so.
-
 ## 20. A workflow VanillaBP wrote down with its version is reported without the storage - narrowed by decision 21, which leaves every change the note cannot name to the dispatch
 
-Decided on 2026-10-04, while story 1415 was built.
-
-This entry narrows decision 19. Once it has its number, the headline of decision 19 gets the
-addition "- narrowed by decision NN, which takes the version from VanillaBP's note of the start".
-
-Decision 19 left one gap open. VanillaBP wrote down the key of a workflow at its start, but not the
-version, and only the cluster's searchable storage knew the version. So a change reported while the
-exporter was behind was not reported at all. Since `adapter-platform-integration` decision 110 the note
-of the start carries the version as well, and `WorkflowElection#workflowStartOf` reads key, version and
-adapter together. The bridge asks that instead of `workflowIdOf`, once per question.
-
-Where the note names a key of this cluster AND a version, `workflowsOfAggregate` references the
-workflow with them and asks the cluster nothing. This is the case decision 19 could not serve: a
-change reported a moment after the start, while the exporter is behind, reaches the cockpit with its
-version.
-
-`prefilledWorkflowDetails` still reads the workflow by its key first, because the storage names the
-process as it was deployed. Where the storage holds no record, and the reference names a version, the
-report is built from the reference. The version is the one of the reference, which is the one that
-picked the details provider. The business id is the aggregate's id (decision 8). The process name is
-the one this extension read out of the model while wiring it. A reference without a version gets no
-such report, and the storage's silence is answered as before.
-
-Where the note has a key and no version, the bridge does what decision 19 says. It reads the workflow by
-its key, takes the version from the storage, and reports nothing while the storage does not hold the
-workflow yet, with the warning of decision 19.
-
-`WorkflowStart#versionsAreReported` tells "not yet" (true) from "never" (false). The story asked to
-report without a version for "never", but only if no details provider which names a version can be
-meant then. That cannot be shown on Camunda 8. The cluster counts a version for every workflow, and the
-Camunda 8 adapter keeps a catalog, so its notes always say "not yet". The platform answers "never" in
-two more cases: for a note which names no adapter, and for an adapter which said nothing about versions
-at all. In both the storage still knows the version, and every details provider of the application may
-name one. A report without a version would then empty the details the cockpit shows, which is the harm
-decision 19 is about. So an empty version is read the same way whatever the flag says: by the key, from
-the storage.
-
-A note which names another adapter is left out, and the storage is searched as if there were no note.
-During a migration between two clusters that is a workflow of the other cluster, and its key would be
-read on this one. A note which names no adapter is still taken, because the key itself still has to be
-one of this BPMS, which `workflowKeyOf` checks.
-
-Since `adapter-platform-integration` decision 5, `adapterIdOfWorkflow` reads the note of the start
-first and no longer throws after a workflow ended, for as long as the note lives. So
-`BusinessCockpitService.aggregateChanged` now reaches this bridge after the end as well, where it threw
-before. The bridge answers it like any other change. The note names the workflow, the storage still
-holds the history of the ended workflow, and the cockpit gets an update of the ended case. Nothing is
-sent to the cluster: the bridge only reads, and the key is never used for a command (decision 19). That
-is what an application asks for when it changes a case after its end, so it stays this way.
+*Merged into decision 19 on 2026-10-12, before the 1.0 release.* Decision 19 now says that a note of
+the start with a key and a version answers a change without the storage.
 
 ## 21. A change of a case reads nothing in the application's transaction, and the process name comes from the model - what it says about user tasks narrowed by decision 22
 
-Decided on 2026-10-05, while story 1443 was built.
-
-This entry narrows decisions 19 and 20.
-
-### What changes
-
-`BusinessCockpitService.aggregateChanged(aggregate)` runs in the application's transaction. Before
-this entry the bridge read the cluster's searchable storage there whenever VanillaBP's note of the
-start lacked a key or a version. While the exporter was behind, the change was dropped with a
-warning, which is what decision 19 says. And where the storage was down, the read failed the
-application's transaction.
-
-The Business Cockpit extension now asks the bridge `workflowsOfAggregateRightAway` first. The bridge
-answers it out of the note alone. A note with a key of this cluster and a version is the answer, as
-decision 20 says. Everything else answers nothing, and the bridge reads nothing. The extension then
-writes an outbox entry without a report, and its dispatch calls `workflowsOfAggregate`, which reads
-the storage by key or searches it, the way decisions 19 and 20 describe. Where the storage holds no
-record yet, the answer is empty, and the extension asks again a little later, for up to ten minutes.
-After that the extension logs an error and leaves the entry blocked in the outbox. So the change of
-decision 19 is no longer dropped while the exporter is behind. It is reported once the storage holds
-the workflow.
-
-The bridge throws no `PhaseTwoRetryLater` itself. An empty answer at the dispatch is what tells the
-extension to try again, and the window is the extension's. A record the storage does not hold is
-said with a debug line and no longer with a warning. The extension says it once at the first attempt
-and once more where it gives up, so a warning per attempt would only repeat it.
-
-### The process name comes from the model
-
-`prefilledWorkflowDetails` no longer reads the storage for a reference which names its version. The
-version is the one of the reference, the business id is the aggregate's id (decision 8), and the
-process name is the one this extension read out of the model while wiring it. Decision 20 read the
-workflow by its key for the name, as it was deployed, and used the model only where the storage held
-no record. The two names are the same attribute of the same model, except where a model was renamed
-while a workflow of an older version still runs. A report then shows the name of the model wired
-now. That is accepted, because it lets the main way build a report without any read.
-
-A reference without a version is still read by its key, for the version, and the name comes from
-the model there as well. Where the storage holds no record of it, the answer is empty.
-
-### What stays
-
-The note of the start is still never sent to the cluster as a command (decision 19). A note of
-another adapter is still left out. User tasks are not touched: `userTasksOfAggregate` and
-`userTaskOfAggregate` still search the storage in the application's transaction, and their warnings
-stay.
+*Merged into decision 19 on 2026-10-12, before the 1.0 release.* Decision 19 now says that a change
+of a case reads nothing in the application's transaction, and that the process name comes from the
+model.
 
 ## 22. A changed user task reads nothing in the application's transaction
 
-Decided on 2026-10-05, while story 1443 was built.
-
-This entry narrows decision 21, which left user tasks alone, and decision 8 for the read of one task
-by its key.
-
-### What changes
-
-`BusinessCockpitService.aggregateChanged(aggregate, userTaskIds)` runs in the application's
-transaction. Before this entry the bridge searched the cluster's searchable storage there for the
-tasks, and read each of them by its key for the assignee, the candidates and the dates. A task the
-storage did not hold yet was dropped with a warning. So a task created while the exporter stood
-still got no change report at all, and a storage which was down failed the application's
-transaction.
-
-The bridge answers `false` to `reportsAChangedUserTaskRightAway` now. The Business Cockpit
-extension then asks the bridge nothing in the application's transaction. It names the tasks from
-what VanillaBP wrote down when it delivered them, and it writes an outbox entry without a report for
-each of them. When the entry is dispatched, the extension calls `prefilledUserTaskDetails`, which
-reads the task by its key. A task VanillaBP wrote nothing down about is searched first, with
-`userTaskOfAggregate` or `userTasksOfAggregate`. Where the storage holds no record yet, the answer
-is empty, and the extension asks again a little later, for up to ten minutes. After that the
-extension logs an error and leaves the entry blocked in the outbox.
-
-The workflow of a task from the delivery log is the case: the note of the start names it, also for a
-task of a called process. That is the workflow a listener job reports for the task, so the
-sub-workflow `prefilledUserTaskDetails` reports for a called process stays the same.
-
-### What a read by key says
-
-A read of one task by its key which finds no record is said with a debug line now, not with a
-warning. The extension says it once at the first attempt and once more where it gives up, so a
-warning per attempt would only repeat it. `BusinessCockpitService.getUserTask` reads a task by its
-key only after a search found it, and an empty search still warns with both readings, as decision 8
-asks for.
-
-### What stays
-
-The searches `userTasksOfAggregate` and `userTaskOfAggregate` still warn where they find nothing.
-At the dispatch they are asked only for a task VanillaBP wrote nothing down about, so a warning per
-attempt is possible there. That is a task delivered before VanillaBP wrote such notes, a task named
-by an id of another BPMS, or a task of a called process without a note of the start.
+*Merged into decision 19 on 2026-10-12, before the 1.0 release.* Decision 19 now says that a changed
+user task is reported when its entry is dispatched, and what a read by key says.
 
 ## 23. A details provider does not serve a user task, so the test applications mark their user tasks - extended by decision 24
 
@@ -1022,96 +931,65 @@ The test applications show all three kinds on both platforms. The Spring Boot ap
 The Quarkus application uses `IncidentDetailsProcess` for this, see decision 24. On both platforms
 a test deploys `ForeignProcess` straight to the cluster.
 
-## 26. A listener job carries what the details providers read - where the names come from replaced by decision 27, extended by decision 28 for a report built from the storage
+## 26. A listener job carries what the details providers read
 
 A `@UserTaskDetailsProvider` method may take a process variable with `@TaskParam`, and the SPI
-promises it a value. On Camunda 8 it got `null`. A worker of this extension asked the cluster for
-the variable with the workflow aggregate's id and for nothing else. A Camunda 8 job carries only
-the variables its worker names, so the value never reached the provider. Stephan decided on
-2026-10-09 that `@TaskParam` stays and gets its value on Camunda 8 as well.
+promises it a value. A Camunda 8 job carries only the variables its worker names. So a worker of
+this extension which asked for the variable with the workflow aggregate's id and for nothing else
+left every `@TaskParam` at `null`. `@TaskParam` stays, and it gets its value on Camunda 8 as well.
 
-The worker now asks for more. For a job type of user tasks it names three kinds of variables:
+#### What a worker asks for
 
-- the variable with the workflow aggregate's id, as before;
+For a job type of user tasks a worker names three kinds of variables:
+
+- the variable with the workflow aggregate's id;
 - the variables the details providers of those tasks read with `@TaskParam`;
 - the multi-instance context of the task, in the variables the Camunda 8 adapter puts into the
   deployed model for its own workers (`Camunda8FetchVariables.collect`).
 
+A worker of a workflow job type asks for the aggregate's id alone, because a
+`@WorkflowDetailsProvider` takes no `@TaskParam`.
+
 The job handler passes what the job carries as `UserTaskDetailsPrefill.variables`. It turns the
 multi-instance variables into `UserTaskDetailsPrefill.multiInstances` with
-`Camunda8MultiInstance.valuesOf`, which is the adapter's own reading. So
-`@MultiInstanceIndex`, `@MultiInstanceTotal` and `@MultiInstanceElement` work on Camunda 8 too.
-Before, they received nothing.
+`Camunda8MultiInstance.valuesOf`, which is the adapter's own reading. So `@MultiInstanceIndex`,
+`@MultiInstanceTotal` and `@MultiInstanceElement` work on Camunda 8 too.
 
-The names come from the Business Cockpit extension. `extensions-commons` notes the `@TaskParam`
-names of each provider while VanillaBP scans it. It does this in the annotation check of the
-`@UserTaskDetailsProvider` contract, so it reads the methods VanillaBP binds and walks no class a
-second time. `BusinessCockpitEventPublisher.variablesTheDetailsProvidersRead(taskDefinition,
-bpmnTaskId)` answers them. The Camunda 8 adapter does the same for its `@WorkflowTask` workers with
-`WorkflowTaskWiring.taskParameterNames`, and it asks by job type and by element id as well. The
-platform has no such question for the methods of an extension, which is why the extension keeps
-the list itself.
+The names come from VanillaBP, per workflow module and BPMN process. It answers them with
+`ExtensionHandlers#taskParameterNames`, and the extension passes the question on as
+`BusinessCockpitEventPublisher.variablesTheDetailsProvidersRead`, with four values:
+`workflowModuleId`, `bpmnProcessId`, `taskDefinition` and `bpmnTaskId`. `Camunda8CockpitWorkers`
+asks once for each user-task listener of a job type. It passes the workflow module of the worker and
+the BPMN process the listener sits in, as the application wrote it, and not as the cluster knows it.
+A worker whose job type sits in several processes fetches the union of the answers. So a job carries
+what a provider of its own process reads, and not what a provider of another process reads under the
+same element id. The Camunda 8 adapter does the same for its `@WorkflowTask` workers with
+`WorkflowTaskWiring.taskParameterNames`.
 
-The list is the union over every provider of the application which serves the element id or the
-task definition of a served task. It is not narrowed to the workflow module or to the BPMN process,
-because the scan does not say which process a method was registered for. So a job may carry a
-variable which a provider of another process reads under the same name of a task. It never misses
-one its own provider reads. A worker of a workflow job type asks for the aggregate's id alone,
-because a `@WorkflowDetailsProvider` takes no `@TaskParam`.
+The answer can still name a variable too many. Where several providers of one key split the versions
+of a process between them, VanillaBP also counts the provider for every task, although it may never
+run. A job never misses a variable its own provider reads. `Camunda8CockpitWorkerVariablesTest`
+shows it with two processes that use the same element id and have different providers. Each worker
+asks only about its own process.
 
 The worker asks when the workflow module starts, not while its models are wired. The providers are
 scanned by then, and the adapter has linked every called process of the module to the
 multi-instance elements of its caller.
 
-What stays the same: a report of a change the application named, built from the cluster's
-searchable storage, carries no variables. A `@TaskParam` parameter receives `null` there. Reading
-variables out of that storage would be a request of its own for every report.
+#### A report built from the storage
 
-Decision 28 changed this: a report built from the storage now reads the same variables.
-
-## 27. VanillaBP names the variables per workflow module and BPMN process - extended by decision 28
-
-Decision 26 took the names the details providers read from a list the Business Cockpit extension
-kept itself. That list knew nothing of workflow modules or BPMN processes. VanillaBP can now answer
-the question itself (`ExtensionHandlers#taskParameterNames`), and the extension passes it on. So
-`BusinessCockpitEventPublisher.variablesTheDetailsProvidersRead` takes four values now:
-`workflowModuleId`, `bpmnProcessId`, `taskDefinition` and `bpmnTaskId`.
-
-`Camunda8CockpitWorkers` asks once for each user-task listener of a job type. It passes the
-workflow module of the worker and the BPMN process the listener sits in, as the application wrote
-it, and not as the cluster knows it. A worker whose job type sits in several processes fetches the
-union of the answers. So a job carries what a provider of its own process reads, and no longer what a
-provider of another process reads under the same element id.
-
-The answer can still name a variable too many. Where several providers of one key split the
-versions of a process between them, VanillaBP also counts the provider for every task, although it
-may never run. A job never misses a variable its own provider reads.
-
-`Camunda8CockpitWorkerVariablesTest` shows it with two processes that use the same element id and
-have different providers. Each worker asks only about its own process.
-
-Everything else in decision 26 stays: the variable with the aggregate's id, the multi-instance
-variables, the moment the worker asks, and the report built from the searchable storage, which
-carries no variables.
-
-Decision 28 uses the same names for a report built from the searchable storage.
-
-## 28. A report built from the storage reads the same variables as a listener job
-
-Decision 26 left one gap. A report after `aggregateChanged` and the answer of `getUserTask` are built
-from the cluster's searchable storage, and a record of a user task there carries no variables. So a
-`@TaskParam` parameter of a details provider received `null` on that way, and the value on the way
-through the listener job. A provider which leaves a detail out for `null` then took back what the
-first report said.
-
-`Camunda8CockpitBridge.prefilledUserTaskDetails` now asks the storage for the variables after it read
-the task. It asks for the same names a worker asks for:
+A report after `aggregateChanged` and the answer of `getUserTask` are built from the cluster's
+searchable storage, and a record of a user task there carries no variables. So
+`Camunda8CockpitBridge.prefilledUserTaskDetails` asks the storage for the variables after it read the
+task. Otherwise a `@TaskParam` parameter would receive `null` on that way and the value on the way
+through the listener job, and a provider which leaves a detail out for `null` would take back what
+the first report said. It asks for the same names a worker asks for:
 
 - the names `BusinessCockpitEventPublisher.variablesTheDetailsProvidersRead` answers, with the
   workflow module, the BPMN process, the task definition and the element id of the reference. Those
   are the values the extension picks the details provider by;
-- the multi-instance variables of the task (`Camunda8FetchVariables.collect`). The wiring now keeps
-  the adapter's `Camunda8MultiInstance.Registry` of a module in `Camunda8CockpitDeployments` when the
+- the multi-instance variables of the task (`Camunda8FetchVariables.collect`). The wiring keeps the
+  adapter's `Camunda8MultiInstance.Registry` of a module in `Camunda8CockpitDeployments` when the
   module starts, because the bridge has no worker to take it from. The rounds are read with the same
   code as for a job.
 
@@ -1137,7 +1015,7 @@ dispatch then asks again a little later.
 **A process called by an expression.** Such a process learns its rounds from the variable its
 caller hands down (`Camunda8MultiInstance.CHAIN_VARIABLE`). Its own model shows no round, so
 `chainOf` is empty for its tasks, and a provider which reads no variable would have made the bridge
-ask for nothing. The Camunda 8 adapter now answers `Camunda8MultiInstance.Registry#mayBeHandedAChain`
+ask for nothing. The Camunda 8 adapter answers `Camunda8MultiInstance.Registry#mayBeHandedAChain`
 for the process id as the cluster knows it. `true` means that a process of the same workflow
 aggregate names this process by an expression, so a chain may be in that variable. Then the bridge
 asks as well, and `Camunda8FetchVariables.collect` puts the chain variable among the names. `true`
@@ -1148,14 +1026,24 @@ of `camunda-community-hub/vanillabp-camunda8-adapter`.
 **The storage may hold a task before its variables.** The exporter writes a task and its variables
 as records of their own. Where the storage holds the task and not yet all of its variables, the
 search answers fewer values, and the report carries fewer values. The search does not answer 404
-then, so the bridge does not wait. We leave it this way (Stephan, 2026-10-09). The storage gives no
-sign that the variables of a task are complete, so there is nothing the bridge could wait for.
+then, so the bridge does not wait. This stays so. The storage gives no sign that the variables of a
+task are complete, so there is nothing the bridge could wait for.
 
 `Camunda8CockpitBridgeTest` and the two test applications show it. On both platforms a report after
 `aggregateChanged` and an answer of `getUserTask` carry the value the first report carried. The
 calling case of the test applications also calls a process by an expression once per round of a
 multi-instance call activity. The provider of its task reads no variable, and the report from the
 storage carries the same round as the first one.
+
+## 27. VanillaBP names the variables per workflow module and BPMN process - extended by decision 28
+
+*Merged into decision 26 on 2026-10-12, before the 1.0 release.* Decision 26 now says that VanillaBP
+names the variables a details provider reads, per workflow module and BPMN process.
+
+## 28. A report built from the storage reads the same variables as a listener job
+
+*Merged into decision 26 on 2026-10-12, before the 1.0 release.* Decision 26 now says that a report
+built from the searchable storage reads the same variables a listener job carries.
 
 ## 29. A task of a called process names its own process, and the search asks for every process of the case
 
@@ -1218,57 +1106,8 @@ and the task of the case of its own is neither read nor reported.
 
 ## 30. A called process with a workflow aggregate of its own is a case of its own
 
-Decision 3 said that every called process is a step of the case above it. That is true only for a
-called process which shares the workflow aggregate of its caller. A called process with an aggregate
-of its own is a business case of its own. The core starts it as a workflow of its own and builds its
-aggregate, and the cockpit now shows it that way too. This follows decision 61 of `business-cockpit`
-(story 1472): notifications form one group per case, and only a process with its own aggregate forms
-a group of its own.
-
-**The case of an instance** is the highest instance above it which can be reached by calls that
-share the aggregate. The walk starts at the instance and goes up the call hierarchy. It stops at the
-first caller which does not share the aggregate. So in a chain Order → Shipping → Packing, where
-Packing works on Shipping's aggregate and Shipping has its own, the case of Packing is Shipping.
-
-**The core decides which processes share an aggregate.** The extension asks
-`WorkflowTaskWiring#workflowsShareTheWorkflowAggregate` with the plain process ids, the same answer
-the Camunda 8 adapter uses for its call activities. The extension does not build a check of its own.
-It does not use `BpmsInitiatedStartInvoker#startsAWorkflowOfItsOwn`: that answer is `true` for a
-process nobody declares and for an id left over after a rename, and neither says anything about the
-caller. A process the core does not know shares nothing. So a call from a process nobody claims
-starts a case of its own. VanillaBP does not design for processes it did not deploy, so this is
-accepted.
-
-What changes:
-
-- The listener of the start event and of the end of such a process reports the workflow, with the
-  called instance as `workflowId`. Its report is sent at its start, like the one of a case nobody
-  called.
-- A user task in such a process names that instance as `workflowId` and no `subWorkflowId`.
-- `workflowsOfAggregate` no longer drops a called instance found by the search. It drops it only
-  where the instance shares the aggregate of its caller.
-- A task read from the searchable storage (`referenceOf`) names the same case as its listener did.
-
-**Where the call hierarchy comes from.** The extension reads it from the cluster only where the
-answer can differ from the instance itself. An instance nobody called is its own case. So is an
-instance whose process shares its aggregate with no other process this extension wired for the
-module, which is a called process with an aggregate of its own. Neither costs a request. Every other
-called instance needs the chain: one call-hierarchy request, and one request per process definition
-in it. Both answers never change, so they are remembered. The chain comes from the searchable
-storage, which runs behind the engine. So the lookup waits for it as long as the adapter's
-`workflow-visibility-timeout` says, like the 8.8 lookup of the root (decision 7). If that window runs
-out, the root of the hierarchy is taken, which is what every called process got before, and the
-reason is logged.
-
-The code is `Camunda8BusinessCases`, once for all lines. The 8.9 and 8.10 lines needed no request
-for a called process before. They pay this one now where a process shares its aggregate with
-another one.
-
-`Camunda8BusinessCasesTest` shows the walk, `Camunda8CockpitJobHandlerTest` the reports of both
-kinds of called process. `Camunda8CockpitIT` shows it on a cluster: one call reaches a step on the
-caller's aggregate, one a process with an aggregate of its own. It also checks the three calls of
-`BusinessCockpitService` which read VanillaBP's note of the start first (`aggregateChanged` twice and
-`getUserTask`), for both kinds of case.
+*Merged into decision 3 on 2026-10-12, before the 1.0 release.* Decision 3 now says which called
+process is a step and which is a case of its own, and how the case of an instance is found.
 
 ## 31. The wiring names the user tasks of a model, so their providers are checked against its version
 
