@@ -33,7 +33,7 @@ import jakarta.inject.Inject;
  * <p>
  * A third called process is reached once per round by a multi-instance call activity. The calling
  * process also calls the process of {@link OwnCaseWorkflowService}. That process has a workflow
- * aggregate of its own, so it is a case of its own and no step of this one (decision 30).
+ * aggregate of its own, so it is a case of its own and no step of this one (decision 3).
  */
 @ApplicationScoped
 @WorkflowService(workflowAggregateClass = CallingAggregate.class,

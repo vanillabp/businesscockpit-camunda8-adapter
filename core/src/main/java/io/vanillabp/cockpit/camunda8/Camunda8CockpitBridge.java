@@ -209,7 +209,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * details providers of the task read with <code>&#64;TaskParam</code>, and the variables of the
    * multi-instance elements around the task. Without them a later report of a task would give
    * such a parameter <code>null</code>, although the first report gave it the value. See decision
-   * 28 in the repository's DECISIONS.md.
+   * 26 in the repository's DECISIONS.md.
    * <p>
    * The request asks for the effective variables of the task. Those are the variables the task
    * sees, from its own scope up to its process instance, and where two scopes hold the same name
@@ -763,7 +763,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
         // a called process inherits the variables of its caller. Where it shares the caller's
         // workflow aggregate it is a step of the caller's case and not a case of its own. Where
         // it has an aggregate of its own it is a case, and it is the one asked about here. See
-        // decision 30 in the repository's DECISIONS.md. The adapter leaves this to whoever
+        // decision 3 in the repository's DECISIONS.md. The adapter leaves this to whoever
         // searched, because what has to be sorted out depends on the question which was asked
         .filter(instance -> isACase(workflowModuleId, instance))
         .toList();
@@ -923,7 +923,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * <p>
    * <b>The case, not the process.</b> <code>workflowId</code> is the business case. That is the
    * highest instance above the task which can be reached by calls that share the workflow aggregate
-   * (see decisions 3 and 30 in the repository's DECISIONS.md). The listener reports the same
+   * (see decision 3 in the repository's DECISIONS.md). The listener reports the same
    * instance. <code>subWorkflowId</code>, filled in by {@link #prefilledUserTaskDetails}, is the
    * instance the task really sits in where that is another one. The case is tied to the aggregate
    * by <code>workflowAggregateId</code> and <code>workflowId</code> and never by the process id.
@@ -985,7 +985,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
   /**
    * The process instance which is the business case of an instance. The core says which
    * processes share a workflow aggregate, and {@link Camunda8BusinessCases} walks the call
-   * hierarchy with that answer. See decision 30 in the repository's DECISIONS.md.
+   * hierarchy with that answer. See decision 3 in the repository's DECISIONS.md.
    *
    * @param workflowModuleId The workflow module
    * @param processInstanceKey The instance
@@ -1076,7 +1076,7 @@ public class Camunda8CockpitBridge implements BusinessCockpitBpmsBridge {
    * asks for exactly that: an empty result and a line in the log naming what it may mean. The
    * cockpit keeps what it stored before, a read is answered with nothing, and no task ends because
    * of it. The start of a workflow and the end of a task are reported by this extension's own
-   * listeners either way. See decisions 21 and 22 for when these searches run.
+   * listeners either way. See decision 19 for when these searches run.
    *
    * @param what What was searched for, for the message
    */
