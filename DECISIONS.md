@@ -259,7 +259,7 @@ job, and the case is reported as cancelled.
 
 Whether the line has the construct is the adapter's answer, not a second rule here.
 `Camunda8CancelListeners` of the VanillaBP Camunda 8 adapter answers it and writes the listener
-(decision 32 in the DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter). Decision 28
+(decision 27 in the DECISIONS.md of camunda-community-hub/vanillabp-camunda8-adapter). Decision 28
 there says that an extension uses the adapter's own API for this. Asking it first matters. A
 cluster of 8.8 or 8.9 refuses a model which carries the listener, and that fails the deployment of
 the whole workflow module. A second copy of the rule is a rule which will be wrong in one of the two
@@ -511,7 +511,7 @@ it was there.
 
 The tag has the same name and the same meaning in
 `camunda-community-hub/vanillabp-camunda8-adapter`, whose 8.10 line runs green with it. Two
-repositories doing the same thing two ways would make every reader learn it twice. See decision 31
+repositories doing the same thing two ways would make every reader learn it twice. See decision 43
 in the DECISIONS.md of that repository.
 
 A red preview line holds up no pull request and no release. That line is built against an alpha
@@ -855,7 +855,7 @@ During a migration between two clusters that is a workflow of the other cluster,
 read on this one. A note which names no adapter is still taken, because the key itself still has to be
 one of this BPMS, which `workflowKeyOf` checks.
 
-Since `adapter-platform-integration` decision 111, `adapterIdOfWorkflow` reads the note of the start
+Since `adapter-platform-integration` decision 5, `adapterIdOfWorkflow` reads the note of the start
 first and no longer throws after a workflow ended, for as long as the note lives. So
 `BusinessCockpitService.aggregateChanged` now reaches this bridge after the end as well, where it threw
 before. The bridge answers it like any other change. The note names the workflow, the storage still
