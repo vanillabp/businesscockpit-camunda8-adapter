@@ -264,7 +264,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
 
     // the cockpit shows business cases. A called process which shares its caller's workflow
     // aggregate is a step of the caller's case, and one with an aggregate of its own is a case of
-    // its own. See decisions 3 and 30 in the repository's DECISIONS.md
+    // its own. See decision 3 in the repository's DECISIONS.md
     final var theCase = caseOf(job);
     if (!theCase.equals(job.getProcessInstanceKey())) {
       logger
@@ -526,7 +526,7 @@ public class Camunda8CockpitJobHandler implements JobHandler {
 
   /**
    * The instance a business case is. An element of a called process belongs to the case of its
-   * caller where the two share the workflow aggregate. See decision 30 in the repository's
+   * caller where the two share the workflow aggregate. See decision 3 in the repository's
    * DECISIONS.md.
    */
   private String workflowIdOf(

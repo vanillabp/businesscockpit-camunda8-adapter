@@ -16,7 +16,7 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * <p>
  * The cockpit shows business cases. A called process which shares the workflow aggregate of its
  * caller is a step of the caller's case. A called process with a workflow aggregate of its own is
- * a case of its own. See decision 30 in the repository's DECISIONS.md. So the case of an instance
+ * a case of its own. See decision 3 in the repository's DECISIONS.md. So the case of an instance
  * is the highest instance above it which can be reached by links that share the aggregate. The
  * walk stops at the first caller which does not share it.
  * <p>
@@ -36,7 +36,8 @@ import io.vanillabp.camunda8.client.Camunda8Errors;
  * lookup waits as long as the Camunda 8 adapter waits for the same storage
  * (<code>workflow-visibility-timeout</code>), like the 8.8 variant of
  * {@link Camunda8CallHierarchy}. If that window runs out, the lookup takes the root of the
- * hierarchy and logs the reason. Before decision 30, every called process got that root.
+ * hierarchy and logs the reason. That root is what every called process got before a called
+ * process could be a case of its own.
  * <p>
  * What the cluster answered is remembered per process instance and per process definition. Neither
  * can change. The hierarchy of an instance is settled when it is created, and a deployed definition
@@ -136,8 +137,9 @@ final class Camunda8BusinessCases {
     }
     final var chain = chainOf(processInstanceKey);
     if (chain.isEmpty()) {
-      // the storage did not answer in time. The root is what every called process got before
-      // decision 30. Where nobody knows it either, the instance is its own case
+      // the storage did not answer in time. The root is what every called process got before a
+      // called process could be a case of its own. Where nobody knows it either, the instance is
+      // its own case
       return root == null
           ? processInstanceKey
           : root;

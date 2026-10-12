@@ -305,7 +305,7 @@ public class Camunda8CockpitDeployments {
   /**
    * Whether two processes of one workflow module work on the same workflow aggregate. The core
    * answers it (<code>WorkflowTaskWiring#workflowsShareTheWorkflowAggregate</code>), and nothing
-   * is decided here. See decision 30 in the repository's DECISIONS.md.
+   * is decided here. See decision 3 in the repository's DECISIONS.md.
    *
    * @param adapterId The configured adapter id
    * @param workflowModuleId The workflow module

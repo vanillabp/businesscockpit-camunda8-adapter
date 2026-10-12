@@ -32,7 +32,7 @@ import io.vanillabp.cockpit.extension.spi.BusinessCockpitEventPublisher;
  * are bound for the task. The second kind is the multi-instance context of the task. It is in the
  * variables which the adapter put into the deployed model for its own workers. So a listener job
  * carries what a provider of this process reads, and not every variable of the workflow. See
- * decision 26 and decision 27 in the repository's DECISIONS.md.
+ * decision 26 in the repository's DECISIONS.md.
  * <p>
  * The pipeline starts this extension once per configured Camunda 8 adapter a module was
  * deployed to, and its processing context says which adapter that is. So a start opens the

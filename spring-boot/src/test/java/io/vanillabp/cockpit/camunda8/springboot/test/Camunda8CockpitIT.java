@@ -928,7 +928,7 @@ public class Camunda8CockpitIT {
     final var ownCase = "\"%s\":\"%s\"".formatted(OwnCaseWorkflowService.OWN_CASE, caseNumber);
     final var callerId = callingWorkflowIdOf(aggregate);
 
-    // the case of its own is reported at its start, like a case nobody called. See decision 30
+    // the case of its own is reported at its start, like a case nobody called. See decision 3
     // in the repository's DECISIONS.md
     final var ownWorkflow = CockpitServer.awaitRequest("/workflow/created", ownCase);
     final var ownId = idOf(ownWorkflow, "workflowId");
