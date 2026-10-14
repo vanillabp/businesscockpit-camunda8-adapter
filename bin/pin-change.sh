@@ -26,16 +26,15 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 # Every property whose value decides what a line is. Add one when a new property joins
 # them, and a '*' in a name is any line.
 #
-#   camunda8.version.line-*          the Camunda client of a line, and with it the oldest
-#                                    cluster that line accepts
 #   camunda8-adapter.version.line-*  the build of the VanillaBP Camunda 8 adapter a line
-#                                    sits on
+#                                    sits on, and with it the Camunda client of the line and
+#                                    the oldest cluster that line accepts. The client has no
+#                                    property here, see decision 32 in DECISIONS.md.
 #   protobuf.version                 one runtime for every line, raised together with the
 #                                    newest client. Left behind it breaks the newest line
 #                                    on its first deployment, and that line is the one no
 #                                    pull request builds.
 line_properties=(
-    'camunda8\.version\.line-[^<>]+'
     'camunda8-adapter\.version\.line-[^<>]+'
     'protobuf\.version'
 )

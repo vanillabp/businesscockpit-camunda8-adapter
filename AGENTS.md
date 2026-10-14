@@ -27,6 +27,11 @@ Or it does not stop at all, and the integration tests run the client of one line
 cluster of another. On 2026-09-20 that was 16 red tests out of 20 and 38 minutes, and every
 error read like an error of the cockpit, down to an HTTP 400 from the search API.
 
+The second way no longer happens quietly. This repository names no Camunda client version, so the
+client comes with the adapter, and `Camunda8AdapterOfThisLineTest` stops the build in `core` when
+the adapter was built for another line. Its message names both lines. See decision 32 in
+[DECISIONS.md](./DECISIONS.md).
+
 So build the adapter for the line you want, and give that build the version of the line:
 
 ```bash

@@ -112,46 +112,46 @@ core and gets the Camunda client through it, so a build of this repository inher
 cluster version of the adapter build it was compiled against. A line here means the same thing it
 means there:
 
-|  Channel   |   Version    | Camunda 8 adapter line | Client pin | Tested against |
-|------------|--------------|------------------------|------------|----------------|
-| bugfix     | `0.x.y-8.8`  | `-8.8`                 | `8.8.40`   | `8.8.40`       |
-| bugfix     | `0.x.y-8.9`  | `-8.9`                 | `8.9.22`   | `8.9.22`       |
-| current GA | `0.x.y-8.10` | `-8.10`                | `8.10.0`   | `8.10.0`       |
+|  Channel   |   Version    | Camunda 8 adapter line |   Client and cluster   |
+|------------|--------------|------------------------|------------------------|
+| bugfix     | `0.x.y-8.8`  | `-8.8`                 | the adapter's 8.8 pin  |
+| bugfix     | `0.x.y-8.9`  | `-8.9`                 | the adapter's 8.9 pin  |
+| current GA | `0.x.y-8.10` | `-8.10`                | the adapter's 8.10 pin |
 
 There is no preview line at the moment. 8.10 was the preview line until Camunda released
 `8.10.0` on 2026-09-29, and the next preview line is the one built against the first
 pre-release of 8.11. Two bugfix lines instead of one is the adapter's call, and its README
 says why under "How long a line lives".
 
-The client pins in the POM follow `camunda-community-hub/vanillabp-camunda8-adapter` rather than the
-newest release Camunda offers, and they move when that repository moves. A cluster version appears
-in the last column only once a build of that line has been proven against it, and every line runs
-every test it has.
+This repository names no Camunda client version. A line takes the client of the Camunda 8 adapter
+it builds against. The adapter's published POM names the client it pins for that line
+(`camunda8.version.line-<id>` in `camunda-community-hub/vanillabp-camunda8-adapter`), and the
+client reaches this build and every application through that POM. So when the adapter raises a pin,
+the next build here follows. Nobody edits a number here, and no pull request is needed for it. See
+[decision 32](./DECISIONS.md).
 
-The integration tests do not start the cluster this POM pins. The image comes from
-`camunda8-adapter-test-support`: the Camunda 8 adapter filters its own pin into
+The cluster comes from the same pin. The integration tests start the image that
+`camunda8-adapter-test-support` names: the adapter filters its pin into
 `camunda8-cluster.properties` while building that artifact, and `ClusterUnderTest` reads the image
-from there. So a pin here says what the code is compiled against, and the adapter says what it is
-run against. Both say the same thing for as long as the two pins are equal. That is the whole
-reason why the pins here are raised whenever that repository raises one, see
-[decision 10](./DECISIONS.md).
+from there. So client and cluster are one number, and they can only differ when something in this
+build manages `io.camunda:camunda-client-java` again. Nothing here may.
 
-While they are not equal, a line runs a client older than the cluster answering it. Nothing fails
-over that. The literals the newer cluster gained arrive as `UNKNOWN_ENUM_VALUE`, and a fallback
-nobody chose reads like one somebody did. So the nightly matrix is what says it: every line it
-builds prints the image the adapter named beside its own pin, and the line is red while the two
-differ. The night builds every line, so every line is covered.
+Two checks hold that. `Camunda8AdapterOfThisLineTest` in `core` runs in every build. It stops a
+build whose adapter was built for another line, and it stops a build whose client is not the
+adapter's. The nightly matrix also prints the image of each line beside the client Maven really
+resolved, and the line is red while the two differ. A client older than its cluster breaks nothing
+a test sees. The literals the newer cluster gained arrive as `UNKNOWN_ENUM_VALUE`, and a fallback
+nobody chose reads like one somebody did. That is why the check exists.
 
 A client downgrade inside a line is not supported. Camunda adds enum literals and interface
 methods in patch releases and does not count that as breaking, so a build compiled against
 `8.9.21` can call a method `8.9.11` never had. Going back therefore fails at runtime and nowhere
 near the downgrade. Move the pin forward instead, or move to the line whose pin you want.
 
-The same habit is why a moved pin is read rather than trusted. Every pull request which raises one
-gets a comment naming the enum literals and the interface methods the new version added, and on a
-GA line it also gets a red check. That check is `client-api-changes.yaml` of
-`camunda-community-hub/vanillabp-camunda8-adapter`, called from
-`.github/workflows/client-api-changes.yaml` here, so both repositories answer the same way.
+A moved pin is still read rather than trusted, but in the adapter. Its pull request which raises a
+pin gets a comment naming the enum literals and the interface methods the new client added, and on
+a GA line it also gets a red check. That comment is the one to read for this extension as well.
+This repository has no pin of its own any more, so it no longer runs that check.
 
 Line 8.10 left nineteen of its thirty integration tests out until 2026-10-01, and it leaves none
 out now. The REST gateway of the 8.10 pre-releases threw a `NullPointerException` while it
@@ -187,7 +187,7 @@ either.
 ### How the lines are built
 
 Every line is a build variant of this one source tree, not a maintenance branch. A line is a Maven
-profile that selects the Camunda 8 adapter and the client pin:
+profile that selects the Camunda 8 adapter, and the adapter brings the client:
 
 ```bash
 mvn install                                          # current GA line, 0.9.0-SNAPSHOT
@@ -198,8 +198,9 @@ mvn -Pline-8.9 -Drevision=0.9.0-8.9 clean install
 Every line reads the same snapshot of the Camunda 8 adapter, so a local repository holds one
 adapter for all of them and the last install into it wins. A line built against an adapter
 someone installed by hand therefore takes `-Padapter-built-locally`, which asks for
-`2.0.0-<line>-SNAPSHOT`, the version the nightly matrix builds that adapter under.
-[`AGENTS.md`](./AGENTS.md) says what it costs to forget it.
+`2.0.0-<line>-SNAPSHOT`, the version the nightly matrix builds that adapter under. A line built
+against the adapter of another line stops in `core`, because it would run that line's client.
+[`AGENTS.md`](./AGENTS.md) shows the two commands.
 
 Switching a line always needs `clean`, and the CI does it that way. Classes compiled against one
 Camunda client are binary compatible with no other one. A method the newer model library inherits
@@ -221,8 +222,8 @@ all and kept its parent, and that parent said `${camunda8.version.line-8.9}`. An
 the 8.8 line would have been handed the 8.9 client. The client a build was compiled against is the
 lowest cluster version it accepts, so the line promised a cluster and then took it away. No line is
 released yet, so no user ever read such a POM. Since then `Camunda8PublishedPomTest` reads the
-published POM on every line. It compares the client in it with the client the build was compiled
-against.
+published POM on every line. Since decision 32 that POM names no client of its own. It names the
+adapter of its line, and the test compares that version with the adapter the build used.
 
 The same POM also names the repository, and it names the root of it in every artifact. Maven
 would append the module path to that address and to all three `scm` elements, which points at a
@@ -302,9 +303,9 @@ proven by the adapter's own matrix. Once the adapter publishes a snapshot per li
 The cluster a line meets is the adapter's word rather than ours. Its `test-support` artifact carries
 the image and the secondary storage of its line, and the tests here start what that artifact names.
 That is why line 8.8 runs with an Elasticsearch beside the cluster and the newer lines do not. The
-last step of a line reads that image back and compares it with the client this POM pins for the
-same line. So a pin which fell behind the adapter's turns the line red instead of staying
-invisible.
+last step of a line reads that image back and compares it with the client Maven resolved for the
+same line. Both come from the adapter's pin, so they only differ when something here manages the
+client, and then the line turns red instead of the difference staying invisible.
 
 What no cluster can answer is whether the lines offer the same thing. `bin/api-identity.sh` builds
 every line and compares the public API of every JAR with `javap`, and the job `api-identity` runs it
@@ -429,8 +430,7 @@ each other. `release.yaml` is started by hand. It reads the live lines out of th
 so it cannot fall behind the build, and it publishes each of them to Maven Central from the same
 commit.
 It deploys no snapshot, so it can run beside a publish.
-`client-api-changes.yaml` runs on every pull request and comments on the one which raises a client
-pin, see [Release lines](#release-lines). `release-lines-issue.yaml` runs after each nightly run of
+`release-lines-issue.yaml` runs after each nightly run of
 the matrix and opens or updates the GitHub issue of a line which broke.
 
 `publish-snapshots.yaml` also publishes the two coverage reports to GitHub Pages, which is
