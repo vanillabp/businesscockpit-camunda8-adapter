@@ -1,0 +1,113 @@
+name: Client API changes
+# Asks whether a new Camunda client needs a change in this repository's code, and records
+# who answered.
+#
+# Camunda does not count a new enum literal or a new interface method as breaking, so
+# neither is documented, not even between two patches of one line. Both break this
+# extension the same way they break the adapter. A line takes its client from the Camunda 8
+# adapter (decision 32), so a new client arrives here with no commit and no pull request of
+# its own. The adapter's pull request which raised the pin got a report, but nobody read it
+# with this repository's code in mind. This workflow opens the pull request that is
+# missing. See decision 33.
+#
+# camunda8-client-read.properties names the client each line was last read against. Every
+# morning this holds it against the adapter's pins. For every line which differs it runs
+# the adapter's bin/client-api-changes.sh from the old client to the new one. Then it opens
+# ONE pull request which raises the record and carries the report. If that pull request is
+# open already, it is updated instead. A person merges it, and that merge is the reading.
+# It never merges itself.
+#
+# The adapter's reusable workflow is not called. It takes the two versions from the POM of
+# a pull request and its base, and a run here has neither. Its script is what decides, and
+# the script is called as it is.
+"on":
+  schedule:
+    # 05:00 UTC, which is 07:00 in Vienna in summer and 06:00 in winter. The adapter's
+    # Renovate merges a pin patch in the night, so by then the night's pins are on its main.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+concurrency:
+  # Two runs at once would both push the branch and both look for the pull request, and at
+  # that moment neither finds one. A run which waits loses nothing: it reads the pins again.
+  group: client-api-changes
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  client-api-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      # to push the branch of the pull request
+      contents: write
+      # to open the pull request and to rewrite its body
+      pull-requests: write
+    env:
+      BRANCH: client-api-read
+      # The label this repository puts on a pull request which moves a dependency. Renovate
+      # uses it as well. The adapter's 'camunda8-line-pin' label does not exist here.
+      LABEL: dependencies
+    steps:
+      - uses: actions/checkout@v7
+      - name: The script and the release lines of the adapter repository
+        # The pins are the 'camunda8.version.line-*' properties of the adapter's POM on main.
+        # Every line here builds against the adapter snapshot from that main, so its pins
+        # are the clients this repository runs with tonight.
+        uses: actions/checkout@v7
+        with:
+          repository: camunda-community-hub/vanillabp-camunda8-adapter
+          path: .camunda8-adapter
+      - uses: actions/setup-java@v6
+        with:
+          java-version: 25.0.4+101.0.LTS
+          distribution: temurin
+      - id: read
+        name: What the new clients added
+        run: |
+          set -euo pipefail
+          bin/client-api-read.sh camunda8-client-read.properties \
+            .camunda8-adapter/pom.xml \
+            .camunda8-adapter/bin/client-api-changes.sh \
+            "${RUNNER_TEMP}/read" | tee -a "$GITHUB_OUTPUT"
+          if [ -f "${RUNNER_TEMP}/read/body.md" ]; then
+            cat "${RUNNER_TEMP}/read/body.md"
+          else
+            echo "Every line is read against the client the adapter pins."
+          fi
+      - name: Open or update the pull request
+        if: steps.read.outputs.lines != '0'
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          READ: "${{ runner.temp }}/read"
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The branch is built anew from main on every run, so the record of the pull
+          # request is always main's record plus the clients of today. A record which is the
+          # same as on the branch already is not pushed again. Otherwise every night would
+          # add a commit that changes nothing.
+          branch_record=""
+          if git ls-remote --exit-code origin "refs/heads/${BRANCH}" > /dev/null; then
+            git fetch --quiet origin "${BRANCH}"
+            branch_record="$(git show FETCH_HEAD:camunda8-client-read.properties)"
+          fi
+          if [ "$branch_record" != "$(cat "${READ}/record.properties")" ]; then
+            git switch --create "$BRANCH"
+            cp "${READ}/record.properties" camunda8-client-read.properties
+            git add camunda8-client-read.properties
+            git commit --quiet --message "Read the new Camunda clients against this repository"
+            git push --force origin "$BRANCH"
+          fi
+
+          title="Read the new Camunda clients against this repository"
+          if [ "${{ steps.read.outputs.found }}" = "yes" ]; then
+            title="Check this repository against new Camunda client members"
+          fi
+          number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "$title" --body-file "${READ}/body.md"
+          else
+            gh pr create --base main --head "$BRANCH" --title "$title" \
+              --body-file "${READ}/body.md" --label "$LABEL"
+          fi

@@ -1178,9 +1178,46 @@ One thing decision 10 kept is given up. A client bump makes no commit here, so t
 check of a pull request has nothing to work on in this repository, and its workflow is gone. The
 check runs on the adapter's pull request which raises the pin. On a GA line a new enum literal or
 interface method makes that pull request red, and so it does not merge by itself. That comment is
-the one to read for this extension as well.
+the one to read for this extension as well. Decision 33 brings a check back here, in a form which
+needs no pin.
 
 The protobuf pin stays a number here, raised by hand. It serves every line and follows the newest
 client, see the comment at the pin in `pom.xml`. A client of the newest line which needs a newer
 protobuf breaks that line in the night, and the VanillaBP Camunda 8 adapter names both versions
 when it refuses to boot.
+
+## 33. A client change is read here too, and a merged pull request records it
+
+Built by story 1495 on 2026-10-14. It takes back the paragraph of decision 32 which gave the client
+API check up.
+
+Decision 32 takes the client from the adapter, and that stays. But the reason for the check did not
+go away with the pin. Camunda adds enum literals and abstract interface methods inside a line and
+does not call that breaking. Code here can break on such an addition just as the adapter's code
+can. The adapter's pull request which raises a pin gets a report, but people read it with the
+adapter's code in mind, and a patch there merges by itself when nothing is found. A new client now
+reaches this repository with no commit here, so no pull request here ever asks whether our code
+needs a change.
+
+So this repository records which client each line was last read against, in
+`camunda8-client-read.properties`. It is data. Nothing in the build reads it, and the client of a
+build is still the adapter's. `client-api-changes.yaml` runs every morning and on demand. It holds
+each entry against the adapter's pin of that line (`camunda8.version.line-<id>` in the adapter's
+`pom.xml` on main, read as text). For every line which differs it runs the adapter's
+`bin/client-api-changes.sh` from the recorded client to the pinned one. Then it opens one pull
+request which raises the record and carries the report. If that pull request is open already, the
+run updates it. When something was found, the body says so first and names the packages here which
+use a class the report lists.
+
+That pull request never merges itself. Merging it is the moment a person says the new client was
+read with this repository's code in mind, and the record is what remembers it. A pull request
+which found nothing still waits for a person. That costs one click, and the record then only says
+what a person said.
+
+The check is the adapter's script, called and not copied, so the two repositories cannot answer
+differently. The adapter's reusable workflow is not called: it takes the two versions from a pull
+request's POM and its base, and a run here has neither.
+
+A line which joins this repository joins the record in the same change as its profile. A line in
+the record which the adapter no longer pins makes the run fail with a message, because nobody
+could ever raise that entry.

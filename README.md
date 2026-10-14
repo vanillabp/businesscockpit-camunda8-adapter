@@ -148,10 +148,15 @@ methods in patch releases and does not count that as breaking, so a build compil
 `8.9.21` can call a method `8.9.11` never had. Going back therefore fails at runtime and nowhere
 near the downgrade. Move the pin forward instead, or move to the line whose pin you want.
 
-A moved pin is still read rather than trusted, but in the adapter. Its pull request which raises a
-pin gets a comment naming the enum literals and the interface methods the new client added, and on
-a GA line it also gets a red check. That comment is the one to read for this extension as well.
-This repository has no pin of its own any more, so it no longer runs that check.
+A new client is still read rather than trusted, here as well as in the adapter. The adapter's pull
+request which raises a pin gets a comment naming the enum literals and the interface methods the new
+client added. That comment is written with the adapter's code in mind. So this repository keeps
+`camunda8-client-read.properties`, which names the client each line was last read against. Nothing
+in the build reads it. Every morning `client-api-changes.yaml` holds it against the adapter's pins.
+When a pin moved, the workflow opens one pull request here which raises the record. Its body has
+the adapter's report and names the packages here which use a class the report lists. A person
+merges it after checking the code, and that merge is the record that the client was read. It never
+merges itself. See [decision 33](./DECISIONS.md).
 
 Line 8.10 left nineteen of its thirty integration tests out until 2026-10-01, and it leaves none
 out now. The REST gateway of the 8.10 pre-releases threw a `NullPointerException` while it
@@ -432,6 +437,8 @@ commit.
 It deploys no snapshot, so it can run beside a publish.
 `release-lines-issue.yaml` runs after each nightly run of
 the matrix and opens or updates the GitHub issue of a line which broke.
+`client-api-changes.yaml` runs every morning and opens or updates the pull request which asks
+whether a new Camunda client needs a change here, see [Release lines](#release-lines).
 
 `publish-snapshots.yaml` also publishes the two coverage reports to GitHub Pages, which is
 what the badges at the top of this page link to. The number is the current GA line and nothing

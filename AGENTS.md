@@ -115,6 +115,25 @@ a scope hands the jar to every application, and that is a defect. An `optional` 
 promise nobody ever keeps, and it breaks on the day the first module declares it. This repository
 had the second case for Lombok, and the VanillaBP adapters had the first.
 
+## A pull request from `client-api-read` asks you to read a new client
+
+The Camunda client of a line comes from the Camunda 8 adapter, so a new client reaches this
+repository without a commit here. `client-api-changes.yaml` notices it every morning and opens a
+pull request from the branch `client-api-read`. That pull request raises
+`camunda8-client-read.properties` and carries a report of the enum literals and interface methods
+the new client added.
+
+Read the report before you merge. Check each package the body names: a comparison against one
+literal or a `switch` must still land on the harmless side for a literal it does not know, and a
+class which implements a listed interface by hand stops compiling. If the code needs a change, make
+it in a pull request of its own first, then merge this one. Do not raise the record by hand to make
+the pull request go away. The merge is what says the client was read. See decision 33 in
+[DECISIONS.md](./DECISIONS.md).
+
+When a line joins or leaves this repository, add or remove its entry in
+`camunda8-client-read.properties` in the same change as its profile. A line in the record which the
+adapter no longer pins makes the workflow fail.
+
 ## This is an extension, not a BPMS adapter
 
 An extension joins the deployment pipeline of the VanillaBP core and implements
