@@ -8,17 +8,21 @@ import io.vanillabp.camunda8.test.PublishedPom;
 import io.vanillabp.integration.test.utils.SuppressOutputExtension;
 
 /**
- * The POM this line publishes asks for this line's Camunda client, and for nothing which an
+ * The POM this line publishes asks for this line's Camunda 8 adapter, and for nothing which an
  * application of another line would have to take. It also tells the truth about itself: the
  * addresses in it open, and it says nothing about where we deploy.
  * <p>
  * A release line is a promise about the cluster an application may run. The client a build was
  * compiled against is the lowest cluster version that build accepts. The POM keeps the promise,
- * not the jar, because the POM puts the client on an application's classpath. It used to say
- * something else here. The version was in a property which the line profile sets, the published
- * POM was a copy of the source POM, and an application activates none of our profiles. So every
- * line asked for the client of the current GA line. The 'oss' mode of the flatten plugin ended
- * that, and this test keeps it that way. See decision 12 in the repository's DECISIONS.md.
+ * not the jar, because the POM puts the client on an application's classpath. It does that through
+ * the adapter: this module names no client of its own, and the published POM of the adapter names
+ * the client of its line. So the adapter version is what this test holds the POM against.
+ * <p>
+ * It used to say something else here. The version was in a property which the line profile sets,
+ * the published POM was a copy of the source POM, and an application activates none of our
+ * profiles. So every line asked for the client of the current GA line. The 'oss' mode of the
+ * flatten plugin ended that, and this test keeps it that way. See decisions 12 and 32 in the
+ * repository's DECISIONS.md.
  * <p>
  * What the assertions know sits in {@link PublishedPom} of 'camunda8-adapter-published-pom',
  * published by the VanillaBP Camunda 8 adapter on the same release lines as this repository.
@@ -26,10 +30,9 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * check in each of them would drift. This test is the caller: it names the artifact, the
  * versions expected of it, the repository it comes from and the run it belongs to.
  * <p>
- * The client to expect is handed over by the build, see the surefire configuration in this
- * module's pom.xml. The adapter reads it from its own line descriptor and we cannot: every line
- * of this repository still compiles against the same adapter snapshot, so that descriptor would
- * answer for whichever line the adapter was last built for.
+ * The adapter version to expect and the line are handed over by the build, see the surefire
+ * configuration in this module's pom.xml. That the adapter on the classpath belongs to the line
+ * is {@link Camunda8AdapterOfThisLineTest}.
  */
 @ExtendWith(SuppressOutputExtension.class)
 public class Camunda8PublishedPomTest {
@@ -38,11 +41,11 @@ public class Camunda8PublishedPomTest {
   private static final String REPOSITORY = "https://github.com/vanillabp/businesscockpit-camunda8-adapter";
 
   @Test
-  @DisplayName("the published POM asks for the client of this release line")
-  public void thePublishedPomAsksForTheClientOfThisLine() {
+  @DisplayName("the published POM asks for the Camunda 8 adapter of this release line")
+  public void thePublishedPomAsksForTheAdapterOfThisLine() {
 
     thePublishedPom()
-        .asksFor("io.camunda", "camunda-client-java", theClientToExpect());
+        .asksFor("org.camunda.community.vanillabp", "camunda8-adapter", theAdapterToExpect());
 
   }
 
@@ -84,49 +87,47 @@ public class Camunda8PublishedPomTest {
    * <p>
    * A failure names the coordinates of the artifact, and outside a release ours say nothing
    * about the line. A pull request builds the same snapshot version on every line, so the same
-   * message fits all three, and a reader of a red build has to guess. The Camunda client which the
-   * active line profile chose tells them apart.
+   * message fits all three, and a reader of a red build has to guess. The line the active profile
+   * chose tells them apart.
    */
   private String theRunOfThisBuild() {
 
-    final var client = clientOfThisBuild();
-    return client == null
-        ? "a run which named no Camunda client"
-        : "the line of the Camunda client "
-            + client;
+    final var line = handedOver("camunda8.line");
+    return line == null
+        ? "a run which named no release line"
+        : "the line "
+            + line;
 
   }
 
   /**
-   * The client version to hold the published POM against.
+   * The adapter version to hold the published POM against.
    *
    * @throws AssertionError If the build handed none over, because a test which cannot name
-   *           the client it expects proves nothing about the POM
+   *           the adapter it expects proves nothing about the POM
    */
-  private String theClientToExpect() {
+  private String theAdapterToExpect() {
 
-    final var client = clientOfThisBuild();
-    if (client != null) {
-      return client;
+    final var adapter = handedOver("camunda8-adapter.version");
+    if (adapter != null) {
+      return adapter;
     }
     throw new AssertionError(
-        "The system property 'camunda8.client' is not set, so there is nothing to hold the "
-            + "published POM against. The build hands it to surefire from the property the "
-            + "active line profile selected, see this module's pom.xml. A run which skipped "
+        "The system property 'camunda8-adapter.version' is not set, so there is nothing to "
+            + "hold the published POM against. The build hands it to surefire from the property "
+            + "the active line profile selected, see this module's pom.xml. A run which skipped "
             + "that configuration cannot answer the question this test asks.");
 
   }
 
-  /**
-   * The exact Camunda client the active line profile selected for this build, or
-   * {@code null} where the build handed none over.
-   */
-  private String clientOfThisBuild() {
+  /** A value the build handed to surefire, or {@code null} where it handed none over. */
+  private static String handedOver(
+      final String name) {
 
-    final var client = System.getProperty("camunda8.client");
-    return ((client == null) || client.isBlank())
+    final var value = System.getProperty(name);
+    return ((value == null) || value.isBlank())
         ? null
-        : client;
+        : value;
 
   }
 

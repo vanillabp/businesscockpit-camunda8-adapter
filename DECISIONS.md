@@ -266,7 +266,11 @@ workflow in about one run out of four, so three nights out of four it was green.
 would also mean the next red night opens a second one, and one break would end up spread over
 several. The person who merged the fix is the one who closes it.
 
-## 10. The client pin of a line is the adapter's pin, raised by hand
+## 10. The client pin of a line is the adapter's pin, raised by hand - superseded by decision 32, which takes the client from the adapter and keeps no pin here
+
+*Superseded on 2026-10-14 by decision 32.* This repository names no client version any more. The
+nightly check this entry asked for stays, and it now holds the cluster against the client Maven
+resolved.
 
 The Camunda client this repository pins per line is the one
 `camunda-community-hub/vanillabp-camunda8-adapter` pins for the same line. The value is copied into
@@ -407,6 +411,11 @@ The shared class cannot read one thing, the client to expect. The adapter reads 
 line descriptor and we cannot. Every line here compiles against the same adapter snapshot, so
 that descriptor answers for whichever line the adapter was built for last. The build hands the
 client to surefire instead, see the configuration in `core/pom.xml`.
+
+Since decision 32 `core` declares no client, so its published POM names the adapter of its line
+and the adapter's POM names the client. The test now holds the adapter version against the POM,
+and `Camunda8AdapterOfThisLineTest` checks that the adapter on the classpath is the one of this
+line.
 
 See [What an application pins itself](./README.md#what-an-application-pins-itself).
 
@@ -1122,3 +1131,56 @@ values the worker reports later: the plain task definition and the element id.
 A user task of a called process is reported with the called process and with the version its job
 names, not with the caller's. The version of a task provider refers to the model the task belongs
 to. `Camunda8CockpitJobHandlerTest` holds that.
+
+## 32. A line takes its Camunda client from the adapter it builds against
+
+Built by story 1493 on 2026-10-14. It replaces decision 10.
+
+This repository names no Camunda client version. `core` does not declare the client, and nothing
+here manages `io.camunda:camunda-client-java`. The client comes through
+`org.camunda.community.vanillabp:camunda8-adapter`. That adapter publishes its POM with every
+version resolved, so the POM of each line names the client the adapter pins for that line
+(`camunda8.version.line-<id>` in `camunda-community-hub/vanillabp-camunda8-adapter`). Which
+adapter a line reads is still ours: the `camunda8-adapter.version.line-*` properties and the line
+profiles.
+
+Before this, the client was pinned here per line by hand, as decision 10 asked, and copied from
+the adapter. The adapter's Renovate raises its pins and merges patches by itself. The pins here
+were left to people on purpose. So each Camunda patch turned the nightly run red with green tests,
+because the cluster had moved and the pin here had not: issue #110 on 2026-10-13 and issue #115
+one day later, on all three lines at once. Each time somebody had to open an issue, a pull request
+and a CI run for a number that already existed in the adapter. A Renovate rule here, with patches
+merging themselves, would have made that shorter. But it would still be two numbers, and there is
+always a window between the two merges in which they differ. One number has no window.
+
+The number now comes from the same place on every path:
+
+- The nightly run and every pull request build the adapter of each line first and pass its
+  version (`2.0.0-<line>-SNAPSHOT`) to this build. The client is whatever that adapter was built
+  with.
+- A release builds each line against the adapter version its profile names. The client is the
+  one in that adapter's published POM, so no workflow has to pass a number.
+- A build without a line profile, on a laptop or in `build.yaml` and `publish-snapshots.yaml`,
+  reads the shared adapter snapshot, which is built for the current GA line,
+  and gets that line's client. That is right for the line a plain build produces.
+- A local build of another line needs the adapter of that line, built by hand and selected with
+  `-Padapter-built-locally`. Without it the build would run the GA client under the name of the
+  older line. `Camunda8AdapterOfThisLineTest` stops that build and says what to do. It reads the
+  line out of the adapter's own descriptor (`camunda8.line` in
+  `META-INF/vanillabp/adapter-camunda8.properties`) and compares it with the line of the build.
+
+The same test also compares the client on the classpath with the client in that descriptor. They
+differ only when something in this build manages the client again, a BOM or a new entry. The
+nightly check of decision 10 stays for the same case: it holds the image the line ran against
+next to the client Maven really resolved, and no longer next to a number in `pom.xml`.
+
+One thing decision 10 kept is given up. A client bump makes no commit here, so the client API
+check of a pull request has nothing to work on in this repository, and its workflow is gone. The
+check runs on the adapter's pull request which raises the pin. On a GA line a new enum literal or
+interface method makes that pull request red, and so it does not merge by itself. That comment is
+the one to read for this extension as well.
+
+The protobuf pin stays a number here, raised by hand. It serves every line and follows the newest
+client, see the comment at the pin in `pom.xml`. A client of the newest line which needs a newer
+protobuf breaks that line in the night, and the VanillaBP Camunda 8 adapter names both versions
+when it refuses to boot.

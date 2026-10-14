@@ -90,7 +90,10 @@ jobs:
           esac
 
   # The live lines are not maintained here: they are the line-* profiles of the POM, which
-  # also carry the pins. So the release cannot fall behind the build.
+  # also name the adapter of each line. So the release cannot fall behind the build. The
+  # Camunda client of a line comes with that adapter, so a line is published with the client
+  # of the adapter version its profile names, and no workflow has to hand a number over. See
+  # decision 32 in the repository's DECISIONS.md.
   #
   # Every line is released, a preview line included. Only the gate above leaves such a line
   # out, because nothing has proven it and nothing claims it is proven: its version says

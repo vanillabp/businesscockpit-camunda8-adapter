@@ -42,7 +42,12 @@
       <!-- names the processing context this extension is wired with, holds the scoping and
            listener helpers its own listeners are placed against, and hands out the Camunda
            client of each configured adapter id. It brings the Camunda client and the
-           VanillaBP SPI artifacts along. -->
+           VanillaBP SPI artifacts along.
+           The client is not declared here although this module uses it. A declaration needs a
+           version, and the only version which is right is the one the adapter of this line
+           names. So the client comes through the adapter and nowhere else, and an
+           application of this line gets exactly that client. See decision 32 in the
+           repository's DECISIONS.md. -->
       <groupId>org.camunda.community.vanillabp</groupId>
       <artifactId>camunda8-adapter</artifactId>
     </dependency>
@@ -58,10 +63,6 @@
            Nothing here implements it - that is a BPMS adapter's business. -->
       <groupId>io.vanillabp</groupId>
       <artifactId>vanillabp-adapter-spi</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.camunda</groupId>
-      <artifactId>camunda-client-java</artifactId>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -100,13 +101,14 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <systemPropertyVariables>
-            <!-- What the active line profile chose, handed to Camunda8PublishedPomTest. That
-              test holds it against the POM this module publishes, and the two used to differ:
-              a property is not resolved for a reader of the published POM. Read here from the
-              build rather than from the adapter on the classpath, because every line still
-              compiles against the same adapter snapshot, so the adapter's own line descriptor
-              would answer for whichever line it was last built for. -->
-            <camunda8.client>${camunda8.version}</camunda8.client>
+            <!-- What the active line profile chose, handed to Camunda8PublishedPomTest and
+              Camunda8AdapterOfThisLineTest. The first holds the adapter version against the POM
+              this module publishes. The second holds the line against the line descriptor of the
+              adapter on the classpath, because the client of a build is the client of that
+              adapter, and a build of line 8.8 against an adapter built for 8.10 would quietly
+              run the 8.10 client. -->
+            <camunda8.line>${camunda8.line}</camunda8.line>
+            <camunda8-adapter.version>${camunda8-adapter.version}</camunda8-adapter.version>
           </systemPropertyVariables>
         </configuration>
       </plugin>
