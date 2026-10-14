@@ -283,8 +283,17 @@ it for the application: its own BOM wins over anything arriving through us. The 
 no pin. Read the number of a client rather than guess it:
 
 ```bash
-mvn -Pline-8.10 -pl spring-boot dependency:tree -Dincludes=com.google.protobuf
+mvn -Pline-8.10 -pl spring-boot dependency:tree -Dverbose -Dincludes=com.google.protobuf
 ```
+
+Where a BOM manages protobuf, only `-Dverbose` shows the version the client asked for, as
+"version managed from". Without it the tree names the managed version alone.
+
+This repository's own build has the same pin, `protobuf.version` in `pom.xml`, for every line. It
+follows the client of the newest line, and that client arrives through the adapter without a commit
+here. So every line of `line-matrix.yaml` reads the tree it resolved and goes red when a dependency
+asks for a newer protobuf than the pin. The message names both versions and the property to raise.
+See [decision 12](./DECISIONS.md).
 
 ### What proves a line
 

@@ -149,6 +149,7 @@ jobs:
           distribution: temurin
           cache: maven
       - name: "Build the Camunda 8 adapter of line ${{ matrix.line }}"
+        id: adapter
         # The step this limit was written for. On the 20th of September 2026 it hung for
         # 35 minutes on line 8.8 without printing a line and the run had to be stopped by
         # hand, while the run before it had done the same work in under two minutes.
@@ -253,6 +254,32 @@ jobs:
             echo "Find it with: mvn -Pline-${LINE} -pl core -am dependency:tree -Dverbose -Dincludes=io.camunda" >&2
             exit 1
           fi
+      - name: The protobuf pin is high enough for the client of this line
+        # protobuf.version in pom.xml is the one number here which follows the Camunda
+        # client, and the client arrives through the adapter without a commit here. A client
+        # generated against a newer protobuf than the pin makes the adapter refuse to boot,
+        # and before this step that showed up as a red night with an
+        # ExceptionInInitializerError and no word about the pin. So the line reads what its
+        # build resolves and names both versions and the property to raise. It runs on every
+        # line rather than the newest alone, because the one pin serves them all. See
+        # decision 12 in the repository's DECISIONS.md.
+        #
+        # It needs the adapter of this line, and runs whenever that was built, so it also
+        # names the reason when the tests above went red over it.
+        if: "!cancelled() && steps.adapter.outcome == 'success'"
+        env:
+          SETTINGS: "${{ github.workspace }}/.github/workflows/github-packages-settings.xml"
+          LINE: "${{ matrix.line }}"
+        run: |
+          set -euo pipefail
+          # '-Dverbose' prints the version each path asked for, which the plain tree drops
+          mvn -s "$SETTINGS" --batch-mode --no-transfer-progress --quiet \
+            "-Pline-${LINE}" "-Drevision=0.9.0-${LINE}-SNAPSHOT" \
+            "-Dcamunda8-adapter.version.line-${LINE}=2.0.0-${LINE}-SNAPSHOT" \
+            -pl core dependency:tree -Dverbose \
+            -Dincludes=com.google.protobuf:protobuf-java \
+            -DoutputFile=target/protobuf-tree.txt
+          bin/protobuf-pin.sh "${LINE}" core/target/protobuf-tree.txt
       # What this line did, written down for the job 'ga-lines' below. A matrix cannot hand
       # one result per line to another job: every job of it writes the same output and the
       # last one to finish overwrites the rest. So each line leaves a file named after
