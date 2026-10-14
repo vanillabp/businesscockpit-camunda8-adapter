@@ -42,6 +42,15 @@ jobs:
       actions: read
       issues: write
     steps:
+      # The script which reads a job log is the Camunda 8 adapter's, checked out rather
+      # than copied: it is tested there, and the adapter's own issue uses it too. See
+      # decision 34 in the repository's DECISIONS.md.
+      - uses: actions/checkout@v7
+        with:
+          repository: camunda-community-hub/vanillabp-camunda8-adapter
+          ref: main
+          path: camunda8-adapter
+          sparse-checkout: bin
       - name: Open or update the issue of every line which broke
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
@@ -143,15 +152,21 @@ jobs:
                   echo
                   echo "What the log of that job says:"
                   echo
-                  echo '```'
-                  # Maven's own summary, without the six lines it prints after every
-                  # failure about switches to re-run it with.
-                  gh run view --job "$job_id" --log-failed \
-                    | sed -E 's/^[^\t]*\t[^\t]*\t[^ ]+ //' \
-                    | grep -aE '^\[ERROR\]' \
-                    | grep -avE '^\[ERROR\][[:space:]]*$|-> \[Help|\[Help [0-9]+\] http|To see the full stack trace|Re-run Maven using|For more information about the errors|After correcting the problems|mvn <args> -rf|See dump files|See /home/runner/' \
-                    | head -30 || true
-                  echo '```'
+                  gh run view --job "$job_id" --log-failed > "$work/job.log" 2>/dev/null \
+                    || true
+                  # Maven's summary when Maven broke, and otherwise the last lines of the
+                  # step which broke first. A shell check gives its reason in plain text,
+                  # which a filter for Maven's [ERROR] lines never quotes. See decision 34
+                  # in the repository's DECISIONS.md.
+                  camunda8-adapter/bin/job-log-excerpt.sh "$work/job.log" > "$work/excerpt.md"
+                  if [ -s "$work/excerpt.md" ]; then
+                    echo '```'
+                    cat "$work/excerpt.md"
+                    echo '```'
+                  else
+                    echo "The log of that job gives no reason which could be quoted here."
+                    echo "The job itself is the place to read."
+                  fi
                   echo
                   echo "The test reports and the application logs of that line are attached"
                   echo "to the run as \`test-reports-${subject#line }\`, and GitHub keeps"

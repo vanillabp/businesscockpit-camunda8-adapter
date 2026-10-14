@@ -1221,3 +1221,24 @@ request's POM and its base, and a run here has neither.
 A line which joins this repository joins the record in the same change as its profile. A line in
 the record which the adapter no longer pins makes the run fail with a message, because nobody
 could ever raise that entry.
+
+## 34. The issue of a red line quotes the step which broke, read by the adapter's script
+
+Built by story 1492 on 2026-10-14. It adds to the issue of decision 9.
+
+The issue of a red line quoted Maven's `[ERROR]` lines and nothing else. On 2026-10-13 line 8.10
+went red in the step which compares the cluster with the client. That is a shell check, and it
+gave its reason in three lines of plain text. Issue #110 quoted none of them, and the reader had to
+open the job log for a reason three lines long.
+
+The excerpt now comes from `bin/job-log-excerpt.sh` of
+`camunda-community-hub/vanillabp-camunda8-adapter` (decision 79 there). It finds the step which
+broke first. If Maven broke, the excerpt is Maven's
+summary, as before. Otherwise it is the last lines that step printed, at most thirty, without the
+script GitHub echoes in front of it. So a check which is written later is quoted too, without
+having to write its reason in a special form such as `::error::`.
+
+The script is checked out, not copied, the same way as `bin/line-preview.sh`. The adapter tests it
+in its own pull-request checks, and its own issue and the Business Cockpit's other nightly issues
+use it too. Before this, the same pipeline stood in five workflows and had already drifted: the
+adapter's copy had a fallback for a step without Maven, the others had none.

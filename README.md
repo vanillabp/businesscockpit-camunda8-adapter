@@ -324,7 +324,9 @@ today, so the gate waits for all of them. A preview line would be left out of it
 night leaves it out, and released all the same, because its version says alpha. And a line which
 breaks in the night opens a GitHub issue. `release-lines-issue.yaml` writes it with the label
 `release-lines`, and it names the line, the commit and what the log said. A line which is still red the next night gets a comment on that issue rather than a
-second issue. See [decision 9](./DECISIONS.md).
+second issue. See [decision 9](./DECISIONS.md). What the log said is Maven's summary when
+Maven broke, and otherwise the last lines of the step which broke first. The Camunda 8 adapter's
+`bin/job-log-excerpt.sh` reads it, see [decision 34](./DECISIONS.md).
 
 ### Version ordering, and why Renovate does not use maven versioning
 
