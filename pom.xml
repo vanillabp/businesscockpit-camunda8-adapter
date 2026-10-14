@@ -128,15 +128,14 @@
            against.
            It is the only number in this file which follows the Camunda client, and it is
            raised by hand. The client of the newest line changes when the adapter raises its
-           pin, and no commit here shows that. Read the new number rather than guess it:
-             mvn -Pline-<id> -pl spring-boot -am dependency:tree -Dincludes=com.google.protobuf
+           pin, and no commit here shows that. So every line of line-matrix.yaml compares this
+           pin with what the dependencies of the line ask for (bin/protobuf-pin.sh) and goes
+           red with a message naming both versions and this property. The same reading by
+           hand:
+             mvn -Pline-<id> -pl core dependency:tree -Dverbose -Dincludes=com.google.protobuf
            prints this pin and, as "version managed from", the version the client of that line
-           was generated against. See decision 32 in the repository's DECISIONS.md.
-           A pin left behind breaks the newest line alone and leaves the older ones green.
-           What it looks like is the VanillaBP Camunda 8 adapter refusing to boot, with a
-           message naming both versions and the entry to add. It arrives while that adapter
-           builds its client, so it comes before this repository deploys anything to a
-           cluster. -->
+           was generated against. Without -Dverbose that half is missing. See decisions 12 and
+           32 in the repository's DECISIONS.md. -->
       <dependency>
         <groupId>com.google.protobuf</groupId>
         <artifactId>protobuf-java</artifactId>

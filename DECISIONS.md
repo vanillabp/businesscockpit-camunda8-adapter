@@ -395,6 +395,20 @@ change nothing a user runs and would only lower what the tests of the older line
 comment at the pin says so, and what an application really resolves is a table in the README,
 together with the one case where an application pins protobuf itself.
 
+Since story 1494 a line checks that pin. Decision 32 takes the client from the adapter, so a new
+client reaches this build without a commit here, and nobody looks at protobuf at that moment any
+more. Each line of `line-matrix.yaml` therefore reads the verbose dependency tree of protobuf it
+resolved. `bin/protobuf-pin.sh` compares the pin with the highest version any dependency asked
+for, shown by Maven as "version managed from". The line goes red when the pin is lower, and the
+message names both versions and `protobuf.version`. Before that, the first sign was the adapter
+refusing to boot in the tests of the newest line.
+
+Taking protobuf from the adapter, the way the client is taken, was checked first and does not
+work. The adapter's published POM names the client and no protobuf, because protobuf comes into
+the adapter only through its own `dependencyManagement`, and the flatten mode drops that. And even
+a protobuf the adapter's POM named would arrive here as a transitive version, which the Spring
+Boot BOM this build imports would beat. So the number stays here, and the night checks it.
+
 The VanillaBP Camunda 8 adapter found the same fault in its own artifacts on the same day and
 answered it the same way, which is its decision 39. It now holds what the check knows. The class
 `PublishedPom` sits in `camunda8-adapter-published-pom`, and that adapter publishes the module on
@@ -1221,3 +1235,24 @@ request's POM and its base, and a run here has neither.
 A line which joins this repository joins the record in the same change as its profile. A line in
 the record which the adapter no longer pins makes the run fail with a message, because nobody
 could ever raise that entry.
+
+## 34. The issue of a red line quotes the step which broke, read by the adapter's script
+
+Built by story 1492 on 2026-10-14. It adds to the issue of decision 9.
+
+The issue of a red line quoted Maven's `[ERROR]` lines and nothing else. On 2026-10-13 line 8.10
+went red in the step which compares the cluster with the client. That is a shell check, and it
+gave its reason in three lines of plain text. Issue #110 quoted none of them, and the reader had to
+open the job log for a reason three lines long.
+
+The excerpt now comes from `bin/job-log-excerpt.sh` of
+`camunda-community-hub/vanillabp-camunda8-adapter` (decision 79 there). It finds the step which
+broke first. If Maven broke, the excerpt is Maven's
+summary, as before. Otherwise it is the last lines that step printed, at most thirty, without the
+script GitHub echoes in front of it. So a check which is written later is quoted too, without
+having to write its reason in a special form such as `::error::`.
+
+The script is checked out, not copied, the same way as `bin/line-preview.sh`. The adapter tests it
+in its own pull-request checks, and its own issue and the Business Cockpit's other nightly issues
+use it too. Before this, the same pipeline stood in five workflows and had already drifted: the
+adapter's copy had a fallback for a step without Maven, the others had none.
