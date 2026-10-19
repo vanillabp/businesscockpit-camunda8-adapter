@@ -19,8 +19,9 @@ import io.vanillabp.integration.test.utils.SuppressOutputExtension;
  * <p>
  * This repository names no client version. The client arrives through the adapter, so the adapter
  * decides it. That only works while the adapter is the one of this line. Every line reads the
- * same adapter snapshot unless the build says otherwise, and that snapshot is built for the
- * current GA line. A build of line 8.8 against it compiles, and it runs the 8.10 client while its
+ * adapter snapshot of its own line. But a version set by hand, or an adapter somebody installed
+ * into a shared local repository, can still put the adapter of another line on the classpath. A
+ * build of line 8.8 against the adapter of 8.10 compiles, and it runs the 8.10 client while its
  * version says 8.8. This test makes that build stop and say what to do.
  * <p>
  * The second test catches the other way to lose the client: something in this build managing
@@ -44,15 +45,16 @@ public class Camunda8AdapterOfThisLineTest {
         Camunda8ReleaseLine.id(),
         () -> ("This build produces line %s, but the Camunda 8 adapter %s on the classpath was "
             + "built for line %s. The Camunda client comes from that adapter, so this build "
-            + "would compile and test line %s against the client %s. Build the adapter of "
-            + "line %s first and add the profile 'adapter-built-locally', as AGENTS.md shows. "
-            + "On CI the line matrix does that for you.")
+            + "would compile and test line %s against the client %s. The adapter of line %s "
+            + "is the snapshot 2.0.0-%s-SNAPSHOT: build again with '--update-snapshots', or "
+            + "install the adapter of that line from its clone, as AGENTS.md shows.")
             .formatted(
                 line,
                 System.getProperty("camunda8-adapter.version"),
                 Camunda8ReleaseLine.id(),
                 line,
                 Camunda8ReleaseLine.clientVersion(),
+                line,
                 line));
 
   }

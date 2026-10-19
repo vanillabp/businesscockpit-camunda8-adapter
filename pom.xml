@@ -53,11 +53,14 @@
          this extension and is consumed as a published artifact, never copied -->
     <business-cockpit.version>0.9.0-SNAPSHOT</business-cockpit.version>
     <!-- The version of every artifact, resolved into the published POMs by the flatten
-         plugin. A plain 'mvn install' builds 0.9.0-SNAPSHOT of the current GA line, which is
-         what a developer of this repository wants and needs to remember no property for. A
-         release of a line adds the line to it, e.g. '-Pline-8.8 -Drevision=0.9.0-8.8'. See
-         README.md, section "Release lines". -->
-    <revision>0.9.0-SNAPSHOT</revision>
+         plugin. It names the line, because every line publishes a snapshot of its own. A
+         plain 'mvn install' builds 0.9.0-8.10-SNAPSHOT of the current GA line, the same
+         coordinates the registry has. Another line names its version as well, e.g.
+         '-Pline-8.8 -Drevision=0.9.0-8.8-SNAPSHOT', and so does a release, e.g.
+         '-Pline-8.8 -Drevision=0.9.0-8.8'. See README.md, section "Release lines".
+         The value cannot be '0.9.0-${camunda8.line}-SNAPSHOT': Maven accepts it, but the
+         Quarkus build stops on any placeholder inside 'revision'. -->
+    <revision>0.9.0-8.10-SNAPSHOT</revision>
     <!-- The release line this build produces. It is the same line scheme the VanillaBP
          Camunda 8 adapter uses, and it has to be, because this extension compiles against
          that adapter's core and against the Camunda client that adapter brings: the client a
@@ -73,12 +76,13 @@
     <camunda8.line>8.10</camunda8.line>
     <!-- The VanillaBP Camunda 8 adapter this extension plugs into: it names the processing
          context the extension is wired with, and it brings the Camunda client. It is one
-         version per line as soon as that adapter is released; until then every line reads the
-         same snapshot. -->
-    <camunda8-adapter.version>2.0.0-SNAPSHOT</camunda8-adapter.version>
-    <camunda8-adapter.version.line-8.8>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.8>
-    <camunda8-adapter.version.line-8.9>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.9>
-    <camunda8-adapter.version.line-8.10>2.0.0-SNAPSHOT</camunda8-adapter.version.line-8.10>
+         version per line. That adapter publishes a snapshot per line, so each line reads the
+         snapshot of its own line. A build without a profile is the current GA line and reads
+         that line's adapter. -->
+    <camunda8-adapter.version>${camunda8-adapter.version.line-8.10}</camunda8-adapter.version>
+    <camunda8-adapter.version.line-8.8>2.0.0-8.8-SNAPSHOT</camunda8-adapter.version.line-8.8>
+    <camunda8-adapter.version.line-8.9>2.0.0-8.9-SNAPSHOT</camunda8-adapter.version.line-8.9>
+    <camunda8-adapter.version.line-8.10>2.0.0-8.10-SNAPSHOT</camunda8-adapter.version.line-8.10>
     <!-- The test tags the line of this build leaves out, read by surefire and by failsafe
          below. It is a property and not a setting inside a line profile because a build
          without a profile IS the current GA line: a profile would leave the tags in for
@@ -566,7 +570,8 @@
          delta source directory. The properties above are the current GA line, so a build
          without any profile is that line: nothing to remember, and no 'activeByDefault' which
          any other profile on the command line would switch off. Rotating the lines means
-         editing these profiles, the adapter properties and the line table of the README, and it
+         editing these profiles, the adapter properties, the default revision and the line
+         table of the README, and it
          follows whatever camunda-community-hub/vanillabp-camunda8-adapter does. -->
     <profile>
       <!-- a bugfix line: it takes fixes and nothing which needs a newer cluster. It did not
@@ -626,30 +631,6 @@
           this line alone, the cancel listener of the process and the job lease itself.
         -->
         <camunda8.line.excluded-test-tags/>
-      </properties>
-    </profile>
-    <!-- For a build on a developer machine, against a Camunda 8 adapter built there by hand.
-         The adapter is not released per line yet, so every line above asks for the same
-         '2.0.0-SNAPSHOT' of it, and the local repository holds one adapter for all lines.
-         Whoever installed last decides which line is in it, and '~/.m2' is shared between
-         agents and containers. A build then compiles against another line than it says, and
-         says so as a 'cannot find symbol' on a per-line class, or it does not say so at all
-         and the integration tests fail as if this repository were broken.
-         This profile asks for '2.0.0-<line>-SNAPSHOT' instead, which is the version the
-         nightly matrix builds the adapter under, so a line gets the adapter somebody built
-         for that line and nothing else resolves:
-           mvn -Pline-8.8 -Drevision=2.0.0-8.8-SNAPSHOT clean install   (adapter clone)
-           mvn -Pline-8.8,adapter-built-locally clean install           (here)
-         It reads '${camunda8.line}', so it needs no entry per line. It has to stay BELOW
-         the line profiles, because two active profiles setting one property are applied in
-         the order they stand here, whatever order the command line names them in.
-         And its id must not read as 'line-<number>': the nightly matrix, the release and
-         bin/api-identity.sh take the live lines out of those ids, and an id like
-         'line-8.x-local' would arrive as a line to build. -->
-    <profile>
-      <id>adapter-built-locally</id>
-      <properties>
-        <camunda8-adapter.version>2.0.0-${camunda8.line}-SNAPSHOT</camunda8-adapter.version>
       </properties>
     </profile>
   </profiles>

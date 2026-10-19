@@ -135,49 +135,13 @@ jobs:
       # This repository compiles against the core of the VanillaBP Camunda 8 adapter and
       # gets the Camunda client through it, and its integration tests start the cluster
       # that adapter's test-support names. So a line here is only real if the adapter
-      # underneath it is the same line. The adapter publishes one snapshot, built against
-      # the current GA client, so the other lines have to be built here. It is a compile,
-      # not a test run: what the adapter does is proven by the adapter's own matrix.
-      - uses: actions/checkout@v7
-        with:
-          repository: camunda-community-hub/vanillabp-camunda8-adapter
-          ref: main
-          path: camunda8-adapter
+      # underneath it is the same line. The adapter publishes a snapshot per line, and the
+      # line profile names the one of this line, so Maven resolves it from the registry.
       - uses: actions/setup-java@v6
         with:
           java-version: 25.0.4+101.0.LTS
           distribution: temurin
           cache: maven
-      - name: "Build the Camunda 8 adapter of line ${{ matrix.line }}"
-        id: adapter
-        # The step this limit was written for. On the 20th of September 2026 it hung for
-        # 35 minutes on line 8.8 without printing a line and the run had to be stopped by
-        # hand, while the run before it had done the same work in under two minutes.
-        # Nothing in this repository touches how a line is built, so it was the runner or
-        # GitHub Packages. Over the runs still on record this compile takes 2.2 minutes at
-        # its worst and 1.6 at its median. So 20 minutes is around nine times the worst,
-        # and a compile which hangs still ends the same night. Without a limit the step
-        # inherits the six hours GitHub gives a job by default.
-        timeout-minutes: 20
-        # Only the modules this repository consumes, plus what they need: the adapter's
-        # integration tests, its smoke test and its native-image tests are none of our
-        # business. The revision names the line, so the local repository holds one
-        # artifact per line and nothing can quietly fall back to the published snapshot
-        # of the current GA line.
-        #
-        # 'maven.test.skip' and not 'skipTests': Failsafe 3.6.0 reads '-DskipITs' and no
-        # longer reads '-DskipTests', and the adapter pins that version as this repository
-        # does. So under plain '-DskipTests' its integration tests still run, and the run
-        # measured three quarters of an hour of them against a cluster we did not want to
-        # start here. 'maven.test.skip' skips the test compilation as well, which is what
-        # makes this a compile.
-        run: mvn -f camunda8-adapter/pom.xml
-          -s "$GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml"
-          --batch-mode --no-transfer-progress --update-snapshots
-          -Pline-${{ matrix.line }} -Drevision=2.0.0-${{ matrix.line }}-SNAPSHOT
-          -Dmaven.test.skip=true
-          -pl core,spring-boot,quarkus/runtime,quarkus/deployment,test-support -am
-          clean install
       - name: "Build and test line ${{ matrix.line }}"
         # The long step of this workflow: the integration tests start a cluster. The
         # worst run on record took 42 minutes. That one was a failing 8.10 line whose
@@ -188,12 +152,11 @@ jobs:
         # 'clean', because classes compiled against another client are binary compatible
         # with nothing, and the revision is the version string this line would publish,
         # so the build proves the coordinates as well as the code. The adapter version is
-        # the one built above. 'install' without 'verify': install runs every phase verify
-        # has, and naming both compiled each module twice for nothing.
+        # the one the line profile names. 'install' without 'verify': install runs every
+        # phase verify has, and naming both compiled each module twice for nothing.
         run: mvn -s "$GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml"
           --batch-mode --no-transfer-progress --update-snapshots
           -Pline-${{ matrix.line }} -Drevision=0.9.0-${{ matrix.line }}-SNAPSHOT
-          "-Dcamunda8-adapter.version.line-${{ matrix.line }}=2.0.0-${{ matrix.line }}-SNAPSHOT"
           clean install
       # A nightly line going red otherwise leaves nothing behind, so whoever reads the
       # matrix in the morning sees which test failed and never why. The reports hold what
@@ -232,13 +195,22 @@ jobs:
           LINE: "${{ matrix.line }}"
         run: |
           set -euo pipefail
-          properties=camunda8-adapter/test-support/target/classes/camunda8-cluster.properties
-          cat "$properties"
-          cat camunda8-adapter/core/target/classes/META-INF/vanillabp/adapter-camunda8.properties
-          image="$(sed -n 's|^cluster\.image=||p' "$properties")"
+          # The adapter's jars as Maven resolved them for this line. A snapshot can lie in
+          # the local repository under its plain and under its timestamped name, and both
+          # hold the same build, so either one will do.
+          adapter="$(mvn -s "$SETTINGS" --batch-mode --no-transfer-progress --quiet \
+            "-Pline-${LINE}" -N help:evaluate -Dexpression=camunda8-adapter.version \
+            -DforceStdout)"
+          jar_of() {
+            find "${HOME}/.m2/repository/org/camunda/community/vanillabp/$1/${adapter}" \
+              -name "$1-*.jar" ! -name '*-sources.jar' ! -name '*-javadoc.jar' | sort | tail -1
+          }
+          properties="$(unzip -p "$(jar_of camunda8-adapter-test-support)" camunda8-cluster.properties)"
+          echo "$properties"
+          unzip -p "$(jar_of camunda8-adapter)" META-INF/vanillabp/adapter-camunda8.properties
+          image="$(echo "$properties" | sed -n 's|^cluster\.image=||p')"
           mvn -s "$SETTINGS" --batch-mode --no-transfer-progress --quiet \
             "-Pline-${LINE}" "-Drevision=0.9.0-${LINE}-SNAPSHOT" \
-            "-Dcamunda8-adapter.version.line-${LINE}=2.0.0-${LINE}-SNAPSHOT" \
             -pl core dependency:list \
             -DincludeGroupIds=io.camunda -DincludeArtifactIds=camunda-client-java \
             -DoutputFile=target/camunda-client.txt
@@ -264,9 +236,9 @@ jobs:
         # line rather than the newest alone, because the one pin serves them all. See
         # decision 12 in the repository's DECISIONS.md.
         #
-        # It needs the adapter of this line, and runs whenever that was built, so it also
-        # names the reason when the tests above went red over it.
-        if: "!cancelled() && steps.adapter.outcome == 'success'"
+        # It runs whatever the tests above did, so it also names the reason when they went
+        # red over it.
+        if: "!cancelled()"
         env:
           SETTINGS: "${{ github.workspace }}/.github/workflows/github-packages-settings.xml"
           LINE: "${{ matrix.line }}"
@@ -275,7 +247,6 @@ jobs:
           # '-Dverbose' prints the version each path asked for, which the plain tree drops
           mvn -s "$SETTINGS" --batch-mode --no-transfer-progress --quiet \
             "-Pline-${LINE}" "-Drevision=0.9.0-${LINE}-SNAPSHOT" \
-            "-Dcamunda8-adapter.version.line-${LINE}=2.0.0-${LINE}-SNAPSHOT" \
             -pl core dependency:tree -Dverbose \
             -Dincludes=com.google.protobuf:protobuf-java \
             -DoutputFile=target/protobuf-tree.txt

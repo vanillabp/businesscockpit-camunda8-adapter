@@ -13,26 +13,22 @@ that explains it says which parts move when a line rotates.
 `mvn install` builds the current GA line and runs everything, the integration tests included.
 Three things about a local build here have each cost somebody a run already.
 
-### The Camunda 8 adapter in your local repository belongs to one line
+### Each line reads the Camunda 8 adapter of its own line
 
-This extension compiles against the VanillaBP Camunda 8 adapter, and that adapter is not
-released per line yet. Every line of this repository asks for the same `2.0.0-SNAPSHOT` of it,
-so your local repository holds one adapter for all lines. The last `mvn install` in the
-adapter's clone decides which line is in it, and `~/.m2` is usually shared: between agents
-working at the same time, and between containers which mount the same volume.
+This extension compiles against the VanillaBP Camunda 8 adapter, and that adapter publishes a
+snapshot per line: `2.0.0-8.8-SNAPSHOT`, `2.0.0-8.9-SNAPSHOT` and `2.0.0-8.10-SNAPSHOT`. Line
+`<line>` of this repository reads `2.0.0-<line>-SNAPSHOT`, so a plain build and a build with a
+line profile both get the adapter of their own line.
 
-Going wrong looks like this. The build stops with a `cannot find symbol` on a class of the
-adapter, because a per-line class of your line is missing from the jar somebody else installed.
-Or it does not stop at all, and the integration tests run the client of one line against the
-cluster of another. On 2026-09-20 that was 16 red tests out of 20 and 38 minutes, and every
-error read like an error of the cockpit, down to an HTTP 400 from the search API.
+This used to be different. Every line read the same `2.0.0-SNAPSHOT`, and the last
+`mvn install` in the adapter's clone decided which line was in `~/.m2`. On 2026-09-20 that was
+16 red tests out of 20 and 38 minutes, and every error read like an error of the cockpit. This
+repository names no Camunda client version, so the client comes with the adapter, and
+`Camunda8AdapterOfThisLineTest` stops the build in `core` when the adapter was built for another
+line. Its message names both lines. See decision 32 in [DECISIONS.md](./DECISIONS.md).
 
-The second way no longer happens quietly. This repository names no Camunda client version, so the
-client comes with the adapter, and `Camunda8AdapterOfThisLineTest` stops the build in `core` when
-the adapter was built for another line. Its message names both lines. See decision 32 in
-[DECISIONS.md](./DECISIONS.md).
-
-So build the adapter for the line you want, and give that build the version of the line:
+To build against an adapter you changed yourself, install that adapter for the line you want,
+under the version of that line:
 
 ```bash
 # in the clone of camunda-community-hub/vanillabp-camunda8-adapter
@@ -41,17 +37,16 @@ mvn -Pline-8.8 -Drevision=2.0.0-8.8-SNAPSHOT -Dmaven.test.skip=true \
   clean install
 
 # here
-mvn -Pline-8.8,adapter-built-locally clean install
+mvn -Pline-8.8 -Drevision=0.9.0-8.8-SNAPSHOT clean install
 ```
 
 The profile of the line is not optional in the adapter's build. The adapter keeps the code that
 cannot compile against every client in `src/main/java-line-<id>`, and a build without a profile
 takes the directory of the current GA line.
 
-`adapter-built-locally` is a profile of this repository. It asks for `2.0.0-<line>-SNAPSHOT`
-instead of the shared snapshot, which is the version the nightly matrix builds the adapter
-under. It is what makes the two builds meet: with it a line gets the adapter that was built for
-that line, or the build stops because nobody built one.
+`~/.m2` is often shared between agents and containers. A snapshot somebody installed there by
+hand stays in use until Maven finds a newer one in the registry, so `--update-snapshots` brings
+the published one back.
 
 ### Skipping the tests takes `-DskipITs`
 
@@ -60,7 +55,7 @@ read that property any more, and this repository pins 3.6.0, so `mvn install -Ds
 a Camunda 8 cluster and runs the whole suite. That is half an hour nobody asked for.
 
 Skip both with `-DskipTests -DskipITs`, or with `-Dmaven.test.skip=true` when the tests need
-not be compiled either. The nightly matrix uses the second one where it builds the adapter.
+not be compiled either. The job which publishes the snapshots uses the second one.
 
 ### A clone in your container can be behind its main
 
@@ -93,8 +88,8 @@ their own code. On 2026-09-20 such a mixture sat in a shared `~/.m2` and cost so
 of an hour.
 
 So deploy the whole reactor or nothing. The workflows do it that way already:
-`publish-snapshots.yaml` runs `mvn deploy -P central-portal` from the root POM on a push to main,
-and `release.yaml` runs `clean deploy` once per line, also from the root. Neither of them passes
+`publish-snapshots.yaml` runs `clean deploy -P central-portal` once per line from the root POM on
+a push to main, and `release.yaml` runs `clean deploy` once per line, also from the root. Neither of them passes
 `-pl`, so only a deploy somebody types by hand can produce the mixture. If you have to repair a
 single module, deploy the whole reactor again instead.
 

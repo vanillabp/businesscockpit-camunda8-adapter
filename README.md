@@ -184,10 +184,11 @@ failsafe both read. It is a property and not a setting inside a line profile, be
 without a profile is the current GA line and would otherwise run a test the line itself leaves
 out. No line leaves a test out today, and the property stays empty everywhere until one does.
 
-Snapshots have no suffix. Until the first release they are `0.9.0-SNAPSHOT` of the current GA line,
-which is what a build without a profile produces, and every line still reads the same
-`2.0.0-SNAPSHOT` of the Camunda 8 adapter, because that adapter is not released per line yet
-either.
+Snapshots carry the line as well: `0.9.0-8.8-SNAPSHOT`, `0.9.0-8.9-SNAPSHOT` and
+`0.9.0-8.10-SNAPSHOT`. So a project can try the line it will use before that line is released. A
+build without a profile produces the current GA line, `0.9.0-8.10-SNAPSHOT`. Line `<line>` reads
+the snapshot `2.0.0-<line>-SNAPSHOT` of the Camunda 8 adapter, which publishes one snapshot per
+line too.
 
 ### How the lines are built
 
@@ -195,17 +196,15 @@ Every line is a build variant of this one source tree, not a maintenance branch.
 profile that selects the Camunda 8 adapter, and the adapter brings the client:
 
 ```bash
-mvn install                                          # current GA line, 0.9.0-SNAPSHOT
+mvn install                                          # current GA line, 0.9.0-8.10-SNAPSHOT
+mvn -Pline-8.8 -Drevision=0.9.0-8.8-SNAPSHOT clean install  # snapshot of the oldest line
 mvn -Pline-8.8 -Drevision=0.9.0-8.8 clean install    # a release of the oldest line
 mvn -Pline-8.9 -Drevision=0.9.0-8.9 clean install
 ```
 
-Every line reads the same snapshot of the Camunda 8 adapter, so a local repository holds one
-adapter for all of them and the last install into it wins. A line built against an adapter
-someone installed by hand therefore takes `-Padapter-built-locally`, which asks for
-`2.0.0-<line>-SNAPSHOT`, the version the nightly matrix builds that adapter under. A line built
+Every line reads the Camunda 8 adapter of its own line, `2.0.0-<line>-SNAPSHOT`. A line built
 against the adapter of another line stops in `core`, because it would run that line's client.
-[`AGENTS.md`](./AGENTS.md) shows the two commands.
+[`AGENTS.md`](./AGENTS.md) shows how to build against an adapter you changed yourself.
 
 Switching a line always needs `clean`, and the CI does it that way. Classes compiled against one
 Camunda client are binary compatible with no other one. A method the newer model library inherits
@@ -307,12 +306,10 @@ right while every story had a pull request of its own. Stories arrive as a wave 
 now, so the matrix runs once per wave. A line which breaks is read by whoever wrote the change, not
 by whoever opens the repository the next morning.
 
-A line of this repository needs the adapter of the same line underneath it, and the VanillaBP
-Camunda 8 adapter publishes one snapshot, built against the current GA client. So the nightly job
-checks that adapter out and compiles the modules this repository consumes, under the version string
-of the line it is building. That is a compile and no test run: what the adapter itself does is
-proven by the adapter's own matrix. Once the adapter publishes a snapshot per line, the three
-`camunda8-adapter.version.line-*` properties point at those and the step falls away.
+A line of this repository needs the adapter of the same line underneath it. The VanillaBP Camunda
+8 adapter publishes a snapshot per line, and the three `camunda8-adapter.version.line-*` properties
+point at those. So the matrix resolves the adapter of each line from the registry. It used to check
+the adapter out and compile it once per line, while the adapter published the GA line alone.
 
 The cluster a line meets is the adapter's word rather than ours. Its `test-support` artifact carries
 the image and the secondary storage of its line, and the tests here start what that artifact names.
@@ -438,7 +435,10 @@ nothing, and it is there because a client patch which merges itself looks like e
 request.
 `line-matrix.yaml` builds and tests every line, once a night and once per pull request, and it is
 what the section [Release lines](#release-lines) is proven by.
-`publish-snapshots.yaml` publishes the snapshot, and only for a push to `main`. The
+`publish-snapshots.yaml` publishes one snapshot per line, `0.9.0-<line>-SNAPSHOT`, and only for a
+push to `main`. It reads the lines out of the `line-*` profiles, like the matrix. The jobs which
+publish skip the tests, because the pull request and the nightly matrix test every line, and they
+still compile every line against the adapter of that line. They run one after the other. The
 snapshot artifacts share their coordinates, so what the other repositories compile against has to
 be what `main` holds. It runs in a group of its own, one publish at a time, and a publish which is
 already running is never cancelled, because two runs publishing at the same time would overwrite
@@ -452,8 +452,10 @@ the matrix and opens or updates the GitHub issue of a line which broke.
 whether a new Camunda client needs a change here, see [Release lines](#release-lines).
 
 `publish-snapshots.yaml` also publishes the two coverage reports to GitHub Pages, which is
-what the badges at the top of this page link to. The number is the current GA line and nothing
-else: the publish names no `line-*` profile, and a build without one is line 8.10. The nightly
+what the badges at the top of this page link to. Its job `coverage` builds and tests the current
+GA line for them before the snapshots go out, and a red test there does not stop the snapshots. The
+number is the current GA line and nothing else: that job names no `line-*` profile, and a build
+without one is line 8.10. The nightly
 matrix builds and tests the other lines, but it writes no report.
 
 ## Noteworthy & Contributors
