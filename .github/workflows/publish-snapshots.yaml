@@ -1,7 +1,12 @@
 name: Publish snapshots
-# Only a push to main publishes the snapshot. Other repositories compile against the
+# Only a push to main publishes the snapshots. Other repositories compile against the
 # shared snapshot coordinates, so what gets published has to be what main holds, not
 # whatever branch was pushed last.
+#
+# There is one snapshot per release line, 0.9.0-<line>-SNAPSHOT, so a project can try any
+# line before it is released. The job 'snapshot' publishes them. The job 'coverage' first
+# builds and tests the current GA line, because the coverage report on GitHub Pages comes
+# from its tests.
 #
 # The snapshots go to the snapshot repository of Maven Central. Anybody can read them there
 # without a login. Writing needs the Central Portal token, and only this workflow and the
@@ -27,13 +32,14 @@ permissions:
   contents: read
   # what 'actions/deploy-pages' in the 'deploy-coverage-report' job needs: 'pages: write'
   # to publish the page, and 'id-token: write' for the token it exchanges with the Pages
-  # service. That job names no permissions of its own, so it gets these. The 'publish'
-  # job does name its own, which replace these for it - it only uploads the reports as an
-  # artifact, and that needs neither.
+  # service. That job names no permissions of its own, so it gets these. The jobs
+  # 'coverage' and 'snapshot' name their own, which replace these for them. 'coverage' only
+  # uploads the reports as an artifact, and 'snapshot' publishes to Maven Central with a
+  # token of its own, so neither needs these two.
   pages: write
   id-token: write
 jobs:
-  publish:
+  coverage:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,26 +60,19 @@ jobs:
           java-version: 25.0.4+101.0.LTS
           distribution: temurin
           cache: maven
-          # the server of the profile 'central-portal' in io.vanillabp:release-parent. The
-          # two names are environment variables, and only the step which publishes sets them
-          server-id: vanillabp-central
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-      - name: Publish package
-        # The whole lifecycle up to 'deploy', tests included. The worst run on record
-        # took 6.9 minutes and the median 5.4, so 30 minutes is around four times the
-        # worst. A publish which hangs also blocks the next one, because this workflow
-        # allows one publish at a time.
+      - name: Build and test
+        # The whole lifecycle up to 'install', tests included, and nothing is published.
+        # The worst publish run on record, which ran the same tests, took 6.9 minutes and
+        # the median 5.4, so 30 minutes is around four times the worst. A run which hangs
+        # also blocks the next one, because this workflow allows one publish at a time.
         timeout-minutes: 30
         run: mvn -s $GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml
-          --batch-mode --no-transfer-progress --update-snapshots deploy -P central-portal
+          --batch-mode --no-transfer-progress --update-snapshots install
         env:
           USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
           USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
-          MAVEN_USERNAME: "${{ secrets.MAVEN_CENTRAL_PORTAL_TOKEN_USER }}"
-          MAVEN_PASSWORD: "${{ secrets.MAVEN_CENTRAL_PORTAL_TOKEN_PW }}"
       # The reports are already there: the step above runs the whole lifecycle up to
-      # 'deploy', and JaCoCo writes both of them in 'verify'. So this step only copies them
+      # 'install', and JaCoCo writes both of them in 'verify'. So this step only copies them
       # under the names they get on the web. A name is the last part of the address the
       # badge in README.md reads, and it follows the sibling repositories, which measure
       # each platform on its own and call the two reports 'spring-boot-report' and
@@ -98,8 +97,79 @@ jobs:
             **/target/*application*.log
           retention-days: 7
           if-no-files-found: ignore
+  # The release lines are the line-* profiles of the parent POM, read the same way as in
+  # line-matrix.yaml. So a new line publishes snapshots as soon as its profile exists.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      lines: "${{ steps.list.outputs.lines }}"
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        name: Collect the release lines
+        run: |
+          set -euo pipefail
+          list=$(sed -n 's|.*<id>line-\([0-9][^<]*\)</id>.*|\1|p' pom.xml \
+            | jq -R -s -c 'split("\n")[:-1]')
+          echo "lines=${list}" >> "$GITHUB_OUTPUT"
+          echo "Publishing lines: ${list}"
+  # One snapshot per line, 0.9.0-<line>-SNAPSHOT, built against the Camunda 8 adapter of
+  # that line. It skips the tests: the pull request ran every line through the matrix,
+  # and the nightly matrix runs them again. What this job proves is that every line still
+  # compiles against the adapter of its line.
+  #
+  # The lines publish one after the other, after 'coverage', so this repository runs one
+  # build at a time. They publish whatever 'coverage' found, because a red test there is
+  # already red in the matrix, and holding back the snapshots helps nobody.
+  #
+  # 'maven.test.skip' and not 'skipTests': Failsafe 3.6.0 no longer reads '-DskipTests',
+  # so its integration tests would still start a cluster. 'maven.test.skip' also skips the
+  # test compilation, and no module of this repository publishes test classes.
+  snapshot:
+    needs: [coverage, discover]
+    if: "${{ !cancelled() && needs.discover.result == 'success' }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        line: "${{ fromJSON(needs.discover.outputs.lines) }}"
+    steps:
+      - uses: actions/checkout@v7
+      # the same Maven 3.9 as in the job 'coverage', see there
+      - name: Use Maven 3.9
+        run: |
+          curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz \
+            | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/apache-maven-3.9.16/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-java@v6
+        with:
+          java-version: 25.0.4+101.0.LTS
+          distribution: temurin
+          cache: maven
+          # the server of the profile 'central-portal' in io.vanillabp:release-parent. The
+          # two names are environment variables, and only the step which publishes sets them
+          server-id: vanillabp-central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+      - name: "Publish the snapshot of line ${{ matrix.line }}"
+        # A compile and a deploy, no tests. 20 minutes is far more than that needs, and a
+        # publish which hangs still ends before it blocks the next one for long.
+        timeout-minutes: 20
+        run: mvn -s $GITHUB_WORKSPACE/.github/workflows/github-packages-settings.xml
+          --batch-mode --no-transfer-progress --update-snapshots
+          -Pline-${{ matrix.line }},central-portal -Drevision=0.9.0-${{ matrix.line }}-SNAPSHOT
+          -Dmaven.test.skip=true -DskipITs
+          clean deploy
+        env:
+          USER_NAME: "${{ secrets.VANILLABP_USER_NAME }}"
+          USER_TOKEN: "${{ secrets.VANILLABP_USER_TOKEN }}"
+          MAVEN_USERNAME: "${{ secrets.MAVEN_CENTRAL_PORTAL_TOKEN_USER }}"
+          MAVEN_PASSWORD: "${{ secrets.MAVEN_CENTRAL_PORTAL_TOKEN_PW }}"
   # A job of its own, because the deployment runs in the environment 'github-pages' and
-  # the job which builds the artifact must not. It waits for 'publish' and takes the
+  # the job which builds the artifact must not. It waits for 'coverage' and takes the
   # artifact that job uploaded.
   deploy-coverage-report:
     # This workflow starts on a push to main only, so the condition is true for every run
@@ -110,7 +180,7 @@ jobs:
       name: github-pages
       url: "${{ steps.deployment.outputs.page_url }}"
     runs-on: ubuntu-latest
-    needs: publish
+    needs: coverage
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
