@@ -202,8 +202,9 @@ mvn -Pline-8.8 -Drevision=0.9.0-8.8 clean install    # a release of the oldest l
 mvn -Pline-8.9 -Drevision=0.9.0-8.9 clean install
 ```
 
-Every line reads the Camunda 8 adapter of its own line, `2.0.0-<line>-SNAPSHOT`. A line built
-against the adapter of another line stops in `core`, because it would run that line's client.
+Every line reads the Camunda 8 adapter of its own line, `2.0.0-<line>-SNAPSHOT`, see
+[decision 35](./DECISIONS.md). A line built against the adapter of another line stops in `core`,
+because it would run that line's client.
 [`AGENTS.md`](./AGENTS.md) shows how to build against an adapter you changed yourself.
 
 Switching a line always needs `clean`, and the CI does it that way. Classes compiled against one
@@ -438,7 +439,8 @@ what the section [Release lines](#release-lines) is proven by.
 `publish-snapshots.yaml` publishes one snapshot per line, `0.9.0-<line>-SNAPSHOT`, and only for a
 push to `main`. It reads the lines out of the `line-*` profiles, like the matrix. The jobs which
 publish skip the tests, because the pull request and the nightly matrix test every line, and they
-still compile every line against the adapter of that line. They run one after the other. The
+still compile every line against the adapter of that line. They run one after the other. See
+[decision 35](./DECISIONS.md). The
 snapshot artifacts share their coordinates, so what the other repositories compile against has to
 be what `main` holds. It runs in a group of its own, one publish at a time, and a publish which is
 already running is never cancelled, because two runs publishing at the same time would overwrite

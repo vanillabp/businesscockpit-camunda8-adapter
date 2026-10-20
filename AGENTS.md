@@ -25,7 +25,7 @@ This used to be different. Every line read the same `2.0.0-SNAPSHOT`, and the la
 16 red tests out of 20 and 38 minutes, and every error read like an error of the cockpit. This
 repository names no Camunda client version, so the client comes with the adapter, and
 `Camunda8AdapterOfThisLineTest` stops the build in `core` when the adapter was built for another
-line. Its message names both lines. See decision 32 in [DECISIONS.md](./DECISIONS.md).
+line. Its message names both lines. See decisions 32 and 35 in [DECISIONS.md](./DECISIONS.md).
 
 To build against an adapter you changed yourself, install that adapter for the line you want,
 under the version of that line:

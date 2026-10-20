@@ -59,7 +59,8 @@
          '-Pline-8.8 -Drevision=0.9.0-8.8-SNAPSHOT', and so does a release, e.g.
          '-Pline-8.8 -Drevision=0.9.0-8.8'. See README.md, section "Release lines".
          The value cannot be '0.9.0-${camunda8.line}-SNAPSHOT': Maven accepts it, but the
-         Quarkus build stops on any placeholder inside 'revision'. -->
+         Quarkus build stops on any placeholder inside 'revision'. See decision 35 in the
+         repository's DECISIONS.md. -->
     <revision>0.9.0-8.10-SNAPSHOT</revision>
     <!-- The release line this build produces. It is the same line scheme the VanillaBP
          Camunda 8 adapter uses, and it has to be, because this extension compiles against
@@ -78,7 +79,7 @@
          context the extension is wired with, and it brings the Camunda client. It is one
          version per line. That adapter publishes a snapshot per line, so each line reads the
          snapshot of its own line. A build without a profile is the current GA line and reads
-         that line's adapter. -->
+         that line's adapter. See decision 35 in the repository's DECISIONS.md. -->
     <camunda8-adapter.version>${camunda8-adapter.version.line-8.10}</camunda8-adapter.version>
     <camunda8-adapter.version.line-8.8>2.0.0-8.8-SNAPSHOT</camunda8-adapter.version.line-8.8>
     <camunda8-adapter.version.line-8.9>2.0.0-8.9-SNAPSHOT</camunda8-adapter.version.line-8.9>

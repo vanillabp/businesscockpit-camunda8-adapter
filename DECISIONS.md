@@ -1146,7 +1146,7 @@ A user task of a called process is reported with the called process and with the
 names, not with the caller's. The version of a task provider refers to the model the task belongs
 to. `Camunda8CockpitJobHandlerTest` holds that.
 
-## 32. A line takes its Camunda client from the adapter it builds against
+## 32. A line takes its Camunda client from the adapter it builds against - which adapter each path reads replaced by decision 35
 
 Built by story 1493 on 2026-10-14. It replaces decision 10.
 
@@ -1166,6 +1166,11 @@ one day later, on all three lines at once. Each time somebody had to open an iss
 and a CI run for a number that already existed in the adapter. A Renovate rule here, with patches
 merging themselves, would have made that shorter. But it would still be two numbers, and there is
 always a window between the two merges in which they differ. One number has no window.
+
+*Replaced on 2026-10-19 by decision 35.* The list below says how each path got its adapter
+before story 988. Now each line reads the published snapshot of the adapter of its own line. No
+workflow passes an adapter version any more, and the profile `adapter-built-locally` is gone. The
+client still comes from that adapter.
 
 The number now comes from the same place on every path:
 
@@ -1256,3 +1261,41 @@ The script is checked out, not copied, the same way as `bin/line-preview.sh`. Th
 in its own pull-request checks, and its own issue and the Business Cockpit's other nightly issues
 use it too. Before this, the same pipeline stood in five workflows and had already drifted: the
 adapter's copy had a fallback for a step without Maven, the others had none.
+
+## 35. Every release line publishes its own snapshot
+
+Built by story 988 on 2026-10-19. It replaces the part of decision 32 which says which adapter
+each path reads.
+
+A push to `main` publishes one snapshot per release line: `0.9.0-8.8-SNAPSHOT`,
+`0.9.0-8.9-SNAPSHOT` and `0.9.0-8.10-SNAPSHOT`. The lines are the `line-*` profiles of the parent
+POM, read the same way as in `line-matrix.yaml`. Line `<line>` reads the Camunda 8 adapter
+`2.0.0-<line>-SNAPSHOT`, because that adapter now publishes one snapshot per line as well.
+Nothing publishes a plain `0.9.0-SNAPSHOT` any more, and no line reads the old shared
+`2.0.0-SNAPSHOT` of the adapter.
+
+The reason: a project has to be able to try a snapshot of its own line before that line is
+released. Before this, only the current GA line had a snapshot, and every line of this repository
+read the same adapter snapshot, which was built for the GA line.
+
+The default `<revision>` is `0.9.0-8.10-SNAPSHOT`, the current GA line. So a plain `mvn install`
+builds the same coordinates the registry has. Another line names its version with `-Drevision`,
+like a release does. A default of `0.9.0-${camunda8.line}-SNAPSHOT` would follow the profile by
+itself, and Maven accepts it, but the Quarkus build stops on any placeholder inside `revision`.
+
+The jobs which publish skip the tests and run one after the other. The pull request and the
+nightly matrix test every line. The job `coverage` still tests the current GA line on the push,
+because the coverage report on GitHub Pages comes from it. A red test there does not stop the
+snapshots.
+
+Three things go away with this:
+
+- The line matrix no longer checks the adapter out and compiles it per line. It resolves the
+  published snapshot of the line. The step which compares the cluster image with the client now
+  reads the adapter's descriptors out of the resolved jars.
+- The workflows no longer pass `-Dcamunda8-adapter.version.line-<line>=...`. The POM names the
+  right version.
+- The profile `adapter-built-locally` is gone. It asked for `2.0.0-<line>-SNAPSHOT`, and that is
+  now the version every line reads anyway.
+
+The rest of decision 32 stays: this repository names no Camunda client version.

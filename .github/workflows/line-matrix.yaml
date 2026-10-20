@@ -137,6 +137,7 @@ jobs:
       # that adapter's test-support names. So a line here is only real if the adapter
       # underneath it is the same line. The adapter publishes a snapshot per line, and the
       # line profile names the one of this line, so Maven resolves it from the registry.
+      # See decision 35 in the repository's DECISIONS.md.
       - uses: actions/setup-java@v6
         with:
           java-version: 25.0.4+101.0.LTS
