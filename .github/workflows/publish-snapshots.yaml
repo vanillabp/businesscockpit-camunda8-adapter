@@ -6,7 +6,7 @@ name: Publish snapshots
 # There is one snapshot per release line, 0.9.0-<line>-SNAPSHOT, so a project can try any
 # line before it is released. The job 'snapshot' publishes them. The job 'coverage' first
 # builds and tests the current GA line, because the coverage report on GitHub Pages comes
-# from its tests.
+# from its tests. See decision 35 in the repository's DECISIONS.md.
 #
 # The snapshots go to the snapshot repository of Maven Central. Anybody can read them there
 # without a login. Writing needs the Central Portal token, and only this workflow and the
@@ -124,7 +124,8 @@ jobs:
   #
   # 'maven.test.skip' and not 'skipTests': Failsafe 3.6.0 no longer reads '-DskipTests',
   # so its integration tests would still start a cluster. 'maven.test.skip' also skips the
-  # test compilation, and no module of this repository publishes test classes.
+  # test compilation, and no module of this repository publishes test classes. See
+  # decision 35 in the repository's DECISIONS.md.
   snapshot:
     needs: [coverage, discover]
     if: "${{ !cancelled() && needs.discover.result == 'success' }}"
