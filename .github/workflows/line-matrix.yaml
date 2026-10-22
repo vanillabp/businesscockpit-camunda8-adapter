@@ -140,7 +140,7 @@ jobs:
       # See decision 35 in the repository's DECISIONS.md.
       - uses: actions/setup-java@v6
         with:
-          java-version: 25.0.4+101.0.LTS
+          java-version: 25.0.5+8.0.LTS
           distribution: temurin
           cache: maven
       - name: "Build and test line ${{ matrix.line }}"
