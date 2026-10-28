@@ -110,17 +110,19 @@ extension reads a key of its own one day, it gets the configuration processor, a
 ## Release lines
 
 A Camunda 8 cluster upgrade is expensive, and it costs the organization more than it costs the
-technology, so users sit on different minors at the same time. Camunda promises a client against
-clusters of its own version and newer, and says nothing about the other direction. So the client a
-build was compiled against IS the lowest cluster version that build accepts. One artifact cannot
-serve every minor. That is why the
+technology, so users sit on different minors at the same time. Camunda support accepts a client
+against a cluster of the same minor version, and against one minor version newer while an upgrade
+is under way. A cluster older than the client is not covered. So a build fits a cluster of the
+minor version it was compiled against. One artifact cannot serve every minor. That is why the
 [VanillaBP Camunda 8 adapter](https://github.com/camunda-community-hub/vanillabp-camunda8-adapter)
 is published once per Camunda 8 minor, with the minor in the version.
 
 This repository follows that scheme, and it has to. The extension compiles against the adapter's
-core and gets the Camunda client through it, so a build of this repository inherits the minimum
-cluster version of the adapter build it was compiled against. A line here means the same thing it
-means there:
+core and gets the Camunda client through it, so a build of this repository fits the cluster of the
+adapter build it was compiled against. When the application starts, that adapter compares the
+cluster with the client and writes an INFO, WARN or ERROR line. It never stops the start. That is
+decision 90 of the adapter. The extension adds no check of its own. A line here means the same
+thing it means there:
 
 |  Channel   |   Version    | Camunda 8 adapter line |   Client and cluster   |
 |------------|--------------|------------------------|------------------------|
@@ -234,8 +236,8 @@ which is the current GA line, on every line. That is what every line did until 2
 had looked, because the source POM reads right and a build of a line uses the source POM. The
 installed POM of `0.9.0-8.8-SNAPSHOT` named `io.camunda:camunda-client-java` with no version at
 all and kept its parent, and that parent said `${camunda8.version.line-8.9}`. An application on
-the 8.8 line would have been handed the 8.9 client. The client a build was compiled against is the
-lowest cluster version it accepts, so the line promised a cluster and then took it away. No line is
+the 8.8 line would have been handed the 8.9 client. A build fits the cluster of the client it was
+compiled against, so the line promised a cluster and then took it away. No line is
 released yet, so no user ever read such a POM. Since then `Camunda8PublishedPomTest` reads the
 published POM on every line. Since decision 32 that POM names no client of its own. It names the
 adapter of its line, and the test compares that version with the adapter the build used.
