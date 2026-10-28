@@ -257,7 +257,7 @@ the adapter waits out for the same storage. See [decision 7](./DECISIONS.md).
 
 The published POMs carry no `dependencyManagement`, so what this repository pins for its own
 build reaches nobody. An application resolves each dependency from its own platform BOM, or from
-the Camunda client when nothing of its own manages it. There is one case where that is not
+the Camunda client when nothing of its own manages it. There are two cases where that is not
 enough.
 
 Protobuf refuses a runtime older than the generated code linked against it, and the Camunda
@@ -294,6 +294,17 @@ follows the client of the newest line, and that client arrives through the adapt
 here. So every line of `line-matrix.yaml` reads the tree it resolved and goes red when a dependency
 asks for a newer protobuf than the pin. The message names both versions and the property to raise.
 See [decision 12](./DECISIONS.md).
+
+The second case is Apache HttpClient 5 on Spring Boot 4.0. The Camunda client talks REST through
+it. Spring Boot 4.0 manages `httpclient5` 5.5, and the clients of line 8.9 call a method which came
+with 5.6. An application on Spring Boot 4.0 and line 8.9 pins `httpclient5` and `httpcore5` itself,
+in its own `dependencyManagement` and above the Spring Boot BOM. Without the pin the VanillaBP
+Camunda 8 adapter stops the boot while it builds its client, and the message names the entries to
+add. The lines 8.8 and 8.10 run on 5.5, and Spring Boot 4.1, which this repository builds against,
+manages 5.6. So neither this build nor those lines need anything. The numbers and how they were
+measured are in the section
+[Apache HttpClient 5](https://github.com/camunda-community-hub/vanillabp-camunda8-adapter#apache-httpclient-5)
+of the adapter's README.
 
 ### What proves a line
 
