@@ -99,12 +99,13 @@ reads back is documented for users in the
 
 The extension has no configuration key of its own. Where it needs a setting, it reads the one of the
 Camunda 8 adapter: the lock of its workers is the adapter's `job-timeout`, and line 8.8 waits for
-the cluster as long as the adapter's `workflow-visibility-timeout` says. So the Spring Boot jar ships
-no configuration metadata, the file an IDE reads to offer the keys in `application.yaml`. The
+the cluster as long as the adapter's `workflow-visibility-timeout` says. So the Spring Boot jar
+ships no configuration metadata, the file an IDE reads to offer the keys in `application.yaml`. The
 Camunda 8 adapter's Spring Boot jar describes those keys, and the keys below `vanillabp.cockpit`
-belong to the cockpit's `extensions-commons`. When this extension reads a key of its own one day, it
-gets the configuration processor, a hand-written `additional-spring-configuration-metadata.json` and
-an `EveryKeyIsKnownToTheIdeTest`, the way the Process-Engine-API half of the cockpit has them.
+belong to the cockpit's `extensions-commons`, and its Spring Boot jar describes them. When this
+extension reads a key of its own one day, it gets the configuration processor, a hand-written
+`additional-spring-configuration-metadata.json` and an `EveryKeyIsKnownToTheIdeTest`, the way
+`extensions-commons` has them.
 
 ## Release lines
 
