@@ -153,8 +153,8 @@ jobs:
           # the server of the profile 'central-portal' in io.vanillabp:release-parent. The
           # two names are environment variables, and only the step which publishes sets them
           server-id: vanillabp-central
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
+          server-username-env-var: MAVEN_USERNAME
+          server-password-env-var: MAVEN_PASSWORD
       - name: "Publish the snapshot of line ${{ matrix.line }}"
         # A compile and a deploy, no tests. 20 minutes is far more than that needs, and a
         # publish which hangs still ends before it blocks the next one for long.
