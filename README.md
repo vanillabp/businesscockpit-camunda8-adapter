@@ -260,7 +260,7 @@ process was called by another one. The clients of 8.9 and 8.10 find that in the 
 asks the cluster for it. `Camunda8UserTaskSearch` searches the user tasks of a case. The 8.10
 client names all processes of the case in one request, and lines 8.8 and 8.9 send one request per
 process. What a report says is the same on every line. What it costs is not. How long line 8.8 waits for the
-cluster's answer is the adapter's `vanillabp.adapters.<id>.workflow-visibility-timeout`, the same key
+cluster's answer is the adapter's `vanillabp.adapters.<adapter-id>.workflow-visibility-timeout`, the same key
 the adapter waits out for the same storage. See [decision 7](./DECISIONS.md).
 
 ### What an application pins itself
